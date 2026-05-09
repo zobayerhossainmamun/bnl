@@ -1,0 +1,46 @@
+// Basic class with init, fields, and methods.
+class Counter {
+    function init(self, start) {
+        self.value = start;
+    }
+    function increment(self) {
+        self.value = self.value + 1;
+    }
+    function add(self, n) {
+        self.value = self.value + n;
+    }
+    function get(self) {
+        return self.value;
+    }
+}
+
+var c = Counter(10);
+print("start:", c.get());
+c.increment();
+c.increment();
+c.add(5);
+print("after:", c.get());
+
+// type() reports "instance" for instances and "class" for the class value.
+print("class type:", type(Counter));
+print("instance type:", type(c));
+
+// Two instances are independent — fields don't bleed across.
+var d = Counter(100);
+d.increment();
+print("c:", c.get(), "d:", d.get());
+
+// Class with no init: zero-arg construction works.
+class Bag {
+    function add(self, x) {
+        self.last = x;
+    }
+}
+var b = Bag();
+b.add("hello");
+print("bag.last =", b.last);
+
+// Field reads on missing names: explicit read errors via lookup; we use has-like check via storing a sentinel.
+// (No try/catch yet, so we just ensure that field-set then field-get works.)
+b.tag = "tagged";
+print("bag.tag =", b.tag);

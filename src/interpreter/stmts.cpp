@@ -4,8 +4,10 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
+#include "class_type.h"
 #include "module_loader.h"
 
 namespace bnl {
@@ -40,6 +42,21 @@ void Interpreter::visit(FunctionStmt& s) {
 void Interpreter::visit(ReturnStmt& s) {
     Value v = s.value ? evaluate(*s.value) : Value{};
     throw ReturnSignal{std::move(v)};
+}
+
+void Interpreter::visit(ClassStmt& s) {
+    // Each method is a UserFunction whose closure is the surrounding scope.
+    // Stored under the method's identifier name in the class's method table.
+    std::unordered_map<std::string, CallablePtr> methods;
+    for (auto& m : s.methods) {
+        auto fn = std::make_shared<interp_detail::UserFunction>(
+            std::string(m->name.lexeme), &m->params, &m->body, environment_);
+        methods.emplace(std::string(m->name.lexeme),
+                        std::static_pointer_cast<Callable>(fn));
+    }
+    auto klass = std::make_shared<Class>(std::string(s.name.lexeme), std::move(methods));
+    environment_->define(std::string(s.name.lexeme),
+                         Value{std::static_pointer_cast<Callable>(klass)});
 }
 
 void Interpreter::visit(ImportStmt& s) {

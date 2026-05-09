@@ -1,6 +1,7 @@
 #include "bnl/interpreter.h"
 #include "interpreter/internal.h"
 
+#include "class_type.h"
 #include "environment.h"
 
 #include <fmt/core.h>
@@ -404,6 +405,23 @@ void Interpreter::visit(MemberExpr& e) {
         return;
     }
 
+    // Instances: field lookup, then method lookup → bound method.
+    if (obj.is_instance()) {
+        InstancePtr inst = obj.as_instance();
+        if (auto it = inst->fields().find(name); it != inst->fields().end()) {
+            result_ = it->second;
+            return;
+        }
+        if (auto fn = inst->klass()->find_method(name); fn) {
+            auto bound = std::make_shared<BoundMethod>(inst, fn);
+            result_ = Value{std::static_pointer_cast<Callable>(bound)};
+            return;
+        }
+        throw RuntimeError(e.name, fmt::format(
+            "instance of '{}' has no field or method '{}'",
+            inst->klass()->name(), name));
+    }
+
     // Lists: .length plus a few intrinsic methods returning bound callables.
     if (obj.is_list()) {
         ListPtr list = obj.as_list();
@@ -549,6 +567,11 @@ void Interpreter::visit(SetMemberExpr& e) {
 
     if (obj.is_map()) {
         (*obj.as_map())[std::string(e.name.lexeme)] = value;
+        result_ = std::move(value);
+        return;
+    }
+    if (obj.is_instance()) {
+        obj.as_instance()->fields()[std::string(e.name.lexeme)] = value;
         result_ = std::move(value);
         return;
     }

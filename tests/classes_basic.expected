@@ -1,0 +1,7 @@
+start: 10
+after: 17
+class type: class
+instance type: instance
+c: 17 d: 101
+bag.last = hello
+bag.tag = tagged

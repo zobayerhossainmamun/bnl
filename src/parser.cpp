@@ -25,6 +25,7 @@ std::vector<StmtPtr> Parser::parse() {
 StmtPtr Parser::declaration() {
     if (match({TokenType::Var}))      return var_declaration();
     if (match({TokenType::Function})) return function_declaration("function");
+    if (match({TokenType::Class}))    return class_declaration();
     if (match({TokenType::Import}))   return import_statement(previous());
     return statement();
 }
@@ -47,7 +48,7 @@ StmtPtr Parser::var_declaration() {
     return std::make_unique<VarStmt>(name, std::move(init));
 }
 
-StmtPtr Parser::function_declaration(const std::string& kind) {
+std::unique_ptr<FunctionStmt> Parser::parse_function(const std::string& kind) {
     Token name = consume(TokenType::Identifier, "expected " + kind + " name");
     consume(TokenType::LParen, "expected '(' after " + kind + " name");
     std::vector<Token> params;
@@ -63,6 +64,24 @@ StmtPtr Parser::function_declaration(const std::string& kind) {
     consume(TokenType::LBrace, "expected '{' before " + kind + " body");
     auto body = block_body();
     return std::make_unique<FunctionStmt>(name, std::move(params), std::move(body));
+}
+
+StmtPtr Parser::function_declaration(const std::string& kind) {
+    return parse_function(kind);  // unique_ptr<FunctionStmt> -> StmtPtr (Base)
+}
+
+StmtPtr Parser::class_declaration() {
+    Token name = consume(TokenType::Identifier, "expected class name");
+    consume(TokenType::LBrace, "expected '{' before class body");
+    std::vector<std::unique_ptr<FunctionStmt>> methods;
+    while (!check(TokenType::RBrace) && !at_end()) {
+        if (!match({TokenType::Function})) {
+            throw_error(peek(), "expected 'function' (method) inside class body");
+        }
+        methods.push_back(parse_function("method"));
+    }
+    consume(TokenType::RBrace, "expected '}' after class body");
+    return std::make_unique<ClassStmt>(name, std::move(methods));
 }
 
 StmtPtr Parser::statement() {

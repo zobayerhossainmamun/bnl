@@ -113,6 +113,7 @@ public:
     void visit(FunctionStmt&)   override;
     void visit(ReturnStmt&)     override;
     void visit(ImportStmt&)     override;
+    void visit(ClassStmt&)      override;
 
 private:
     Value evaluate(Expr& e);

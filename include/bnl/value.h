@@ -12,10 +12,12 @@ namespace bnl {
 class Interpreter;
 class Value;
 class Module;
+class Instance;
 
-using ModulePtr = std::shared_ptr<Module>;
-using ListPtr   = std::shared_ptr<std::vector<Value>>;
-using MapPtr    = std::shared_ptr<std::unordered_map<std::string, Value>>;
+using ModulePtr   = std::shared_ptr<Module>;
+using ListPtr     = std::shared_ptr<std::vector<Value>>;
+using MapPtr      = std::shared_ptr<std::unordered_map<std::string, Value>>;
+using InstancePtr = std::shared_ptr<Instance>;
 
 class Callable {
 public:
@@ -37,7 +39,8 @@ public:
         CallablePtr,
         ModulePtr,
         ListPtr,
-        MapPtr
+        MapPtr,
+        InstancePtr
     >;
 
     Value() = default;                        // null
@@ -51,6 +54,7 @@ public:
     Value(ModulePtr m)           : storage_(std::move(m)) {}
     Value(ListPtr l)             : storage_(std::move(l)) {}
     Value(MapPtr m)              : storage_(std::move(m)) {}
+    Value(InstancePtr i)         : storage_(std::move(i)) {}
 
     bool is_null()     const { return std::holds_alternative<std::monostate>(storage_); }
     bool is_bool()     const { return std::holds_alternative<bool>(storage_); }
@@ -60,6 +64,7 @@ public:
     bool is_module()   const { return std::holds_alternative<ModulePtr>(storage_); }
     bool is_list()     const { return std::holds_alternative<ListPtr>(storage_); }
     bool is_map()      const { return std::holds_alternative<MapPtr>(storage_); }
+    bool is_instance() const { return std::holds_alternative<InstancePtr>(storage_); }
 
     bool                       as_bool()     const { return std::get<bool>(storage_); }
     double                     as_number()   const { return std::get<double>(storage_); }
@@ -68,6 +73,7 @@ public:
     const ModulePtr&           as_module()   const { return std::get<ModulePtr>(storage_); }
     const ListPtr&             as_list()     const { return std::get<ListPtr>(storage_); }
     const MapPtr&              as_map()      const { return std::get<MapPtr>(storage_); }
+    const InstancePtr&         as_instance() const { return std::get<InstancePtr>(storage_); }
 
     bool        truthy() const;
     bool        equals(const Value& other) const;

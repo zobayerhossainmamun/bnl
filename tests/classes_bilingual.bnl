@@ -1,0 +1,20 @@
+// Class declared with the Bangla keyword `শ্রেণী`, methods with `কাজ`,
+// fields and method names written in Bangla. The whole vocabulary is bilingual.
+শ্রেণী হিসাব {
+    কাজ init(self, প্রারম্ভ) {
+        self.মান = প্রারম্ভ;
+    }
+    কাজ যোগ(self, n) {
+        self.মান = self.মান + n;
+    }
+    কাজ পান(self) {
+        ফেরত self.মান;
+    }
+}
+
+চলক h = হিসাব(7);
+দেখাও("start:", h.পান());
+h.যোগ(3);
+h.যোগ(5);
+দেখাও("after:", h.পান());
+দেখাও("type:", ধরণ(h));

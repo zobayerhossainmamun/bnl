@@ -25,6 +25,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     interpreter/builtins.cpp
     module_loader.cpp
     native_module.cpp
+    class_type.cpp
     native/sys.cpp
     native/io.cpp
     native/timers.cpp

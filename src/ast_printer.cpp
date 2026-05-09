@@ -242,6 +242,18 @@ public:
         out_ += fmt::format("(import {} as {})", s.path_token.lexeme, s.alias.lexeme);
     }
 
+    void visit(ClassStmt& s) override {
+        indent();
+        out_ += fmt::format("(class {}", s.name.lexeme);
+        depth_++;
+        for (auto& m : s.methods) {
+            out_ += '\n';
+            visit(*m);
+        }
+        depth_--;
+        out_ += ')';
+    }
+
 private:
     void indent() {
         for (int i = 0; i < depth_; ++i) out_ += "  ";

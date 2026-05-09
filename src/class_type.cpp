@@ -1,0 +1,27 @@
+#include "class_type.h"
+
+#include <utility>
+
+namespace bnl {
+
+int Class::arity() const {
+    auto it = methods_.find("init");
+    if (it == methods_.end()) return 0;            // no init -> Foo() takes no args
+    int init_arity = it->second->arity();
+    if (init_arity < 0) return init_arity;         // variadic
+    return init_arity > 0 ? init_arity - 1 : 0;    // hide self
+}
+
+Value Class::call(Interpreter& interp, std::vector<Value> args) {
+    auto instance = std::make_shared<Instance>(shared_from_this());
+    if (auto init = find_method("init"); init) {
+        std::vector<Value> with_self;
+        with_self.reserve(args.size() + 1);
+        with_self.emplace_back(instance);
+        for (auto& a : args) with_self.push_back(std::move(a));
+        init->call(interp, std::move(with_self));
+    }
+    return Value{instance};
+}
+
+}  // namespace bnl

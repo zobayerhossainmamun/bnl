@@ -37,6 +37,7 @@ class WhileStmt;
 class FunctionStmt;
 class ReturnStmt;
 class ImportStmt;
+class ClassStmt;
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
@@ -74,6 +75,7 @@ public:
     virtual void visit(FunctionStmt&)   = 0;
     virtual void visit(ReturnStmt&)     = 0;
     virtual void visit(ImportStmt&)     = 0;
+    virtual void visit(ClassStmt&)      = 0;
 };
 
 // ---- bases ------------------------------------------------------------------
@@ -301,6 +303,20 @@ public:
     Token path_token;  // String literal (lexeme includes quotes)
     Token alias;       // Identifier bound to the imported module
     ImportStmt(Token k, Token p, Token a) : keyword(k), path_token(p), alias(a) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// class Foo { function method(self, ...) { ... } }
+// Methods are FunctionStmts so they reuse the existing function machinery —
+// each is bound at evaluation time as a Callable in the class's method
+// dictionary. The first parameter is conventionally `self`; calling
+// `instance.method(args)` prepends the instance via a BoundMethod wrapper.
+class ClassStmt : public Stmt {
+public:
+    Token                                      name;
+    std::vector<std::unique_ptr<FunctionStmt>> methods;
+    ClassStmt(Token n, std::vector<std::unique_ptr<FunctionStmt>> m)
+        : name(n), methods(std::move(m)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 
