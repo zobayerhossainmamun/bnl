@@ -63,7 +63,7 @@
 
         {
             "name": "windows-release",
-            "displayName": "Windows ship (Release, static CRT, single .exe)",
+            "displayName": "Windows ship (Release, deps static; ships bnl.exe + bnl_core.dll. For single .exe, add -DBNL_ENABLE_FFI=OFF)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
             "cacheVariables": {
@@ -73,7 +73,7 @@
         },
         {
             "name": "linux-release",
-            "displayName": "Linux ship   (Release, static vcpkg deps, dynamic libc/libstdc++)",
+            "displayName": "Linux ship   (Release, deps static; ships bnl + libbnl_core.so. For single binary, add -DBNL_ENABLE_FFI=OFF)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
             "cacheVariables": {
@@ -82,7 +82,7 @@
         },
         {
             "name": "macos-release",
-            "displayName": "macOS ship   (Release, static vcpkg deps, dead-strip)",
+            "displayName": "macOS ship   (Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
             "cacheVariables": {

@@ -21,7 +21,8 @@
       "PowerShell(dumpbin *)",
       "Bash(grep -n \"load_native_library\\\\|process_libraries\\\\|DynamicLibrary\\\\|^}.*  // namespace$\" d:/bnlang/new-v/bnl/src/module_loader.cpp)",
       "PowerShell(& d:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet d:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\classes_basic.bnl)",
-      "PowerShell(& d:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet d:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\classes_bilingual.bnl)"
+      "PowerShell(& d:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet d:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\classes_bilingual.bnl)",
+      "PowerShell(Set-Content *)"
     ]
   }
 }
