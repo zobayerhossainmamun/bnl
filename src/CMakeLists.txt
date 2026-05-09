@@ -5,7 +5,10 @@ add_executable(bnl
     ast_printer.cpp
     value.cpp
     environment.cpp
-    interpreter.cpp
+    interpreter/runtime.cpp
+    interpreter/exprs.cpp
+    interpreter/stmts.cpp
+    interpreter/builtins.cpp
     module_loader.cpp
     native_module.cpp
     native/sys.cpp

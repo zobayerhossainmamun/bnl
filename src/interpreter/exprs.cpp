@@ -1,49 +1,24 @@
 #include "interpreter.h"
+#include "interpreter/internal.h"
 
 #include <fmt/core.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
-
-#include "native/builtins.h"
+#include <vector>
 
 namespace bnl {
 
+using interp_detail::decode_string_literal;
+using interp_detail::is_ascii_space;
+
 namespace {
-
-// ---- string literal escape decoding -----------------------------------------
-
-std::string decode_string_literal(const Token& tok) {
-    // tok.lexeme includes the surrounding quotes.
-    auto sv = tok.lexeme;
-    if (sv.size() < 2 || sv.front() != '"' || sv.back() != '"') {
-        throw RuntimeError(tok, "internal: malformed string literal");
-    }
-    std::string out;
-    out.reserve(sv.size() - 2);
-    for (std::size_t i = 1; i + 1 < sv.size(); ++i) {
-        char c = sv[i];
-        if (c != '\\') { out += c; continue; }
-        if (i + 2 >= sv.size()) {
-            throw RuntimeError(tok, "trailing backslash in string literal");
-        }
-        char esc = sv[++i];
-        switch (esc) {
-            case 'n':  out += '\n'; break;
-            case 't':  out += '\t'; break;
-            case 'r':  out += '\r'; break;
-            case '\\': out += '\\'; break;
-            case '"':  out += '"';  break;
-            case '0':  out += '\0'; break;
-            default:
-                throw RuntimeError(tok, "unknown escape '\\" + std::string(1, esc) + "'");
-        }
-    }
-    return out;
-}
 
 // ---- operator helpers -------------------------------------------------------
 
@@ -61,142 +36,57 @@ void check_number_operands(const Token& op, const Value& a, const Value& b) {
     }
 }
 
-// ---- user-defined function --------------------------------------------------
+// ----- UTF-8 helpers --------------------------------------------------------
+//
+// bnl strings are UTF-8 byte sequences; codepoint indices (used by .length,
+// .char_at, .slice, .index_of, .split) need translation to byte offsets.
 
-// Backs both `function` declarations and anonymous `function (...) {...}`
-// expressions. Holds raw pointers into the AST nodes that own the params
-// and body vectors (the AST outlives every closure that references it).
-class UserFunction : public Callable {
-public:
-    UserFunction(std::string                       name,
-                 const std::vector<Token>*         params,
-                 const std::vector<StmtPtr>*       body,
-                 std::shared_ptr<Environment>      closure)
-        : name_(std::move(name)), params_(params), body_(body),
-          closure_(std::move(closure)) {}
+std::size_t utf8_step(unsigned char b) {
+    if (b < 0x80)        return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
 
-    int         arity() const override { return static_cast<int>(params_->size()); }
-    std::string name()  const override { return name_; }
-
-    Value call(Interpreter& interp, std::vector<Value> args) override {
-        auto env = std::make_shared<Environment>(closure_);
-        for (std::size_t i = 0; i < params_->size(); ++i) {
-            env->define(std::string((*params_)[i].lexeme), std::move(args[i]));
-        }
-        try {
-            interp.execute_block(*body_, env);
-        } catch (ReturnSignal& r) {
-            return std::move(r.value);
-        }
-        return Value{};  // implicit null
+std::size_t utf8_codepoint_count(const std::string& s) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < s.size();) {
+        i += utf8_step(static_cast<unsigned char>(s[i]));
+        ++count;
     }
+    return count;
+}
 
-private:
-    std::string                  name_;
-    const std::vector<Token>*    params_;
-    const std::vector<StmtPtr>*  body_;
-    std::shared_ptr<Environment> closure_;
-};
+std::size_t utf8_byte_offset(const std::string& s, long long cp_index) {
+    if (cp_index <= 0) return 0;
+    std::size_t byte = 0;
+    for (long long i = 0; i < cp_index && byte < s.size(); ++i) {
+        byte += utf8_step(static_cast<unsigned char>(s[byte]));
+    }
+    return byte;
+}
+
+long long utf8_codepoint_at_byte(const std::string& s, std::size_t byte_target) {
+    long long cp = 0;
+    std::size_t byte = 0;
+    while (byte < byte_target && byte < s.size()) {
+        byte += utf8_step(static_cast<unsigned char>(s[byte]));
+        cp++;
+    }
+    return cp;
+}
+
+// Wraps a C++ lambda as a Callable bound to a particular receiver. Used to
+// produce list/map/string intrinsic methods like .push, .keys, .slice, etc.
+CallablePtr make_bound_native(std::string name, int arity, NativeFunction::Fn fn) {
+    auto callable = std::make_shared<NativeFunction>(std::move(name), arity, std::move(fn));
+    return std::static_pointer_cast<Callable>(callable);
+}
 
 }  // namespace
 
-// ============================================================================
-// Interpreter
-// ============================================================================
-
-Interpreter::Interpreter()
-    : globals_(std::make_shared<Environment>()),
-      environment_(globals_),
-      modules_(*this) {
-    uv_loop_init(&loop_);
-    register_builtins();
-    register_sys   (*this);
-    register_io    (*this);
-    register_timers(*this);
-    register_crypto(*this);
-    register_zlib  (*this);
-    register_httpp (*this);
-    register_net   (*this);
-    register_json  (*this);
-}
-
-Interpreter::~Interpreter() {
-    // Force-close any handles that survived (e.g. user crashed mid-loop).
-    uv_walk(&loop_, [](uv_handle_t* h, void*) {
-        if (!uv_is_closing(h)) uv_close(h, nullptr);
-    }, nullptr);
-    uv_run(&loop_, UV_RUN_DEFAULT);  // drain close callbacks
-    uv_loop_close(&loop_);
-}
-
-void Interpreter::register_native_module(const std::string& name, ModulePtr m) {
-    native_modules_[name] = std::move(m);
-}
-
-ModulePtr Interpreter::native_module(const std::string& name) const {
-    auto it = native_modules_.find(name);
-    return it != native_modules_.end() ? it->second : nullptr;
-}
-
-void Interpreter::mark_loop_failed() {
-    loop_failed_ = true;
-    uv_stop(&loop_);
-}
-
-bool Interpreter::run(const std::vector<StmtPtr>& program,
-                      const std::filesystem::path& entry_path) {
-    current_file_ = entry_path;
-    try {
-        for (const auto& s : program) execute(*s);
-    } catch (const RuntimeError& e) {
-        fmt::print(stderr, "runtime error at {}:{} (near '{}'): {}\n",
-                   e.token.line, e.token.column, e.token.lexeme, e.what());
-        return false;
-    } catch (const ModuleError& e) {
-        fmt::print(stderr, "module error at {}:{} (near '{}'): {}\n",
-                   e.token.line, e.token.column, e.token.lexeme, e.what());
-        return false;
-    }
-
-    // Drain the event loop. Async callbacks (timers, fs, net, ...) run here.
-    // If any of them sets loop_failed_, the program exits non-zero.
-    uv_run(&loop_, UV_RUN_DEFAULT);
-    return !loop_failed_;
-}
-
-void Interpreter::run_module(Module& m) {
-    auto previous_file = current_file_;
-    current_file_      = m.path();
-    try {
-        execute_block(m.program(), m.exports());
-    } catch (...) {
-        current_file_ = previous_file;
-        throw;
-    }
-    current_file_ = previous_file;
-}
-
-Value Interpreter::evaluate(Expr& e) {
-    e.accept(*this);
-    return std::move(result_);
-}
-
-void Interpreter::execute(Stmt& s) { s.accept(*this); }
-
-void Interpreter::execute_block(const std::vector<StmtPtr>& stmts,
-                                std::shared_ptr<Environment> env) {
-    auto previous = environment_;
-    environment_ = std::move(env);
-    try {
-        for (const auto& s : stmts) execute(*s);
-    } catch (...) {
-        environment_ = previous;
-        throw;
-    }
-    environment_ = previous;
-}
-
-// ---- expressions ------------------------------------------------------------
+// ---- expressions -----------------------------------------------------------
 
 void Interpreter::visit(LiteralExpr& e) {
     switch (e.value.type) {
@@ -329,66 +219,6 @@ void Interpreter::visit(CallExpr& e) {
         throw RuntimeError(e.paren, ex.what());
     }
 }
-
-namespace {
-
-// ----- UTF-8 helpers --------------------------------------------------------
-
-std::size_t utf8_step(unsigned char b) {
-    if (b < 0x80)        return 1;
-    if ((b & 0xE0) == 0xC0) return 2;
-    if ((b & 0xF0) == 0xE0) return 3;
-    if ((b & 0xF8) == 0xF0) return 4;
-    return 1;
-}
-
-std::size_t utf8_codepoint_count(const std::string& s) {
-    std::size_t count = 0;
-    for (std::size_t i = 0; i < s.size();) {
-        i += utf8_step(static_cast<unsigned char>(s[i]));
-        ++count;
-    }
-    return count;
-}
-
-// Convert a codepoint index to a byte offset. Out-of-range indices clamp to
-// the string length.
-std::size_t utf8_byte_offset(const std::string& s, long long cp_index) {
-    if (cp_index <= 0) return 0;
-    std::size_t byte = 0;
-    for (long long i = 0; i < cp_index && byte < s.size(); ++i) {
-        byte += utf8_step(static_cast<unsigned char>(s[byte]));
-    }
-    return byte;
-}
-
-// Convert a byte offset to a codepoint index.
-long long utf8_codepoint_at_byte(const std::string& s, std::size_t byte_target) {
-    long long cp = 0;
-    std::size_t byte = 0;
-    while (byte < byte_target && byte < s.size()) {
-        byte += utf8_step(static_cast<unsigned char>(s[byte]));
-        cp++;
-    }
-    return cp;
-}
-
-bool is_ascii_space(char c) {
-    return c == ' ' || c == '\t' || c == '\n' || c == '\r';
-}
-
-}  // namespace
-
-namespace {
-
-// Wraps a C++ lambda as a Callable bound to a particular receiver. Used to
-// produce list/map intrinsic methods like .push, .keys, etc.
-CallablePtr make_bound_native(std::string name, int arity, NativeFunction::Fn fn) {
-    auto callable = std::make_shared<NativeFunction>(std::move(name), arity, std::move(fn));
-    return std::static_pointer_cast<Callable>(callable);
-}
-
-}  // namespace
 
 void Interpreter::visit(MemberExpr& e) {
     Value obj  = evaluate(*e.object);
@@ -631,6 +461,13 @@ void Interpreter::visit(MemberExpr& e) {
         fmt::format("{} value has no property '{}'", obj.type_name(), name));
 }
 
+void Interpreter::visit(FunctionExpr& e) {
+    std::string name = e.name.empty() ? std::string("<anonymous>") : e.name;
+    auto fn = std::make_shared<interp_detail::UserFunction>(
+        std::move(name), &e.params, &e.body, environment_);
+    result_ = Value{std::static_pointer_cast<Callable>(fn)};
+}
+
 void Interpreter::visit(ListExpr& e) {
     auto list = std::make_shared<std::vector<Value>>();
     list->reserve(e.elements.size());
@@ -716,119 +553,6 @@ void Interpreter::visit(SetMemberExpr& e) {
     throw RuntimeError(e.name,
         fmt::format("cannot set property '{}' on {} value",
                     std::string(e.name.lexeme), obj.type_name()));
-}
-
-// ---- statements -------------------------------------------------------------
-
-void Interpreter::visit(ExpressionStmt& s) { evaluate(*s.expr); }
-
-void Interpreter::visit(VarStmt& s) {
-    Value v = s.initializer ? evaluate(*s.initializer) : Value{};
-    environment_->define(std::string(s.name.lexeme), std::move(v));
-}
-
-void Interpreter::visit(BlockStmt& s) {
-    execute_block(s.statements, std::make_shared<Environment>(environment_));
-}
-
-void Interpreter::visit(IfStmt& s) {
-    if (evaluate(*s.cond).truthy()) execute(*s.then_branch);
-    else if (s.else_branch)         execute(*s.else_branch);
-}
-
-void Interpreter::visit(WhileStmt& s) {
-    while (evaluate(*s.cond).truthy()) execute(*s.body);
-}
-
-void Interpreter::visit(FunctionStmt& s) {
-    auto fn = std::make_shared<UserFunction>(
-        std::string(s.name.lexeme), &s.params, &s.body, environment_);
-    environment_->define(std::string(s.name.lexeme),
-                         Value{std::static_pointer_cast<Callable>(fn)});
-}
-
-void Interpreter::visit(FunctionExpr& e) {
-    std::string name = e.name.empty() ? std::string("<anonymous>") : e.name;
-    auto fn = std::make_shared<UserFunction>(
-        std::move(name), &e.params, &e.body, environment_);
-    result_ = Value{std::static_pointer_cast<Callable>(fn)};
-}
-
-void Interpreter::visit(ReturnStmt& s) {
-    Value v = s.value ? evaluate(*s.value) : Value{};
-    throw ReturnSignal{std::move(v)};
-}
-
-void Interpreter::visit(ImportStmt& s) {
-    // Decode the path string literal (strip quotes, process escapes).
-    std::string path = decode_string_literal(s.path_token);
-
-    // Where to resolve relative paths from: the importing file's directory,
-    // or the process CWD if there is no current file.
-    std::filesystem::path requesting_dir = current_file_.has_parent_path()
-        ? current_file_.parent_path()
-        : std::filesystem::current_path();
-
-    auto m = modules_.load(path, requesting_dir, s.keyword);
-    environment_->define(std::string(s.alias.lexeme), Value{m});
-}
-
-// ---- builtins ---------------------------------------------------------------
-
-void Interpreter::register_builtins() {
-    // print(...): variadic; values displayed space-separated, then newline.
-    auto print_fn = std::make_shared<NativeFunction>(
-        "print", -1,
-        [](Interpreter&, std::vector<Value> args) -> Value {
-            for (std::size_t i = 0; i < args.size(); ++i) {
-                if (i) fmt::print(" ");
-                fmt::print("{}", args[i].to_display());
-            }
-            fmt::print("\n");
-            return Value{};
-        });
-
-    // Both names point at the same Callable instance.
-    globals_->define("print",  Value{print_fn});
-    globals_->define("\xe0\xa6\xa6\xe0\xa7\x87\xe0\xa6\x96\xe0\xa6\xbe\xe0\xa6\x93", Value{print_fn});  // দেখাও
-
-    // str(x): convert any value to its display string.
-    auto str_fn = std::make_shared<NativeFunction>(
-        "str", 1,
-        [](Interpreter&, std::vector<Value> args) -> Value {
-            return Value{args[0].to_display()};
-        });
-    globals_->define("str", Value{str_fn});
-    globals_->define("\xe0\xa6\xb2\xe0\xa7\x87\xe0\xa6\x96", Value{str_fn});  // লেখ
-
-    // type(x): return the type name as a string.
-    auto type_fn = std::make_shared<NativeFunction>(
-        "type", 1,
-        [](Interpreter&, std::vector<Value> args) -> Value {
-            return Value{std::string(args[0].type_name())};
-        });
-    globals_->define("type", Value{type_fn});
-    globals_->define("\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xa3", Value{type_fn});  // ধরণ
-
-    // to_number(s): parse a string to a number, returning null on failure.
-    auto to_number_fn = std::make_shared<NativeFunction>(
-        "to_number", 1,
-        [](Interpreter&, std::vector<Value> args) -> Value {
-            if (args[0].is_number()) return args[0];
-            if (!args[0].is_string()) return Value{};
-            const std::string& s = args[0].as_string();
-            try {
-                std::size_t consumed = 0;
-                double n = std::stod(s, &consumed);
-                // Reject if there's trailing non-whitespace.
-                while (consumed < s.size() && is_ascii_space(s[consumed])) ++consumed;
-                if (consumed != s.size()) return Value{};
-                return Value{n};
-            } catch (...) {
-                return Value{};
-            }
-        });
-    globals_->define("to_number", Value{to_number_fn});
 }
 
 }  // namespace bnl

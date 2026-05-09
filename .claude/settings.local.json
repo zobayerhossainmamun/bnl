@@ -15,7 +15,8 @@
       "Bash(./build/windows/bin/bnl.exe --quiet ./tests/lib_json.bnl)",
       "PowerShell(ctest *)",
       "PowerShell(Remove-Item *)",
-      "PowerShell(New-Item *)"
+      "PowerShell(New-Item *)",
+      "Bash(xargs wc *)"
     ]
   }
 }

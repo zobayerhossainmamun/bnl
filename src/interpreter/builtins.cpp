@@ -1,0 +1,73 @@
+#include "interpreter.h"
+#include "interpreter/internal.h"
+
+#include <fmt/core.h>
+
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace bnl {
+
+void Interpreter::register_builtins() {
+    using interp_detail::is_ascii_space;
+
+    // print(...): variadic; values displayed space-separated, then newline.
+    auto print_fn = std::make_shared<NativeFunction>(
+        "print", -1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            for (std::size_t i = 0; i < args.size(); ++i) {
+                if (i) fmt::print(" ");
+                fmt::print("{}", args[i].to_display());
+            }
+            fmt::print("\n");
+            return Value{};
+        });
+
+    // Both names point at the same Callable instance.
+    globals_->define("print",  Value{print_fn});
+    globals_->define("\xe0\xa6\xa6\xe0\xa7\x87\xe0\xa6\x96\xe0\xa6\xbe\xe0\xa6\x93", Value{print_fn});  // দেখাও
+
+    // str(x): convert any value to its display string.
+    auto str_fn = std::make_shared<NativeFunction>(
+        "str", 1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            return Value{args[0].to_display()};
+        });
+    globals_->define("str", Value{str_fn});
+    globals_->define("\xe0\xa6\xb2\xe0\xa7\x87\xe0\xa6\x96", Value{str_fn});  // লেখ
+
+    // type(x): return the type name as a string.
+    auto type_fn = std::make_shared<NativeFunction>(
+        "type", 1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            return Value{std::string(args[0].type_name())};
+        });
+    globals_->define("type", Value{type_fn});
+    globals_->define("\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xa3", Value{type_fn});  // ধরণ
+
+    // to_number(s): parse a string to a number, returning null on failure.
+    auto to_number_fn = std::make_shared<NativeFunction>(
+        "to_number", 1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            if (args[0].is_number()) return args[0];
+            if (!args[0].is_string()) return Value{};
+            const std::string& s = args[0].as_string();
+            try {
+                std::size_t consumed = 0;
+                double n = std::stod(s, &consumed);
+                // Reject if there's trailing non-whitespace.
+                while (consumed < s.size() && is_ascii_space(s[consumed])) ++consumed;
+                if (consumed != s.size()) return Value{};
+                return Value{n};
+            } catch (...) {
+                return Value{};
+            }
+        });
+    globals_->define("to_number", Value{to_number_fn});
+}
+
+}  // namespace bnl
