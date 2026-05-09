@@ -99,20 +99,31 @@ void print_diagnostics(const char* phase, const std::vector<bnl::Diagnostic>& di
 int main(int argc, char** argv) {
     enable_utf8_console();
 
-    bool        show_tokens = false;
-    bool        show_ast    = false;
-    bool        show_banner = true;
+    bool        show_tokens     = false;
+    bool        show_ast        = false;
+    bool        show_banner     = true;
+    bool        has_inline_code = false;
     std::string path;
+    std::string inline_code;
     std::vector<std::string> program_args;
     for (int i = 1; i < argc; ++i) {
         std::string_view a = argv[i];
-        if (path.empty()) {
-            if      (a == "--tokens")  show_tokens = true;
-            else if (a == "--ast")     show_ast    = true;
-            else if (a == "--quiet")   show_banner = false;
-            else                       path        = std::string(a);
+        if (path.empty() && !has_inline_code) {
+            if      (a == "--tokens")             show_tokens = true;
+            else if (a == "--ast")                show_ast    = true;
+            else if (a == "--quiet")              show_banner = false;
+            else if (a == "-e" || a == "--eval") {
+                if (++i >= argc) {
+                    fmt::print(stderr, "error: {} requires a code argument\n", a);
+                    return 1;
+                }
+                inline_code     = argv[i];
+                has_inline_code = true;
+                show_banner     = false;   // -e implies --quiet (matches python/node/ruby)
+            }
+            else                                  path = std::string(a);
         } else {
-            // Anything after the script path is forwarded as a script arg.
+            // Anything after the script path / -e code is forwarded as a script arg.
             program_args.emplace_back(a);
         }
     }
@@ -120,8 +131,12 @@ int main(int argc, char** argv) {
     if (show_banner) fmt::print("bnl {} ({})\n\n", bnl::kVersion, bnl::kPlatform);
 
     try {
-        std::string source = path.empty() ? std::string(kDemoSource) : read_file(path);
-        if (path.empty() && show_banner) {
+        std::string source;
+        if (has_inline_code)    source = std::move(inline_code);
+        else if (path.empty())  source = std::string(kDemoSource);
+        else                    source = read_file(path);
+
+        if (path.empty() && !has_inline_code && show_banner) {
             fmt::print("--- source (built-in demo) ---\n{}\n", source);
         }
 
