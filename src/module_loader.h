@@ -6,8 +6,8 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "module.h"
-#include "token.h"
+#include "bnl/module.h"
+#include "bnl/token.h"
 
 namespace bnl {
 

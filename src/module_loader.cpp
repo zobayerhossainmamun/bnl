@@ -10,7 +10,7 @@
 #include <utility>
 
 #include "environment.h"
-#include "interpreter.h"
+#include "bnl/interpreter.h"
 #include "lexer.h"
 #include "parser.h"
 #include "stdlib_embedded.h"

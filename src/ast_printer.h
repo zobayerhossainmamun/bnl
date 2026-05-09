@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "ast.h"
+#include "bnl/ast.h"
 
 namespace bnl {
 

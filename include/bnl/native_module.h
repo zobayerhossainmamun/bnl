@@ -4,8 +4,8 @@
 #include <string>
 #include <utility>
 
-#include "module.h"
-#include "value.h"
+#include "bnl/module.h"
+#include "bnl/value.h"
 
 namespace bnl {
 

@@ -6,9 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "ast.h"
+#include "bnl/ast.h"
+#include "bnl/token.h"
 #include "diagnostic.h"
-#include "token.h"
 
 namespace bnl {
 

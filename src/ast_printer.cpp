@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-#include "ast.h"
+#include "bnl/ast.h"
 
 namespace bnl {
 

@@ -7,12 +7,12 @@
 #include <string_view>
 #include <vector>
 
-#include "ast_printer.h"
+#include "bnl/interpreter.h"
+#include "bnl/token.h"
 #include "bnl/version.h"
-#include "interpreter.h"
+#include "ast_printer.h"
 #include "lexer.h"
 #include "parser.h"
-#include "token.h"
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN

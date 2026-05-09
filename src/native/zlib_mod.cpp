@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "interpreter.h"
-#include "native_module.h"
+#include "bnl/interpreter.h"
+#include "bnl/native_module.h"
 
 namespace bnl {
 

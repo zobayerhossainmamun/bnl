@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "diagnostic.h"
-#include "token.h"
+#include "bnl/token.h"
 
 namespace bnl {
 

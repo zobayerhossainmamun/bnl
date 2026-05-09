@@ -1,10 +1,12 @@
-#include "interpreter.h"
+#include "bnl/interpreter.h"
 #include "interpreter/internal.h"
 
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
+
+#include "module_loader.h"
 
 namespace bnl {
 
@@ -50,7 +52,7 @@ void Interpreter::visit(ImportStmt& s) {
         ? current_file_.parent_path()
         : std::filesystem::current_path();
 
-    auto m = modules_.load(path, requesting_dir, s.keyword);
+    auto m = modules_->load(path, requesting_dir, s.keyword);
     environment_->define(std::string(s.alias.lexeme), Value{m});
 }
 

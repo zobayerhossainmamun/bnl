@@ -10,11 +10,11 @@
 #include <utility>
 #include <vector>
 
-#include "ast.h"
+#include "bnl/ast.h"
+#include "bnl/interpreter.h"
+#include "bnl/token.h"
+#include "bnl/value.h"
 #include "environment.h"
-#include "interpreter.h"
-#include "token.h"
-#include "value.h"
 
 namespace bnl::interp_detail {
 

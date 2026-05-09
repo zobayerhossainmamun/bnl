@@ -1,9 +1,13 @@
-#include "interpreter.h"
+#include "bnl/interpreter.h"
 
 #include <fmt/core.h>
 
 #include <utility>
 
+#include "environment.h"
+#include "lexer.h"
+#include "module_loader.h"
+#include "parser.h"
 #include "native/builtins.h"
 
 namespace bnl {
@@ -17,7 +21,7 @@ namespace bnl {
 Interpreter::Interpreter()
     : globals_(std::make_shared<Environment>()),
       environment_(globals_),
-      modules_(*this) {
+      modules_(std::make_unique<ModuleLoader>(*this)) {
     uv_loop_init(&loop_);
     register_builtins();
     register_sys   (*this);
@@ -72,6 +76,29 @@ bool Interpreter::run(const std::vector<StmtPtr>& program,
     // If any of them sets loop_failed_, the program exits non-zero.
     uv_run(&loop_, UV_RUN_DEFAULT);
     return !loop_failed_;
+}
+
+bool Interpreter::run_source(const std::string&            source,
+                             const std::filesystem::path&  path) {
+    Lexer lexer(source);
+    auto  tokens = lexer.tokenize();
+    if (lexer.has_errors()) {
+        for (const auto& d : lexer.diagnostics()) {
+            fmt::print(stderr, "lex error at {}:{}: {}\n", d.line, d.column, d.message);
+        }
+        return false;
+    }
+
+    Parser parser(std::move(tokens));
+    auto   program = parser.parse();
+    if (parser.has_errors()) {
+        for (const auto& d : parser.diagnostics()) {
+            fmt::print(stderr, "parse error at {}:{}: {}\n", d.line, d.column, d.message);
+        }
+        return false;
+    }
+
+    return run(program, path);
 }
 
 void Interpreter::run_module(Module& m) {

@@ -16,7 +16,8 @@
       "PowerShell(ctest *)",
       "PowerShell(Remove-Item *)",
       "PowerShell(New-Item *)",
-      "Bash(xargs wc *)"
+      "Bash(xargs wc *)",
+      "PowerShell(Move-Item *)"
     ]
   }
 }

@@ -1,5 +1,7 @@
-#include "interpreter.h"
+#include "bnl/interpreter.h"
 #include "interpreter/internal.h"
+
+#include "environment.h"
 
 #include <fmt/core.h>
 

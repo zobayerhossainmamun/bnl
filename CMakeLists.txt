@@ -50,3 +50,6 @@ add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
+
+# Embedding examples (host C++ apps that link bnl_core).
+add_subdirectory(examples/embed)

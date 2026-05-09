@@ -5,7 +5,7 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "token.h"
+#include "bnl/token.h"
 
 namespace bnl {
 

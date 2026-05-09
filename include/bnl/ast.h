@@ -4,7 +4,7 @@
 #include <utility>
 #include <vector>
 
-#include "token.h"
+#include "bnl/token.h"
 
 namespace bnl {
 

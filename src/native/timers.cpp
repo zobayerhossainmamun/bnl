@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "interpreter.h"
-#include "native_module.h"
-#include "value.h"
+#include "bnl/interpreter.h"
+#include "bnl/native_module.h"
+#include "bnl/value.h"
 
 namespace bnl {
 

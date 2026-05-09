@@ -11,9 +11,9 @@
 #include <utility>
 #include <vector>
 
+#include "bnl/interpreter.h"
+#include "bnl/native_module.h"
 #include "environment.h"
-#include "interpreter.h"
-#include "native_module.h"
 
 namespace bnl {
 

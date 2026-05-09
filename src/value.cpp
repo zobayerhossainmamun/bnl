@@ -1,4 +1,4 @@
-#include "value.h"
+#include "bnl/value.h"
 
 #include <fmt/core.h>
 
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string>
 
-#include "module.h"
+#include "bnl/module.h"
 
 namespace bnl {
 
