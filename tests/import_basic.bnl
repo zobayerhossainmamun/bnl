@@ -1,0 +1,14 @@
+// Import a relative module and use its members.
+import "./_imports/math.bnl" as math;
+
+print(math.add(2, 3));
+print(math.mul(4, 5));
+print(math.pi);
+print(math.যোগ(10, 20));
+
+// Import the same path again — should hit the cache, no re-evaluation.
+import "./_imports/math.bnl" as m2;
+print(m2.add(1, 1));
+
+// Module value's display form.
+print(type(math));

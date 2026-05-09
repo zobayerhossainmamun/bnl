@@ -1,0 +1,102 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "_base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "_dev",
+            "hidden": true,
+            "inherits": "_base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "_release",
+            "hidden": true,
+            "inherits": "_base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+
+        {
+            "name": "windows",
+            "displayName": "Windows dev  (Debug, dynamic CRT)",
+            "inherits": "_dev",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows"
+            }
+        },
+        {
+            "name": "linux",
+            "displayName": "Linux dev    (Debug)",
+            "inherits": "_dev",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux"
+            }
+        },
+        {
+            "name": "macos",
+            "displayName": "macOS dev    (Debug)",
+            "inherits": "_dev",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx"
+            }
+        },
+
+        {
+            "name": "windows-release",
+            "displayName": "Windows ship (Release, static CRT, single .exe)",
+            "inherits": "_release",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+                "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded"
+            }
+        },
+        {
+            "name": "linux-release",
+            "displayName": "Linux ship   (Release, static vcpkg deps, dynamic libc/libstdc++)",
+            "inherits": "_release",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-linux"
+            }
+        },
+        {
+            "name": "macos-release",
+            "displayName": "macOS ship   (Release, static vcpkg deps, dead-strip)",
+            "inherits": "_release",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "arm64-osx",
+                "CMAKE_EXE_LINKER_FLAGS": "-Wl,-dead_strip"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "windows",         "configurePreset": "windows"         },
+        { "name": "linux",           "configurePreset": "linux"           },
+        { "name": "macos",           "configurePreset": "macos"           },
+        { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" },
+        { "name": "linux-release",   "configurePreset": "linux-release",   "configuration": "Release" },
+        { "name": "macos-release",   "configurePreset": "macos-release",   "configuration": "Release" }
+    ]
+}

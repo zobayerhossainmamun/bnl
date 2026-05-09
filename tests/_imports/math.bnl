@@ -1,0 +1,8 @@
+// Helper module imported by import_basic.bnl.
+function add(a, b) { return a + b; }
+function mul(a, b) { return a * b; }
+
+var pi = 3.14;
+
+// Bilingual alias — same value, two names.
+var যোগ = add;

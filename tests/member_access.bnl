@@ -1,0 +1,11 @@
+// String length via member access — codepoint count, not bytes.
+print("hello".length);
+print("".length);
+print("হেলো".length);
+print("হেলো".byte_length);
+
+var greeting = "Hi!";
+print(greeting.length);
+
+// Chained: member then arithmetic.
+print("abc".length + "de".length);

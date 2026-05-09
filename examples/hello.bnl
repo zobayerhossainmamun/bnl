@@ -1,0 +1,40 @@
+// bnl demo: Bangla and English keywords interchangeably.
+চলক greeting = "Hello";
+var name = "bnl";
+
+কাজ shout(s) {
+    ফেরত s + "!";
+}
+
+যদি (1 < 2 এবং name != null) {
+    print(shout(greeting + ", " + name));
+} নয়তো {
+    দেখাও("unreachable");
+}
+
+// Closures and recursion both work.
+function make_counter() {
+    var n = 0;
+    function step() {
+        n = n + 1;
+        return n;
+    }
+    return step;
+}
+
+var c = make_counter();
+print("counter:", c(), c(), c());
+
+কাজ fib(n) {
+    যদি (n < 2) { ফেরত n; }
+    ফেরত fib(n - 1) + fib(n - 2);
+}
+
+print("fib(10) =", fib(10));
+
+// While loop counting down with the Bangla keyword.
+var i = 3;
+যতক্ষণ (i > 0) {
+    print("ticking", i);
+    i = i - 1;
+}

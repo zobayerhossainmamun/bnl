@@ -1,0 +1,87 @@
+// Minimal HTTP/1.1 server in pure bnl, on top of net (TCP) and httpp (parser).
+//
+//   import "http" as http;
+//   var server = http.serve(0, function(req) {
+//       return {status: 200, body: "Hello, " + req.url};
+//   });
+//   print("listening on", server.port);
+//
+// Handler returns a response map: {status, headers, body}.
+// status defaults to 200, headers defaults to {}, body defaults to "".
+
+import "net" as net;
+import "httpp" as httpp;
+
+function _status_text(code) {
+    if (code == 200) { return "OK"; }
+    if (code == 201) { return "Created"; }
+    if (code == 204) { return "No Content"; }
+    if (code == 301) { return "Moved Permanently"; }
+    if (code == 302) { return "Found"; }
+    if (code == 304) { return "Not Modified"; }
+    if (code == 400) { return "Bad Request"; }
+    if (code == 401) { return "Unauthorized"; }
+    if (code == 403) { return "Forbidden"; }
+    if (code == 404) { return "Not Found"; }
+    if (code == 500) { return "Internal Server Error"; }
+    return "OK";
+}
+
+function _format_response(resp) {
+    var status  = 200;
+    var headers = {};
+    var body    = "";
+    if (resp.has("status"))  { status  = resp.status; }
+    if (resp.has("headers")) { headers = resp.headers; }
+    if (resp.has("body"))    { body    = resp.body; }
+
+    // Default Content-Length so HTTP/1.1 clients know when to stop reading.
+    var lower_keys = {};
+    var keys       = headers.keys();
+    var i = 0;
+    while (i < keys.length) {
+        lower_keys[keys[i].to_lower()] = true;
+        i = i + 1;
+    }
+    if (not lower_keys.has("content-length")) {
+        headers["Content-Length"] = str(body.byte_length);
+    }
+    if (not lower_keys.has("connection")) {
+        headers["Connection"] = "close";
+    }
+
+    var out = "HTTP/1.1 " + str(status) + " " + _status_text(status) + "\r\n";
+    keys = headers.keys();
+    i    = 0;
+    while (i < keys.length) {
+        out = out + keys[i] + ": " + str(headers[keys[i]]) + "\r\n";
+        i = i + 1;
+    }
+    return out + "\r\n" + body;
+}
+
+function serve(port, handler) {
+    var server = net.tcp_listen(port, function(conn) {
+        // Per-connection accumulating buffer. Closure captures by reference.
+        var state = {buf: ""};
+
+        conn.on_data(function(chunk) {
+            state.buf = state.buf + chunk;
+            var req = httpp.parse_request(state.buf);
+            if (req == null) {
+                // Wait for more bytes.
+                return null;
+            }
+            var resp;
+            // Native callback errors will surface to the loop; user-handler
+            // errors will too. Keep this thin — let the runtime show them.
+            resp = handler(req);
+            conn.write(_format_response(resp));
+            conn.close();
+        });
+    });
+    return server;
+}
+
+// Bilingual aliases.
+var চালাও = serve;          // "run"

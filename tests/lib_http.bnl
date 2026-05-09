@@ -1,0 +1,28 @@
+// In-process HTTP server + client roundtrip via lib/http.bnl.
+import "http" as http;
+import "net"  as net;
+
+var server = http.serve(0, function(req) {
+    return {
+        status: 200,
+        headers: {"Content-Type": "text/plain"},
+        body: "hi " + req.url,
+    };
+});
+
+print("port_ok:", server.port > 0);
+
+net.tcp_connect("127.0.0.1", server.port, function(err, conn) {
+    if (err != null) { print("connect err:", err); return; }
+    var resp = "";
+    conn.on_data(function(chunk) { resp = resp + chunk; });
+    conn.on_end(function() {
+        print("status:", resp.starts_with("HTTP/1.1 200 OK"));
+        print("ctype:",  resp.index_of("Content-Type: text/plain") > 0);
+        print("clen:",   resp.index_of("Content-Length: 9") > 0);
+        var body_start = resp.index_of("\r\n\r\n");
+        print("body:",   resp.slice(body_start + 4));
+        server.close();
+    });
+    conn.write("GET /world HTTP/1.1\r\nHost: x\r\n\r\n");
+});

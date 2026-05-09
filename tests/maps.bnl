@@ -1,0 +1,46 @@
+// Map literals, dot/bracket access, mutation, intrinsic methods.
+var m = {name: "bnl", version: 1, ready: true};
+
+print(m.name);
+print(m["version"]);
+print(m.ready);
+
+// Missing key returns null (consistent with maps as "open" objects).
+print(m.missing);
+print(m["nope"]);
+
+// Member assignment.
+m.author = "ahrumibhuiyan";
+print(m.author);
+
+// Bracket assignment.
+m["count"] = 42;
+print(m["count"]);
+
+// Existing key gets overwritten.
+m.version = 2;
+print(m.version);
+
+// Intrinsics: .has, .size.
+print(m.has("name"), m.has("ghost"));
+print(m.size);
+
+// Quoted string keys with non-identifier chars.
+var weird = {"hello world": 1, "x-y-z": 2};
+print(weird["hello world"]);
+print(weird["x-y-z"]);
+
+// Bangla key with bracket access (dot access too — both work).
+var bn = {নাম: "bnl"};
+print(bn.নাম);
+print(bn["নাম"]);
+
+// Empty map.
+print({}.size);
+
+// Nested map / list interaction.
+var data = {users: [{name: "a"}, {name: "b"}]};
+print(data.users[0].name);
+print(data.users[1].name);
+data.users[0].name = "z";
+print(data.users[0].name);

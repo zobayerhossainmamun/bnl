@@ -1,0 +1,16 @@
+// Native sys module — platform, env vars, args.
+import "sys" as sys;
+
+print(sys.platform);
+
+// PATH is always set on every platform we target.
+print(type(sys.env("PATH")));
+print(sys.env("__bnl_unlikely_to_exist_xyz_123"));
+
+// No args were forwarded by the test driver.
+print(sys.argc());
+print(sys.arg(0));
+
+// Bilingual import keyword keeps working alongside native modules.
+আমদানি "sys" যেমন স;
+print(স.platform == sys.platform);

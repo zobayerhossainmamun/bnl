@@ -1,0 +1,26 @@
+// Native io module — sync file ops via std::filesystem.
+import "io" as io;
+
+var path = "_bnl_io_test.tmp";
+
+// Clean slate.
+if (io.exists(path)) { io.remove(path); }
+print(io.exists(path));
+
+// Write + read round-trip preserves bytes (including UTF-8).
+io.write_file(path, "Hello, বন্ধু!");
+print(io.exists(path));
+print(io.is_file(path));
+print(io.is_dir(path));
+print(io.read_file(path));
+
+// Cleanup.
+io.remove(path);
+print(io.exists(path));
+
+// mkdir + nested paths.
+var d = "_bnl_io_test_dir/nested";
+io.mkdir(d);
+print(io.is_dir(d));
+io.remove("_bnl_io_test_dir");
+print(io.exists("_bnl_io_test_dir"));

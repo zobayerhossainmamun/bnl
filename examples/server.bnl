@@ -1,0 +1,27 @@
+// Minimal HTTP server in bnl. Run:  bnl examples/server.bnl
+// Then in another terminal:        curl http://127.0.0.1:8080/hello
+//                                  curl http://127.0.0.1:8080/json
+
+import "http" as http;
+import "json" as json;
+
+var server = http.serve(8080, function(req) {
+    if (req.url == "/json") {
+        return {
+            status: 200,
+            headers: {"Content-Type": "application/json"},
+            body: json.stringify({
+                message: "নমস্কার, world!",
+                method:  req.method,
+                url:     req.url,
+            }),
+        };
+    }
+    return {
+        status: 200,
+        headers: {"Content-Type": "text/plain; charset=utf-8"},
+        body:    "Hello, " + req.url + " from bnl!\n",
+    };
+});
+
+print("listening on 127.0.0.1:" + str(server.port));

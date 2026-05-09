@@ -1,0 +1,9 @@
+function counter() {
+    var n = 0;
+    function step() { n = n + 1; return n; }
+    return step;
+}
+
+var a = counter();
+var b = counter();
+print(a(), a(), a(), b(), a(), b());

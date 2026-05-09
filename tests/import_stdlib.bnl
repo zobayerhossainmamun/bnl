@@ -1,0 +1,12 @@
+// Bare name resolves to embedded stdlib (lib/prelude.bnl).
+import "prelude" as p;
+
+print(p.greet("world"));
+print(p.repeat("ab", 3));
+
+// Bilingual alias inside the stdlib module.
+print(p.অভিবাদন("বন্ধু"));
+
+// Cache: importing under a different alias returns the same module instance.
+import "prelude" as q;
+print(q.greet == p.greet);

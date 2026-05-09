@@ -1,0 +1,17 @@
+// Async file I/O via libuv's worker thread pool.
+import "io" as io;
+
+var path = "_bnl_async_io_test.tmp";
+
+// Schedule write -> read -> verify -> cleanup, fully async.
+io.write_file_async(path, "Hello async, বন্ধু!", function(err) {
+    if (err != null) { print("write err:", err); return; }
+    io.read_file_async(path, function(rerr, data) {
+        if (rerr != null) { print("read err:", rerr); return; }
+        print(data);
+        io.remove(path);
+        print("done");
+    });
+});
+
+print("scheduled");

@@ -1,0 +1,37 @@
+// Embedded lib/path.bnl exercised via the import system.
+// Output is platform-agnostic — assertions print "ok" or the raw value.
+import "path" as path;
+import "sys"  as sys;
+
+print(path.basename("/usr/local/bin/bnl"));
+print(path.basename("plain.txt"));
+print(path.dirname("/usr/local/bin/bnl"));
+print(path.dirname("a/b"));
+print(path.dirname("just_a_file"));
+
+print(path.extname("file.bnl"));
+print(path.extname("file.tar.gz"));
+print(path.extname("README") == "");
+print(path.extname(".bashrc") == "");
+
+// Platform-agnostic checks: the joined path should contain the parts in order
+// and have the right length, regardless of which separator was used.
+var joined = path.join(["a", "b", "c"]);
+print(joined.length == 5);              // 3 letters + 2 separators
+print(joined.starts_with("a"));
+print(joined.ends_with("c"));
+
+print(path.join([]));                   // empty string
+print(path.join(["", "x"]));            // "x" — empty parts skipped
+
+// Absolute detection — platform aware.
+print(path.is_absolute("/usr/x"));
+print(path.is_absolute("relative/x"));
+if (sys.platform == "windows") {
+    print(path.is_absolute("C:\\Users"));
+} else {
+    print(true);                        // dummy so expected is uniform
+}
+
+// Bilingual aliases work.
+print(path.ফাইলের_নাম("/x/y/z"));

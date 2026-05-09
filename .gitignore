@@ -1,0 +1,33 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# vcpkg
+vcpkg/
+vcpkg_installed/
+.vcpkg-cache/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Compiled / generated
+*.o
+*.obj
+*.lib
+*.dll
+*.so
+*.dylib
+*.exe
+*.pdb
+*.ilk
+*.exp
+compile_commands.json
+
+# OS junk
+.DS_Store
+Thumbs.db

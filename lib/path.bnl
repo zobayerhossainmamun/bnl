@@ -1,0 +1,85 @@
+// Cross-platform path helpers, written in bnl.
+import "sys" as sys;
+
+var sep      = "/";
+var alt_sep  = "/";
+if (sys.platform == "windows") {
+    sep     = "\\";
+    alt_sep = "/";
+}
+
+function _normalize_seps(p) {
+    if (sys.platform == "windows") {
+        return p.replace("/", "\\");
+    }
+    return p;
+}
+
+// Returns the position of the last separator in p, or -1 if none.
+function _last_sep_index(p) {
+    var i = p.length - 1;
+    while (i >= 0) {
+        var c = p.char_at(i);
+        if (c == sep or c == alt_sep) { return i; }
+        i = i - 1;
+    }
+    return -1;
+}
+
+function dirname(p) {
+    var i = _last_sep_index(p);
+    if (i <= 0) { return "."; }
+    return p.slice(0, i);
+}
+
+function basename(p) {
+    var i = _last_sep_index(p);
+    if (i < 0) { return p; }
+    return p.slice(i + 1);
+}
+
+function extname(p) {
+    var name = basename(p);
+    var dot  = -1;
+    var i    = name.length - 1;
+    // Leading-dot files like ".bashrc" have no extname.
+    while (i > 0) {
+        if (name.char_at(i) == ".") { dot = i; i = -1; }
+        else                         { i   = i - 1; }
+    }
+    if (dot < 0) { return ""; }
+    return name.slice(dot);
+}
+
+function is_absolute(p) {
+    if (p.length == 0) { return false; }
+    if (p.starts_with("/") or p.starts_with("\\")) { return true; }
+    if (sys.platform == "windows" and p.length >= 2 and p.char_at(1) == ":") {
+        return true;
+    }
+    return false;
+}
+
+// path.join(["a", "b/c", "d"]) -> "a/b/c/d" (or backslashes on Windows).
+function join(parts) {
+    var out = "";
+    var i = 0;
+    while (i < parts.length) {
+        var part = _normalize_seps(parts[i]);
+        if (part.length > 0) {
+            if (out.length == 0 or out.ends_with(sep)) {
+                out = out + part;
+            } else {
+                out = out + sep + part;
+            }
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+// Bilingual aliases.
+var পথের_নাম    = dirname;
+var ফাইলের_নাম = basename;
+var বর্ধিতাংশ  = extname;
+var জোড়া      = join;

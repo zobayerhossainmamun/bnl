@@ -1,0 +1,3 @@
+function tag() {
+    return "tagged by flat-pkg";
+}

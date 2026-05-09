@@ -1,0 +1,16 @@
+// Parse a hardcoded HTTP request via llhttp.
+import "httpp" as httpp;
+
+var raw = "GET /hello HTTP/1.1\r\nHost: example.com\r\nUser-Agent: bnl/0.1\r\nContent-Length: 5\r\n\r\nworld";
+var req = httpp.parse_request(raw);
+
+print(req.method);
+print(req.url);
+print(req.body);
+print(req.header("host"));        // case-insensitive lookup
+print(req.header("USER-AGENT"));
+print(req.header("missing"));
+print(req.header_count);
+
+// Incomplete buffer -> null
+print(httpp.parse_request("GET /partial HTTP/1.1\r\n"));

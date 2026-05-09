@@ -1,0 +1,6 @@
+// Same dep imported from a deeper directory — exercises the walk-up.
+import "my-lib" as ml;
+
+function greet() {
+    return ml.hello("from nested");
+}

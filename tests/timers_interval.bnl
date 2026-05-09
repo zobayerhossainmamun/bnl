@@ -1,0 +1,17 @@
+// Interval that cancels itself after 3 firings.
+import "timers" as timers;
+
+var count  = 0;
+var cancel = null;
+
+function step() {
+    count = count + 1;
+    print("tick", count);
+    if (count >= 3) {
+        cancel();
+        print("cancelled");
+    }
+}
+
+cancel = timers.interval(1, step);
+print("scheduled");

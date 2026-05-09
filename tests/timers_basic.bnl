@@ -1,0 +1,8 @@
+// timers.set(0, fn) defers fn until after the current tick — like Node's setImmediate.
+import "timers" as timers;
+
+print("a");
+timers.set(0, function() { print("c"); });
+timers.set(0, function() { print("d"); });
+print("b");
+// "a", "b" run synchronously; "c", "d" fire from the loop in registration order.

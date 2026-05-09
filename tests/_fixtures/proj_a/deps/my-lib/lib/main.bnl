@@ -1,0 +1,3 @@
+function hello(name) {
+    return "Hi " + name + " from my-lib";
+}

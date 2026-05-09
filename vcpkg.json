@@ -1,0 +1,18 @@
+{
+    "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+    "name": "bnl",
+    "version": "0.1.0",
+    "description": "Bangla programming language interpreter",
+    "builtin-baseline": "99a97de2cb371449d4fb9dc970f2ac562d689ec2",
+    "dependencies": [
+        {
+            "name": "fmt",
+            "version>=": "12.1.0"
+        },
+        "libuv",
+        "openssl",
+        "zlib",
+        "llhttp",
+        "nlohmann-json"
+    ]
+}

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Set-Item *)",
+      "PowerShell(Test-Path *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Join-Path *)",
+      "PowerShell(cmake *)",
+      "Bash(git *)",
+      "Bash(D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe *)",
+      "Bash(./build/windows/bin/bnl.exe --quiet ./tests/member_access.bnl)",
+      "Bash(./build/windows/bin/bnl.exe --quiet ./tests/strings_intrinsics.bnl)",
+      "Bash(ctest --test-dir build/windows --output-on-failure)",
+      "Bash(./build/windows/bin/bnl.exe --quiet ./tests/lib_path.bnl)",
+      "Bash(./build/windows/bin/bnl.exe --quiet ./tests/lib_json.bnl)",
+      "PowerShell(ctest *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(New-Item *)"
+    ]
+  }
+}
