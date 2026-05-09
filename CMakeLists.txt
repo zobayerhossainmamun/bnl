@@ -53,3 +53,6 @@ add_subdirectory(tests)
 
 # Embedding examples (host C++ apps that link bnl_core).
 add_subdirectory(examples/embed)
+
+# FFI plugin example (built as a shared library, loaded at runtime by bnl).
+add_subdirectory(examples/plugin_native)

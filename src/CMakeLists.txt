@@ -1,7 +1,12 @@
-# bnl_core: the static library that hosts and the bnl CLI both link against.
-# Public headers live in <repo>/include/bnl/. Internal headers stay here in src/
-# and are PRIVATE to the library.
-add_library(bnl_core STATIC
+# bnl_core: the shared library that hosts, the bnl CLI, and FFI plugins all
+# link against. Must be a SHARED library (not static) — otherwise each
+# consumer ends up with its own copy of Environment/Module/Value, and types
+# crossing the plugin <-> exe boundary land at different vtables → crash.
+# Single .dll/.so means one source of truth for runtime types.
+#
+# Public headers live in <repo>/include/bnl/. Internal headers stay here in
+# src/ and are PRIVATE to the library.
+add_library(bnl_core SHARED
     lexer.cpp
     parser.cpp
     ast_printer.cpp
@@ -13,6 +18,7 @@ add_library(bnl_core STATIC
     interpreter/builtins.cpp
     module_loader.cpp
     native_module.cpp
+    dynamic_library.cpp
     native/sys.cpp
     native/io.cpp
     native/timers.cpp
@@ -46,6 +52,7 @@ target_link_libraries(bnl_core
         ZLIB::ZLIB
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
         nlohmann_json::nlohmann_json
+        ${CMAKE_DL_LIBS}                  # dl on Linux, empty on Windows/macOS
 )
 
 # bnl: thin CLI driver around bnl_core.
@@ -64,4 +71,13 @@ target_include_directories(bnl
 
 set_target_properties(bnl PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
+)
+
+# bnl_core is consumed by bnl, embed_demo, and FFI plugin DLLs — needs PIC and
+# (on Windows) auto-exported symbols so the import lib actually contains them.
+set_target_properties(bnl_core PROPERTIES
+    POSITION_INDEPENDENT_CODE  ON
+    WINDOWS_EXPORT_ALL_SYMBOLS ON
+    RUNTIME_OUTPUT_DIRECTORY   ${CMAKE_BINARY_DIR}/bin
+    LIBRARY_OUTPUT_DIRECTORY   ${CMAKE_BINARY_DIR}/bin
 )

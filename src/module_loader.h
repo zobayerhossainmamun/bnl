@@ -1,13 +1,17 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "bnl/module.h"
 #include "bnl/token.h"
+
+#include "dynamic_library.h"
 
 namespace bnl {
 
@@ -38,6 +42,13 @@ private:
     // Load a file by canonical path: cache hit, cycle check, read, evaluate.
     // Used by both the relative-path branch and the deps/ resolver.
     ModulePtr load_canonical_file(const std::filesystem::path& canonical,
+                                  const Token&                 import_token);
+
+    // Load a native plugin (.dll/.so/.dylib) by canonical path. Caches the
+    // resulting Module by path and keeps the DynamicLibrary alive for the
+    // process lifetime (closures inside the module hold raw function pointers
+    // into the plugin).
+    ModulePtr load_native_library(const std::filesystem::path& canonical,
                                   const Token&                 import_token);
 
     // Evaluate from raw source. `display_path` is what shows up in errors and
