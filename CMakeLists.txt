@@ -16,6 +16,17 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
 endif()
 
+# Build with runtime FFI plugin support?
+#   ON  (default) — bnl_core is a SHARED library so plugins (.dll/.so/.dylib)
+#                   reference the same loaded runtime that bnl.exe does.
+#                   `import "name"` of a native plugin loads it at runtime.
+#                   Distribution: bnl.exe + bnl_core.dll.
+#   OFF           — bnl_core is STATIC and links into bnl.exe directly.
+#                   Combined with a static vcpkg triplet, produces a single
+#                   self-contained binary. `import "name"` of a native plugin
+#                   throws a clear runtime error directing the user to rebuild.
+option(BNL_ENABLE_FFI "Build with runtime FFI plugin support (forces bnl_core to be shared)" ON)
+
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
@@ -54,5 +65,7 @@ add_subdirectory(tests)
 # Embedding examples (host C++ apps that link bnl_core).
 add_subdirectory(examples/embed)
 
-# FFI plugin example (built as a shared library, loaded at runtime by bnl).
-add_subdirectory(examples/plugin_native)
+# FFI plugin example — only meaningful when bnl_core is a shared library.
+if(BNL_ENABLE_FFI)
+    add_subdirectory(examples/plugin_native)
+endif()

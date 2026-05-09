@@ -15,6 +15,10 @@
 #include "parser.h"
 #include "stdlib_embedded.h"
 
+#ifdef BNL_FFI_ENABLED
+#  include "dynamic_library.h"
+#endif
+
 namespace bnl {
 
 namespace fs = std::filesystem;
@@ -161,6 +165,7 @@ std::optional<fs::path> find_global_dep(const std::string& name) {
     return std::nullopt;
 }
 
+#ifdef BNL_FFI_ENABLED
 // FFI plugin DLLs must outlive every Module/Callable that references them —
 // closures inside loaded plugins hold raw function pointers into the DLL's
 // text segment, and `std::function` destructors call back into that text
@@ -182,6 +187,7 @@ std::unordered_map<std::string, LoadedLibrary>& process_libraries() {
     static std::unordered_map<std::string, LoadedLibrary> libs;
     return libs;
 }
+#endif  // BNL_FFI_ENABLED
 
 }  // namespace
 
@@ -227,6 +233,14 @@ ModulePtr ModuleLoader::load_canonical_file(const fs::path& canonical,
 
 ModulePtr ModuleLoader::load_native_library(const fs::path& canonical,
                                              const Token&    import_token) {
+#ifndef BNL_FFI_ENABLED
+    throw ModuleError(import_token, fmt::format(
+        "this build of bnl was compiled without FFI plugin support, so the "
+        "native plugin '{}' cannot be loaded. Rebuild bnl with "
+        "-DBNL_ENABLE_FFI=ON, or remove the 'native' field from the dep's "
+        "bnl.json and provide a bnl 'main' instead.",
+        canonical.string()));
+#else
     std::string key = "<native:" + canonical.string() + ">";
 
     // Per-loader cache: short-circuit re-imports within this Interpreter.
@@ -277,6 +291,7 @@ ModulePtr ModuleLoader::load_native_library(const fs::path& canonical,
     procs.emplace(key, LoadedLibrary{std::move(lib), m});
     cache_[key] = m;
     return m;
+#endif  // BNL_FFI_ENABLED
 }
 
 ModulePtr ModuleLoader::load(const std::string&            path_string,

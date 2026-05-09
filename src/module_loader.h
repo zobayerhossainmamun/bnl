@@ -1,17 +1,13 @@
 #pragma once
 
 #include <filesystem>
-#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 #include "bnl/module.h"
 #include "bnl/token.h"
-
-#include "dynamic_library.h"
 
 namespace bnl {
 

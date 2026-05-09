@@ -18,7 +18,8 @@
       "PowerShell(New-Item *)",
       "Bash(xargs wc *)",
       "PowerShell(Move-Item *)",
-      "PowerShell(dumpbin *)"
+      "PowerShell(dumpbin *)",
+      "Bash(grep -n \"load_native_library\\\\|process_libraries\\\\|DynamicLibrary\\\\|^}.*  // namespace$\" d:/bnlang/new-v/bnl/src/module_loader.cpp)"
     ]
   }
 }
