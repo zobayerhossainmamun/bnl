@@ -1,0 +1,27 @@
+--- test ---
+true
+true
+false
+false
+true
+--- match ---
+alice@example
+["alice", "example"]
+0
+null
+--- match_all ---
+1 1
+22 4
+333 8
+--- replace ---
+aXbXcX
+aXb2c3
+v:k;b:a
+--- split ---
+["a", "b", "c", "d"]
+--- escape ---
+true
+--- quotes ---
+true
+--- bad-pattern ---
+ok

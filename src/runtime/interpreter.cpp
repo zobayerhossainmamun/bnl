@@ -27,6 +27,7 @@ Interpreter::Interpreter()
     register_sys   (*this);
     register_io    (*this);
     register_timers(*this);
+    register_regex (*this);
 }
 
 Interpreter::~Interpreter() {

@@ -38,6 +38,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/sys.cpp
     stdlib/io.cpp
     stdlib/timers.cpp
+    stdlib/regex.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the

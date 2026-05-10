@@ -1,0 +1,53 @@
+// Native regex module — pattern matching with ECMAScript syntax.
+import "regex" as re;
+
+// ---------- test ----------------------------------------------------------
+print("--- test ---");
+print(re.test("\\d+", "abc 42 def"));        // true
+print(re.test("^foo$", "foo"));              // true
+print(re.test("^foo$", "afoo"));             // false
+print(re.test("Hello", "hello"));            // false (case-sensitive default)
+print(re.test("Hello", "hello", "i"));       // true with `i`
+
+// ---------- match ---------------------------------------------------------
+print("--- match ---");
+var m = re.match("(\\w+)@(\\w+)", "alice@example");
+print(m.match);
+print(m.groups);
+print(m.index);
+print(re.match("zz", "no match here"));      // null
+
+// ---------- match_all -----------------------------------------------------
+print("--- match_all ---");
+var all = re.match_all("\\d+", "a1 b22 c333");
+print(all[0].match, all[0].index);
+print(all[1].match, all[1].index);
+print(all[2].match, all[2].index);
+
+// ---------- replace -------------------------------------------------------
+print("--- replace ---");
+print(re.replace("\\d+", "a1b2c3", "X"));                       // aXbXcX
+print(re.replace_first("\\d+", "a1b2c3", "X"));                 // aXb2c3
+print(re.replace("(\\w+)=(\\w+)", "k=v;a=b", "$2:$1"));         // v:k;b:a
+
+// ---------- split ---------------------------------------------------------
+print("--- split ---");
+print(re.split("\\s*,\\s*", "a, b ,c,  d"));
+
+// ---------- escape --------------------------------------------------------
+print("--- escape ---");
+var pat = re.escape("1+1=2");
+print(re.test(pat, "value: 1+1=2 here"));   // true: dynamic literal match
+
+// ---------- single-quote strings work as patterns -------------------------
+print("--- quotes ---");
+print(re.test('\\d+', "n=42"));
+
+// ---------- error path: invalid pattern -----------------------------------
+print("--- bad-pattern ---");
+try {
+    re.test("(unclosed", "x");
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("ok");
+}
