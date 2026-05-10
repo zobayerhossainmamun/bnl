@@ -41,7 +41,7 @@ constexpr int kPrettyWrapAt = 60;   // inline up to this many chars; multi-line 
 // chars (single line), else multi-line with 4-space indent. All scalars use
 // to_repr() so strings show their quotes, distinguishing them from
 // identifiers when nested inside a collection.
-std::string format_pretty(const Value& v, int indent) {
+std::string format_pretty(const Value& v, std::size_t indent) {
     if (v.is_list()) {
         const auto& list = *v.as_list();
         if (list.empty()) return "[]";

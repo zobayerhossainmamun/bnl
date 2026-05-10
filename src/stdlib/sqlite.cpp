@@ -89,7 +89,7 @@ void bind_params(sqlite3_stmt* stmt, const std::vector<Value>& params, sqlite3* 
             "sqlite: param count mismatch — SQL has {} placeholder(s), got {}",
             expected, params.size()));
     }
-    for (int i = 0; i < expected; ++i) bind_one(stmt, i + 1, params[i], db);
+    for (int i = 0; i < expected; ++i) bind_one(stmt, i + 1, params[static_cast<std::size_t>(i)], db);
 }
 
 Value column_to_value(sqlite3_stmt* stmt, int i) {

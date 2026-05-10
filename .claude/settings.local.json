@@ -116,7 +116,9 @@
       "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"README.md\"\\); $bytes[0..15] | ForEach-Object { '{0:X2}' -f $_ })",
       "PowerShell($content = [System.IO.File]::ReadAllText\\(\"README.md\", [System.Text.Encoding]::Unicode\\); $utf8NoBom = New-Object System.Text.UTF8Encoding $false; [System.IO.File]::WriteAllText\\(\"README.md\", $content, $utf8NoBom\\); $bytes = [System.IO.File]::ReadAllBytes\\(\"README.md\"\\); $bytes[0..15] | ForEach-Object { '{0:X2}' -f $_ })",
       "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"BUILDING.md\"\\); $bytes[0..7] | ForEach-Object { '{0:X2}' -f $_ })",
-      "PowerShell(& \"C:\\\\Program Files\\\\CMake\\\\bin\\\\ctest.exe\" --test-dir build\\\\windows-release -R \"native_sys|native_exec|lib_exec\" --output-on-failure -C Release)"
+      "PowerShell(& \"C:\\\\Program Files\\\\CMake\\\\bin\\\\ctest.exe\" --test-dir build\\\\windows-release -R \"native_sys|native_exec|lib_exec\" --output-on-failure -C Release)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >NUL && cmake --build --preset windows-release\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\CMake\\\\bin\\\\ctest.exe\" --test-dir build\\\\windows-release --output-on-failure -C Release 2>&1 | Select-Object -Last 8)"
     ]
   }
 }

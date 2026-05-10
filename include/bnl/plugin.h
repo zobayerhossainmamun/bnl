@@ -37,8 +37,18 @@
 #include "bnl/module.h"
 #include "bnl/native_module.h"
 
+// bnl_load is declared `extern "C"` so the symbol name isn't mangled (the
+// host's dlsym/GetProcAddress finds it by a stable spelling), but it returns
+// a C++ type — bnl::ModulePtr — which clang warns about by default. The
+// pattern is intentional: plugin and host must already share an STL ABI per
+// the contract above. Silence the warning at the export macro so plugin
+// authors don't see it.
 #if defined(_WIN32)
   #define BNL_PLUGIN_EXPORT __declspec(dllexport)
+#elif defined(__clang__)
+  #define BNL_PLUGIN_EXPORT \
+      _Pragma("clang diagnostic ignored \"-Wreturn-type-c-linkage\"") \
+      __attribute__((visibility("default")))
 #else
   #define BNL_PLUGIN_EXPORT __attribute__((visibility("default")))
 #endif

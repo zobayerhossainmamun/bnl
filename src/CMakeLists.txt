@@ -69,8 +69,8 @@ target_link_libraries(bnl_core
     PRIVATE
         fmt::fmt
         nlohmann_json::nlohmann_json    # module loader parses bnl.json
-        OpenSSL::Crypto                 # stdlib/crypto.cpp + stdlib/tls.cpp
-        OpenSSL::SSL                    # stdlib/tls.cpp
+        OpenSSL::SSL                    # stdlib/tls.cpp — pulls in OpenSSL::Crypto
+                                        # transitively, which stdlib/crypto.cpp also uses
         unofficial::sqlite3::sqlite3    # stdlib/sqlite.cpp
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
