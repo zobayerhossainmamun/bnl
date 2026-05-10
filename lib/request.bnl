@@ -14,15 +14,28 @@
 //       headers: {"Content-Type": "application/json"},
 //       body:    "{\"name\":\"x\"}"
 //   }, function(err, resp) { ... });
+//
+//   // Streaming file upload — the file is read in 64KB chunks and written
+//   // with backpressure (next read waits for the previous write to flush).
+//   // Content-Length is set up-front from io.stat, so no chunked encoding.
+//   request.upload({
+//       url:    "https://api/upload",
+//       fields: {user: "alice"},
+//       file:   {path: "big.bin", name: "file", filename: "big.bin",
+//                content_type: "application/octet-stream"}
+//   }, function(err, resp) { ... });
 
-import "net" as net;
-import "tls" as tls;
-import "httpp" as httpp;
-import "url" as url;
+import "net"       as net;
+import "tls"       as tls;
+import "httpp"     as httpp;
+import "url"       as url;
+import "io"        as io;
+import "path"      as path;
+import "multipart" as mp;
 
-function _build_request(method, parsed, headers, body) {
-    // Note which headers the caller already supplied (case-insensitive),
-    // so defaults below don't overwrite them.
+// ---------- header builder shared by send + upload ------------------------
+
+function _apply_default_headers(headers, parsed) {
     var lower_keys = {};
     var k = headers.keys();
     var i = 0;
@@ -30,7 +43,6 @@ function _build_request(method, parsed, headers, body) {
         lower_keys[k[i].to_lower()] = true;
         i = i + 1;
     }
-
     if (not lower_keys.has("host")) {
         var hostline = parsed.host;
         if (parsed.port != 80 and parsed.port != 443) {
@@ -38,102 +50,35 @@ function _build_request(method, parsed, headers, body) {
         }
         headers["Host"] = hostline;
     }
-    if (not lower_keys.has("user-agent")) {
-        headers["User-Agent"] = "bnl-request/0.1";
-    }
-    if (not lower_keys.has("connection")) {
-        // Force "close" so the server signals end-of-body via EOF; keeps the
-        // client logic simple (no keep-alive parsing needed yet).
-        headers["Connection"] = "close";
-    }
-    if (not lower_keys.has("accept")) {
-        headers["Accept"] = "*/*";
-    }
-    if (body.byte_length > 0 and not lower_keys.has("content-length")) {
-        headers["Content-Length"] = str(body.byte_length);
-    }
+    if (not lower_keys.has("user-agent")) { headers["User-Agent"] = "bnl-request/0.1"; }
+    if (not lower_keys.has("connection")) { headers["Connection"] = "close"; }
+    if (not lower_keys.has("accept"))     { headers["Accept"]     = "*/*"; }
+    return lower_keys;
+}
 
+function _format_request_head(method, parsed, headers) {
     var path_q = parsed.path;
     if (parsed.query.length > 0) { path_q = path_q + "?" + parsed.query; }
-
     var out = method + " " + path_q + " HTTP/1.1\r\n";
     var keys = headers.keys();
-    i = 0;
+    var i    = 0;
     while (i < keys.length) {
         out = out + keys[i] + ": " + str(headers[keys[i]]) + "\r\n";
         i = i + 1;
     }
-    return out + "\r\n" + body;
+    return out + "\r\n";
 }
 
-function send(opts, cb) {
-    if (not opts.has("url")) {
-        cb("request: missing 'url'", null);
-        return null;
-    }
+// ---------- shared connect helper -----------------------------------------
+// Resolves DNS, opens net or tls connection, hands back the conn (or err).
 
-    var method = "GET";
-    if (opts.has("method")) { method = opts.method; }
-
-    var headers = {};
-    if (opts.has("headers")) { headers = opts.headers; }
-
-    var body = "";
-    if (opts.has("body")) { body = opts.body; }
-
-    var parsed = url.parse(opts.url);
-    if (parsed.scheme != "" and parsed.scheme != "http" and parsed.scheme != "https") {
-        cb("request: unsupported scheme '" + parsed.scheme + "'", null);
-        return null;
-    }
-    if (parsed.host.length == 0) {
-        cb("request: missing host in url", null);
-        return null;
-    }
-
-    var is_tls   = parsed.scheme == "https";
-    var tls_opts = null;
-    if (opts.has("tls")) { tls_opts = opts.tls; }
-
-    // Once a connection (plain or TLS) is in hand, the request flow is identical.
-    function _drive(conn) {
-        var state = {buf: "", done: false};
-
-        conn.on_data(function(chunk) {
-            if (state.done) { return null; }
-            state.buf = state.buf + chunk;
-            var resp = httpp.parse_response(state.buf);
-            if (resp == null) { return null; }
-            state.done = true;
-            conn.close();
-            cb(null, resp);
-        });
-
-        conn.on_end(function() {
-            if (state.done) { return null; }
-            // Connection closed — finalize parse so HTTP/1.0-style
-            // bodies (no Content-Length) can complete.
-            var resp = httpp.parse_response(state.buf, true);
-            state.done = true;
-            if (resp == null) {
-                cb("request: connection closed before complete response", null);
-            } else {
-                cb(null, resp);
-            }
-        });
-
-        conn.write(_build_request(method, parsed, headers, body));
-    }
-
-    // Both transports need an IPv4 dotted-quad; resolve hostnames first.
-    // (Works for IP literals too — uv_getaddrinfo just echoes them back.)
+function _connect(parsed, tls_opts, on_done) {
     net.resolve(parsed.host, function(rerr, ip) {
-        if (rerr != null) { cb("resolve '" + parsed.host + "': " + rerr, null); return null; }
-
-        if (is_tls) {
+        if (rerr != null) { on_done("resolve '" + parsed.host + "': " + rerr, null); return null; }
+        if (parsed.scheme == "https") {
             var done = function(cerr, conn) {
-                if (cerr != null) { cb("tls " + parsed.host + ":" + str(parsed.port) + ": " + cerr, null); return null; }
-                _drive(conn);
+                if (cerr != null) { on_done("tls " + parsed.host + ":" + str(parsed.port) + ": " + cerr, null); return null; }
+                on_done(null, conn);
             };
             if (tls_opts == null) {
                 tls.connect(parsed.host, ip, parsed.port, done);
@@ -142,10 +87,166 @@ function send(opts, cb) {
             }
         } else {
             net.tcp_connect(ip, parsed.port, function(cerr, conn) {
-                if (cerr != null) { cb("connect " + ip + ":" + str(parsed.port) + ": " + cerr, null); return null; }
-                _drive(conn);
+                if (cerr != null) { on_done("connect " + ip + ":" + str(parsed.port) + ": " + cerr, null); return null; }
+                on_done(null, conn);
             });
         }
+    });
+}
+
+// ---------- shared response sink ------------------------------------------
+// Wires conn.on_data + conn.on_end to accumulate + parse the response, then
+// fires cb(err, resp) once. Set this up BEFORE writing the request body so
+// no bytes are missed.
+
+function _install_response_sink(conn, cb) {
+    var state = {buf: "", done: false};
+    conn.on_data(function(chunk) {
+        if (state.done) { return null; }
+        state.buf = state.buf + chunk;
+        var resp = httpp.parse_response(state.buf);
+        if (resp == null) { return null; }
+        state.done = true;
+        conn.close();
+        cb(null, resp);
+    });
+    conn.on_end(function() {
+        if (state.done) { return null; }
+        var resp = httpp.parse_response(state.buf, true);
+        state.done = true;
+        if (resp == null) {
+            cb("request: connection closed before complete response", null);
+        } else {
+            cb(null, resp);
+        }
+    });
+}
+
+// ---------- send (buffered body) ------------------------------------------
+
+function send(opts, cb) {
+    if (not opts.has("url")) { cb("request: missing 'url'", null); return null; }
+
+    var method = "GET";
+    if (opts.has("method")) { method = opts.method; }
+    var headers = {};
+    if (opts.has("headers")) { headers = opts.headers; }
+    var body = "";
+    if (opts.has("body")) { body = opts.body; }
+
+    var parsed = url.parse(opts.url);
+    if (parsed.scheme != "" and parsed.scheme != "http" and parsed.scheme != "https") {
+        cb("request: unsupported scheme '" + parsed.scheme + "'", null);
+        return null;
+    }
+    if (parsed.host.length == 0) { cb("request: missing host in url", null); return null; }
+
+    var lower = _apply_default_headers(headers, parsed);
+    if (body.byte_length > 0 and not lower.has("content-length")) {
+        headers["Content-Length"] = str(body.byte_length);
+    }
+
+    var tls_opts = null;
+    if (opts.has("tls")) { tls_opts = opts.tls; }
+
+    _connect(parsed, tls_opts, function(err, conn) {
+        if (err != null) { cb(err, null); return null; }
+        _install_response_sink(conn, cb);
+        conn.write(_format_request_head(method, parsed, headers) + body);
+    });
+    return null;
+}
+
+// ---------- upload (streaming file body) ----------------------------------
+
+function upload(opts, cb) {
+    if (not opts.has("url"))  { cb("upload: missing 'url'", null);  return null; }
+    if (not opts.has("file")) { cb("upload: missing 'file'", null); return null; }
+    var file = opts.file;
+    if (not file.has("path")) { cb("upload: missing 'file.path'", null); return null; }
+    if (not file.has("name")) { cb("upload: missing 'file.name'", null); return null; }
+
+    var file_path = file.path;
+    var filename  = path.basename(file_path);
+    if (file.has("filename")) { filename = file.filename; }
+    var content_type = "application/octet-stream";
+    if (file.has("content_type")) { content_type = file.content_type; }
+
+    var fields = {};
+    if (opts.has("fields")) { fields = opts.fields; }
+
+    var method = "POST";
+    if (opts.has("method")) { method = opts.method; }
+
+    var headers = {};
+    if (opts.has("headers")) { headers = opts.headers; }
+
+    var parsed = url.parse(opts.url);
+    if (parsed.scheme != "http" and parsed.scheme != "https") {
+        cb("upload: unsupported scheme '" + parsed.scheme + "'", null);
+        return null;
+    }
+
+    // Stat the file up front so Content-Length is known before we write the
+    // request line.
+    var st = io.stat(file_path);
+    var file_bytes = st.bytes;
+
+    var boundary = mp.generate_boundary();
+    var text_prefix = "";
+    var fkeys = fields.keys();
+    var i = 0;
+    while (i < fkeys.length) {
+        text_prefix = text_prefix + mp.build_field_part(boundary, fkeys[i], fields[fkeys[i]]);
+        i = i + 1;
+    }
+    var file_preamble = mp.build_file_preamble(boundary, file.name, filename, content_type);
+    var epilogue      = mp.build_epilogue(boundary);
+
+    var content_length = text_prefix.byte_length + file_preamble.byte_length
+                       + file_bytes              + epilogue.byte_length;
+
+    headers["Content-Type"]   = "multipart/form-data; boundary=" + boundary;
+    headers["Content-Length"] = str(content_length);
+    _apply_default_headers(headers, parsed);
+
+    var tls_opts = null;
+    if (opts.has("tls")) { tls_opts = opts.tls; }
+
+    _connect(parsed, tls_opts, function(err, conn) {
+        if (err != null) { cb(err, null); return null; }
+        _install_response_sink(conn, cb);
+
+        // Headers + multipart preamble (text fields + file part headers) all go
+        // out as one prefix write, so we only stream the file body itself.
+        var prefix = _format_request_head(method, parsed, headers)
+                   + text_prefix + file_preamble;
+
+        conn.write(prefix, function() {
+            var stream = io.open_read(file_path);
+            // Backpressure: each conn.write only completes after the kernel
+            // has accepted the bytes. We wait for that before reading the
+            // next chunk, so memory usage stays bounded regardless of file
+            // size or network speed.
+            function pump() {
+                stream.read(65536, function(rerr, chunk) {
+                    if (rerr != null) {
+                        stream.close();
+                        conn.close();
+                        cb("upload read '" + file_path + "': " + rerr, null);
+                        return null;
+                    }
+                    if (chunk == null) {
+                        // EOF — flush epilogue, then wait for response.
+                        stream.close();
+                        conn.write(epilogue);
+                        return null;
+                    }
+                    conn.write(chunk, function() { pump(); });
+                });
+            }
+            pump();
+        });
     });
     return null;
 }
@@ -159,5 +260,6 @@ function post(target, body, cb) {
 }
 
 // Bilingual aliases.
-var পাঠাও  = send;     // "send"
-var আনো    = get;      // "fetch"
+var পাঠাও     = send;       // "send"
+var আনো       = get;        // "fetch"
+var আপলোড     = upload;     // "upload"

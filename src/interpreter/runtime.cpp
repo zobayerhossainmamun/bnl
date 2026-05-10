@@ -32,6 +32,7 @@ Interpreter::Interpreter()
     register_httpp (*this);
     register_net   (*this);
     register_tls   (*this);
+    register_exec  (*this);
     register_json  (*this);
 }
 

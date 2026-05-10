@@ -34,6 +34,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     native/httpp.cpp
     native/net.cpp
     native/tls.cpp
+    native/exec.cpp
     native/json.cpp
 )
 

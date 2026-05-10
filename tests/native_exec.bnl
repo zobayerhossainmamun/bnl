@@ -1,0 +1,26 @@
+// Child processes via libuv — sync run + async spawn.
+// Uses Windows cmd; not yet portable to POSIX shells.
+import "exec" as exec;
+
+// ----- sync: capture exit code + stdout ------------------------------------
+var r = exec.run("cmd", ["/c", "echo hi"]);
+print("sync_code:",   r.code);
+print("sync_signal:", r.signal);
+print("sync_starts:", r.stdout.starts_with("hi"));
+print("sync_err_empty:", r.stderr.length == 0);
+
+// ----- sync: non-zero exit code is reported, not thrown --------------------
+var r2 = exec.run("cmd", ["/c", "exit 7"]);
+print("nonzero_code:", r2.code);
+
+// ----- async: accumulate stdout, verify on exit ----------------------------
+// Chunk boundaries are non-deterministic, so we check the assembled buffer
+// inside on_exit instead of per-chunk.
+var buf = "";
+var p = exec.spawn("cmd", ["/c", "echo alpha && echo beta"], null, function(code, sig) {
+    print("async_code:", code);
+    print("has_alpha:",  buf.index_of("alpha") >= 0);
+    print("has_beta:",   buf.index_of("beta")  >= 0);
+});
+p.stdout.on_data(function(chunk) { buf = buf + chunk; });
+print("async_pid_ok:", p.pid > 0);

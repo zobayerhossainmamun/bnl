@@ -2,6 +2,7 @@
 
 #include <fmt/core.h>
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 
 #include <cstdio>
 #include <stdexcept>
@@ -66,6 +67,19 @@ void register_crypto(Interpreter& interp) {
         .add_function("md5", 1,
             [](Interpreter&, std::vector<Value> args) -> Value {
                 return Value{hash_with(EVP_md5(), as_string_arg(args[0], "crypto.md5"))};
+            })
+        // crypto.random_hex(n) -> 2n-char hex string from n cryptographic random bytes.
+        .add_function("random_hex", 1,
+            [](Interpreter&, std::vector<Value> args) -> Value {
+                if (!args[0].is_number())
+                    throw std::runtime_error("crypto.random_hex(n): n must be a number");
+                int n = static_cast<int>(args[0].as_number());
+                if (n <= 0 || n > 4096)
+                    throw std::runtime_error("crypto.random_hex(n): n must be in 1..4096");
+                std::vector<unsigned char> buf(static_cast<std::size_t>(n));
+                if (RAND_bytes(buf.data(), n) != 1)
+                    throw std::runtime_error("crypto.random_hex: RAND_bytes failed");
+                return Value{digest_to_hex(buf.data(), static_cast<unsigned int>(n))};
             })
         .build();
 

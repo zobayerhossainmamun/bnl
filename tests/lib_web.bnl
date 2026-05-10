@@ -1,0 +1,113 @@
+// Coverage for the enriched web.serve API:
+//  - req.path / req.query parsing
+//  - parse_json + json response builder
+//  - parse_form
+//  - async req.respond
+//  - handler error → 500
+//  - streaming response (body_stream + body_length)
+//
+// Requests are chained sequentially so output order is deterministic.
+import "web"        as web;
+import "request"    as request;
+import "fileSystem" as fs;
+import "io"         as io;
+import "json"       as json;
+import "url"        as url;
+
+var stream_file = "_bnl_web_stream.tmp";
+fs.write_text(stream_file, "STREAM-BODY: abcdefghij\n");
+
+var server = web.serve({port: 0}, function(req) {
+    if (req.path == "/echo_path") {
+        return web.json({path: req.path, q: req.query["q"]});
+    }
+    if (req.path == "/echo_json") {
+        return web.json({got: web.parse_json(req)});
+    }
+    if (req.path == "/echo_form") {
+        return web.json(web.parse_form(req));
+    }
+    if (req.path == "/async") {
+        // Defer the response by hopping through a self-request — same loop,
+        // but proves the async req.respond path works rather than relying on
+        // a sync return.
+        request.get("http://127.0.0.1:" + str(server.port) + "/echo_path?q=ASYNC",
+                    function(err, up) {
+            req.respond(web.json({inner: json.parse(up.body)}));
+        });
+        return null;
+    }
+    if (req.path == "/boom") {
+        return crash_undefined_function();   // deliberate throw → expect 500
+    }
+    if (req.path == "/file") {
+        var st = io.stat(stream_file);
+        return {
+            status:      200,
+            headers:     {"Content-Type": "text/plain"},
+            body_length: st.bytes,
+            body_stream: io.open_read(stream_file)
+        };
+    }
+    return {status: 404, body: "nope"};
+});
+
+print("port_ok:", server.port > 0);
+
+var base = "http://127.0.0.1:" + str(server.port);
+
+function step6() {
+    request.get(base + "/file", function(err, r) {
+        print("stream_status:", r.status);
+        print("stream_body:",   r.body);
+        server.close();
+        fs.remove(stream_file);
+    });
+}
+function step5() {
+    request.get(base + "/boom", function(err, r) {
+        print("boom_status:", r.status);
+        step6();
+    });
+}
+function step4() {
+    request.get(base + "/async", function(err, r) {
+        var d = json.parse(r.body);
+        print("async_status:", r.status);
+        print("async_inner_q:", d.inner.q);
+        step5();
+    });
+}
+function step3() {
+    request.send({
+        url: base + "/echo_form", method: "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body: url.build_query({a: "1", b: "x y"})
+    }, function(err, r) {
+        var d = json.parse(r.body);
+        print("form_a:", d.a);
+        print("form_b:", d.b);
+        step4();
+    });
+}
+function step2() {
+    request.send({
+        url: base + "/echo_json", method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: json.stringify({n: 42})
+    }, function(err, r) {
+        var d = json.parse(r.body);
+        print("ctype:",  r.header("content-type"));
+        print("json_n:", d.got.n);
+        step3();
+    });
+}
+function step1() {
+    request.get(base + "/echo_path?q=hello", function(err, r) {
+        var d = json.parse(r.body);
+        print("path:", d.path);
+        print("q:",    d.q);
+        step2();
+    });
+}
+step1();

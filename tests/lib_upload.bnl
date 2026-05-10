@@ -1,0 +1,64 @@
+// In-process upload roundtrip:
+//   - tmp file written via fileSystem
+//   - web.serve receives the request, parses multipart, returns a JSON summary
+//   - request.upload streams the file in 64KB chunks with backpressure
+//   - client verifies the server's view of the upload matches what was sent.
+import "fileSystem" as fs;
+import "web"        as web;
+import "request"    as request;
+import "json"       as json;
+
+// Build a small but multi-chunk-friendly fixture so the streaming path runs
+// (file is bigger than 0 bytes — actual chunking only matters for big files
+// but the code path is identical).
+var src = "_bnl_upload_src.tmp";
+fs.write_text(src, "Hello multipart streaming upload!\nLine 2\nLine 3\n");
+var src_size = fs.stat(src).bytes;
+
+var server = web.serve({port: 0}, function(req) {
+    var parts = web.parse_multipart(req);
+    if (parts == null) {
+        return {status: 400, body: "not multipart"};
+    }
+    var f0 = parts.files[0];
+    var summary = {
+        method:      req.method,
+        user:        parts.fields["user"],
+        files_count: parts.files.length,
+        file_name:   f0.name,
+        file_filename: f0.filename,
+        file_ctype:  f0.content_type,
+        file_bytes:  f0.body.byte_length,
+        file_body:   f0.body
+    };
+    return {
+        status:  200,
+        headers: {"Content-Type": "application/json"},
+        body:    json.stringify(summary)
+    };
+});
+
+print("port_ok:", server.port > 0);
+
+var target = "http://127.0.0.1:" + str(server.port) + "/upload";
+
+request.upload({
+    url:    target,
+    fields: {user: "alice"},
+    file:   {path: src, name: "file", filename: "src.txt",
+             content_type: "text/plain"}
+}, function(err, resp) {
+    if (err != null) { print("err:", err); server.close(); fs.remove(src); return null; }
+    var summary = json.parse(resp.body);
+    print("status:",     resp.status);
+    print("method:",     summary.method);
+    print("user:",       summary.user);
+    print("count:",      summary.files_count);
+    print("name:",       summary.file_name);
+    print("filename:",   summary.file_filename);
+    print("ctype:",      summary.file_ctype);
+    print("size_match:", summary.file_bytes == src_size);
+    print("body_match:", summary.file_body == fs.read_text(src));
+    server.close();
+    fs.remove(src);
+});

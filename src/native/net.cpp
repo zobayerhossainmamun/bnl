@@ -92,26 +92,41 @@ void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     }
 }
 
-// uv_write request lifetime: write_req owns its data buffer. Both freed in cb.
+// uv_write request lifetime: write_req owns its data buffer + optional bnl
+// callback that fires when the bytes have actually been flushed to the kernel.
+// Without the callback callers can pile up writes faster than the network
+// drains; the callback is what enables backpressure for streaming uploads.
 struct WriteReq {
-    uv_write_t  req{};
-    std::string buf;   // keeps data alive until write completes
+    uv_write_t   req{};
+    std::string  buf;
+    Interpreter* interp = nullptr;
+    CallablePtr  on_done;
 };
 
 void on_write_done(uv_write_t* req, int /*status*/) {
-    delete static_cast<WriteReq*>(req->data);
+    std::unique_ptr<WriteReq> w(static_cast<WriteReq*>(req->data));
+    if (w->on_done && w->interp)
+        invoke_callback(*w->interp, w->on_done, {});
 }
 
 ModulePtr build_connection_module(Connection* c) {
     auto alive = c->alive;
 
-    auto write_fn = [c, alive](Interpreter&, std::vector<Value> args) -> Value {
+    // connection.write(data [, on_done])
+    //   on_done() fires when the kernel has accepted the bytes, so callers can
+    //   gate the next read+write on it. Omitting on_done is fire-and-forget.
+    auto write_fn = [c, alive](Interpreter& interp, std::vector<Value> args) -> Value {
         if (!*alive)
             throw std::runtime_error("connection.write: connection is closed");
+        if (args.empty() || args.size() > 2)
+            throw std::runtime_error("connection.write: expects 1 or 2 arguments");
         if (!args[0].is_string())
-            throw std::runtime_error("connection.write: argument must be a string");
+            throw std::runtime_error("connection.write: data must be a string");
         auto* w = new WriteReq{};
-        w->buf  = args[0].as_string();
+        w->buf    = args[0].as_string();
+        w->interp = &interp;
+        if (args.size() == 2 && !args[1].is_null())
+            w->on_done = to_callback(args[1], "connection.write");
         w->req.data = w;
         uv_buf_t buf = uv_buf_init(w->buf.data(), static_cast<unsigned int>(w->buf.size()));
         int rc = uv_write(&w->req, reinterpret_cast<uv_stream_t*>(&c->handle), &buf, 1, on_write_done);
@@ -143,7 +158,7 @@ ModulePtr build_connection_module(Connection* c) {
     };
 
     return NativeModule("tcp_connection")
-        .add_function("write",   1, write_fn)
+        .add_function("write",  -1, write_fn)
         .add_function("close",   0, close_fn)
         .add_function("on_data", 1, on_data_fn)
         .add_function("on_end",  1, on_end_fn)

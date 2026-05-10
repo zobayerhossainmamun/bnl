@@ -238,6 +238,116 @@ struct AsyncWrite {
     Interpreter* interp;
 };
 
+// ---------- pull-based file read stream ------------------------------------
+//
+// io.open_read(path) returns a module with read(size, cb) and close().
+// Each read submits one uv_fs_read on the threadpool. Caller drives the
+// pacing — exactly what request.upload needs to align reads with conn.write
+// callbacks for backpressure.
+
+struct ReadStream {
+    uv_loop_t*            loop = nullptr;
+    Interpreter*          interp = nullptr;
+    uv_file               fd = -1;
+    int64_t               offset = 0;
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
+};
+
+struct AsyncReadChunk {
+    ReadStream*  stream = nullptr;
+    std::size_t  request_size = 0;
+    std::string  buf;          // resized to actual bytes read
+    std::string  error;
+    bool         eof = false;
+    CallablePtr  callback;
+    Interpreter* interp = nullptr;
+    std::shared_ptr<bool> stream_alive;
+};
+
+void on_read_chunk_work(uv_work_t* req) {
+    auto* w = static_cast<AsyncReadChunk*>(req->data);
+    if (!*w->stream_alive) { w->error = "stream is closed"; return; }
+    w->buf.resize(w->request_size);
+    uv_buf_t b = uv_buf_init(w->buf.data(),
+                             static_cast<unsigned int>(w->request_size));
+    uv_fs_t  read_req;
+    int n = uv_fs_read(w->stream->loop, &read_req, w->stream->fd,
+                       &b, 1, w->stream->offset, nullptr);
+    uv_fs_req_cleanup(&read_req);
+    if (n < 0) {
+        w->error = uv_strerror(n);
+        return;
+    }
+    if (n == 0) {
+        w->eof = true;
+        w->buf.clear();
+        return;
+    }
+    w->buf.resize(static_cast<std::size_t>(n));
+    w->stream->offset += n;
+}
+
+void on_read_chunk_done(uv_work_t* req, int /*status*/) {
+    std::unique_ptr<AsyncReadChunk> w (static_cast<AsyncReadChunk*>(req->data));
+    std::unique_ptr<uv_work_t>      rq(req);
+    std::vector<Value> args;
+    if (!w->error.empty()) {
+        args.push_back(Value{w->error});
+        args.push_back(Value{});
+    } else if (w->eof) {
+        args.push_back(Value{});      // err
+        args.push_back(Value{});      // chunk null = EOF
+    } else {
+        args.push_back(Value{});
+        args.push_back(Value{std::move(w->buf)});
+    }
+    invoke_callback(*w->interp, w->callback, std::move(args));
+}
+
+ModulePtr build_read_stream_module(ReadStream* s) {
+    auto alive = s->alive;
+    auto loop  = s->loop;
+
+    auto read_fn = [s, alive](Interpreter& interp, std::vector<Value> args) -> Value {
+        if (!*alive) throw std::runtime_error("read_stream.read: stream is closed");
+        if (args.size() != 2)
+            throw std::runtime_error("read_stream.read(size, cb): expects 2 arguments");
+        if (!args[0].is_number())
+            throw std::runtime_error("read_stream.read: size must be a number");
+        auto cb = to_callback(args[1], "read_stream.read");
+
+        auto* w = new AsyncReadChunk{};
+        w->stream       = s;
+        w->request_size = static_cast<std::size_t>(args[0].as_number());
+        w->callback     = std::move(cb);
+        w->interp       = &interp;
+        w->stream_alive = s->alive;
+
+        auto* req = new uv_work_t{};
+        req->data = w;
+        uv_queue_work(s->loop, req, on_read_chunk_work, on_read_chunk_done);
+        return Value{};
+    };
+
+    auto close_fn = [s, alive, loop](Interpreter&, std::vector<Value>) -> Value {
+        if (!*alive) return Value{};
+        *alive = false;
+        if (s->fd >= 0) {
+            uv_fs_t req;
+            uv_fs_close(loop, &req, s->fd, nullptr);
+            uv_fs_req_cleanup(&req);
+            s->fd = -1;
+        }
+        delete s;
+        return Value{};
+    };
+
+    return NativeModule("read_stream")
+        .add_function("read",  2, read_fn)
+        .add_function("close", 0, close_fn)
+        .build();
+}
+
 void on_write_work(uv_work_t* req) {
     auto* w = static_cast<AsyncWrite*>(req->data);
     try {
@@ -430,6 +540,26 @@ void register_io(Interpreter& interp) {
                     std::move(cb), &interp};
                 uv_queue_work(interp.loop(), req, on_write_work, on_write_done);
                 return Value{};
+            })
+
+        // io.open_read(path) -> stream module {read(size, cb), close()}.
+        // Pull-based: each .read(n, cb) submits one uv_fs_read on the
+        // threadpool. Designed for streaming uploads — pair each .read with
+        // a conn.write(chunk, on_done) to get natural backpressure.
+        .add_function("open_read", 1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string path = to_path_string(args[0]);
+                uv_fs_t open_req;
+                int fd = uv_fs_open(interp.loop(), &open_req, path.c_str(),
+                                    UV_FS_O_RDONLY, 0, nullptr);
+                uv_fs_req_cleanup(&open_req);
+                if (fd < 0) throw_uv(fd, "open_read", path);
+
+                auto* s = new ReadStream{};
+                s->loop   = interp.loop();
+                s->interp = &interp;
+                s->fd     = fd;
+                return Value{build_read_stream_module(s)};
             })
 
         .build();

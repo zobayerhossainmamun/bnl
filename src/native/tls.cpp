@@ -132,21 +132,30 @@ void close_once(TlsConn* c) {
 // ---------- write to network -----------------------------------------------
 
 struct WriteReq {
-    uv_write_t  req{};
-    std::string buf;
+    uv_write_t   req{};
+    std::string  buf;
+    Interpreter* interp = nullptr;
+    CallablePtr  on_done;       // fired when this particular write flushes
 };
 
 void on_write_done(uv_write_t* req, int /*status*/) {
-    delete static_cast<WriteReq*>(req->data);
+    std::unique_ptr<WriteReq> w(static_cast<WriteReq*>(req->data));
+    if (w->on_done && w->interp)
+        invoke_callback(*w->interp, w->on_done, {});
 }
 
-// Drain the network BIO into one or more uv_write calls. Returns false if
-// uv_write fails.
-bool flush_network(TlsConn* c) {
+// Drain the network BIO into one or more uv_write calls. Returns false on
+// uv_write error. If on_done is supplied, it's attached to the last queued
+// write so the caller learns when the bytes have actually flushed (used for
+// streaming-upload backpressure). One SSL_write may cause multiple uv_writes;
+// uv_write completions fire in order, so attaching to the last is correct.
+bool flush_network(TlsConn* c, Interpreter* interp = nullptr,
+                   CallablePtr on_done = nullptr) {
+    WriteReq* last = nullptr;
     while (true) {
         char chunk[4096];
         int n = BIO_read(c->network_bio, chunk, sizeof(chunk));
-        if (n <= 0) return true;
+        if (n <= 0) break;
         auto* w = new WriteReq{};
         w->buf.assign(chunk, n);
         w->req.data = w;
@@ -157,7 +166,19 @@ bool flush_network(TlsConn* c) {
             delete w;
             return false;
         }
+        last = w;
     }
+    if (on_done) {
+        if (last) {
+            last->interp  = interp;
+            last->on_done = std::move(on_done);
+        } else if (interp) {
+            // Nothing was pending in the BIO — fire immediately so callers
+            // don't deadlock waiting for a flush that never had data.
+            invoke_callback(*interp, on_done, {});
+        }
+    }
+    return true;
 }
 
 // ---------- pump ------------------------------------------------------------
@@ -286,16 +307,25 @@ void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
 ModulePtr build_connection_module(TlsConn* c) {
     auto alive = c->alive;
 
-    auto write_fn = [c, alive](Interpreter&, std::vector<Value> args) -> Value {
+    // tls.write(data [, on_done]) — same backpressure contract as net.write:
+    // on_done() fires once the encrypted bytes have actually been kernel-flushed.
+    auto write_fn = [c, alive](Interpreter& interp, std::vector<Value> args) -> Value {
         if (!*alive) throw std::runtime_error("tls.write: connection is closed");
-        if (!args[0].is_string()) throw std::runtime_error("tls.write: argument must be a string");
+        if (args.empty() || args.size() > 2)
+            throw std::runtime_error("tls.write: expects 1 or 2 arguments");
+        if (!args[0].is_string())
+            throw std::runtime_error("tls.write: data must be a string");
+        CallablePtr on_done;
+        if (args.size() == 2 && !args[1].is_null())
+            on_done = to_callback(args[1], "tls.write");
+
         const std::string& s = args[0].as_string();
         int rc = SSL_write(c->ssl, s.data(), static_cast<int>(s.size()));
         if (rc <= 0) {
             (void)SSL_get_error(c->ssl, rc);
             throw std::runtime_error("tls.write: SSL_write failed: " + ssl_err());
         }
-        if (!flush_network(c))
+        if (!flush_network(c, &interp, std::move(on_done)))
             throw std::runtime_error("tls.write: uv_write failed");
         return Value{};
     };
@@ -321,7 +351,7 @@ ModulePtr build_connection_module(TlsConn* c) {
     };
 
     return NativeModule("tls_connection")
-        .add_function("write",   1, write_fn)
+        .add_function("write",  -1, write_fn)
         .add_function("close",   0, close_fn)
         .add_function("on_data", 1, on_data_fn)
         .add_function("on_end",  1, on_end_fn)

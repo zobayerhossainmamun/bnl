@@ -83,6 +83,28 @@ void Interpreter::register_builtins() {
             return Value{std::string(1, static_cast<char>(n))};
         });
     globals_->define("chr", Value{chr_fn});
+
+    // try_call(thunk, on_err): call thunk() with no args; if it throws, call
+    // on_err(message_string). Returns thunk()'s return value, or on_err's
+    // return value when the thunk threw. bnl has no try/catch syntax — this
+    // is the escape hatch for code (like web.serve) that must turn handler
+    // errors into responses instead of letting them crash the loop.
+    auto try_call_fn = std::make_shared<NativeFunction>(
+        "try_call", 2,
+        [](Interpreter& interp, std::vector<Value> args) -> Value {
+            if (!args[0].is_callable())
+                throw std::runtime_error("try_call: first arg must be a function");
+            if (!args[1].is_callable())
+                throw std::runtime_error("try_call: second arg must be a function");
+            try {
+                return args[0].as_callable()->call(interp, {});
+            } catch (const RuntimeError& e) {
+                return args[1].as_callable()->call(interp, { Value{std::string(e.what())} });
+            } catch (const std::exception& e) {
+                return args[1].as_callable()->call(interp, { Value{std::string(e.what())} });
+            }
+        });
+    globals_->define("try_call", Value{try_call_fn});
 }
 
 }  // namespace bnl
