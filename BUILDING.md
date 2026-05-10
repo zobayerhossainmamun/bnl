@@ -72,7 +72,7 @@ xcode-select --install                                 # command-line tools (cla
 brew install cmake ninja git                           # if not already present
 ```
 
-Bnlang on macOS currently targets **arm64 only** (Apple Silicon). The presets use the `arm64-osx` triplet.
+Both **arm64 (Apple Silicon)** and **x64 (Intel)** are supported via separate presets. Cross-compiling from arm64 to x64 (or vice versa) works with the standard Apple toolchain — vcpkg will build all deps for the target triplet.
 
 ---
 
@@ -112,45 +112,164 @@ vcpkg uses manifest mode here: it reads `vcpkg.json` from the project root and i
 | `windows-x86` | Debug | `x86-windows` | dev — dynamic CRT |
 | `linux` | Debug | `x64-linux` | dev |
 | `linux-x86` | Debug | `x86-linux` | dev — adds `-m32` |
-| `macos` | Debug | `arm64-osx` | dev |
+| `macos` | Debug | `arm64-osx` | dev — Apple Silicon |
+| `macos-x64` | Debug | `x64-osx` | dev — Intel Mac |
 | `windows-release` | Release | `x64-windows-static` | static CRT + static deps |
 | `windows-x86-release` | Release | `x86-windows-static` | static CRT + static deps |
 | `linux-release` | Release | `x64-linux` | + static libstdc++/libgcc |
 | `linux-x86-release` | Release | `x86-linux` | + `-m32` + static libstdc++/libgcc |
-| `macos-release` | Release | `arm64-osx` | + dead-code stripping |
+| `macos-release` | Release | `arm64-osx` | Apple Silicon + dead-code stripping |
+| `macos-x64-release` | Release | `x64-osx` | Intel Mac + dead-code stripping |
 
 Release presets produce self-contained binaries — end users don't need to install a runtime (Windows: no VC++ Redistributable; Linux: works against the build host's glibc and older).
 
 ---
 
-## Build commands
+## Per-OS recipes
 
-### Configure + build
+Each block below is a complete copy-paste sequence: configure → build → test → run. Each `cmake --preset` writes to its own `build/<preset>/` directory, so debug and release builds (and per-arch builds) don't collide.
+
+### Output location
+
+Everything lands in `build/<preset>/bin/`. File names per platform:
+
+| Platform | CLI | Runtime (FFI=ON) | Plugin sample |
+|---|---|---|---|
+| Windows | `bnl.exe` | `bnl_core.dll` | `mathx.dll` |
+| Linux | `bnl` | `libbnl_core.so` | `libmathx.so` |
+| macOS | `bnl` | `libbnl_core.dylib` | `libmathx.dylib` |
+
+### Windows x64
+
+Run from a **x64 Developer Command Prompt** (or `call vcvarsall.bat x64` first):
+
+**Dev (Debug)**
+
+```bat
+cmake --preset windows
+cmake --build --preset windows
+ctest --test-dir build\windows --output-on-failure -C Debug
+build\windows\bin\bnl.exe tests\lang\arithmetic.bnl
+```
+
+**Release (ship)**
+
+```bat
+cmake --preset windows-release
+cmake --build --preset windows-release
+ctest --test-dir build\windows-release --output-on-failure -C Release
+build\windows-release\bin\bnl.exe tests\lang\arithmetic.bnl
+```
+
+### Windows x86
+
+Run from a **x86 Native Tools Command Prompt** (or `call vcvarsall.bat x86` first):
+
+**Dev (Debug)**
+
+```bat
+cmake --preset windows-x86
+cmake --build --preset windows-x86
+ctest --test-dir build\windows-x86 --output-on-failure -C Debug
+build\windows-x86\bin\bnl.exe tests\lang\arithmetic.bnl
+```
+
+**Release (ship)**
+
+```bat
+cmake --preset windows-x86-release
+cmake --build --preset windows-x86-release
+ctest --test-dir build\windows-x86-release --output-on-failure -C Release
+build\windows-x86-release\bin\bnl.exe tests\lang\arithmetic.bnl
+```
+
+### Linux x64
+
+**Dev (Debug)**
+
+```sh
+cmake --preset linux
+cmake --build --preset linux
+ctest --test-dir build/linux --output-on-failure
+./build/linux/bin/bnl tests/lang/arithmetic.bnl
+```
+
+**Release (ship)**
 
 ```sh
 cmake --preset linux-release
 cmake --build --preset linux-release
+ctest --test-dir build/linux-release --output-on-failure
+./build/linux-release/bin/bnl tests/lang/arithmetic.bnl
 ```
 
-(Substitute any preset name.) On Windows, run these from a Developer Command Prompt that matches the target arch.
+### Linux x86
 
-### Output location
+Needs `gcc-multilib g++-multilib` installed (see Ubuntu section above).
 
-Everything lands in `build/<preset>/bin/`:
+**Dev (Debug)**
 
+```sh
+cmake --preset linux-x86
+cmake --build --preset linux-x86
+ctest --test-dir build/linux-x86 --output-on-failure
+./build/linux-x86/bin/bnl tests/lang/arithmetic.bnl
 ```
-build/linux-release/bin/
-├── bnl                  # the CLI / interpreter
-├── libbnl_core.so       # shared runtime  (only when BNL_ENABLE_FFI=ON)
-├── embed_demo           # examples/embed sample host
-└── libmathx.so          # examples/plugin_native sample plugin
+
+**Release (ship)**
+
+```sh
+cmake --preset linux-x86-release
+cmake --build --preset linux-x86-release
+ctest --test-dir build/linux-x86-release --output-on-failure
+./build/linux-x86-release/bin/bnl tests/lang/arithmetic.bnl
 ```
 
-On Windows the binaries are `bnl.exe`, `bnl_core.dll`, `embed_demo.exe`, `mathx.dll`. On macOS, `libbnl_core.dylib` and `libmathx.dylib`.
+### macOS arm64 (Apple Silicon)
 
-### Clean build
+**Dev (Debug)**
 
-Just delete the build directory:
+```sh
+cmake --preset macos
+cmake --build --preset macos
+ctest --test-dir build/macos --output-on-failure
+./build/macos/bin/bnl tests/lang/arithmetic.bnl
+```
+
+**Release (ship)**
+
+```sh
+cmake --preset macos-release
+cmake --build --preset macos-release
+ctest --test-dir build/macos-release --output-on-failure
+./build/macos-release/bin/bnl tests/lang/arithmetic.bnl
+```
+
+### macOS x64 (Intel)
+
+Builds cleanly on Apple Silicon as a cross-compile, and natively on Intel Macs. Note: on Apple Silicon you can build x64 binaries but won't be able to *run* them without Rosetta — `ctest` will fail to execute the tests in that case.
+
+**Dev (Debug)**
+
+```sh
+cmake --preset macos-x64
+cmake --build --preset macos-x64
+ctest --test-dir build/macos-x64 --output-on-failure       # native Intel only
+./build/macos-x64/bin/bnl tests/lang/arithmetic.bnl
+```
+
+**Release (ship)**
+
+```sh
+cmake --preset macos-x64-release
+cmake --build --preset macos-x64-release
+ctest --test-dir build/macos-x64-release --output-on-failure   # native Intel only
+./build/macos-x64-release/bin/bnl tests/lang/arithmetic.bnl
+```
+
+### Clean build (any preset)
+
+Just delete the build directory and reconfigure. vcpkg's binary cache (`~/.cache/vcpkg/archives/` on Linux/macOS, `%LOCALAPPDATA%\vcpkg\archives\` on Windows) survives, so subsequent configures don't re-compile OpenSSL.
 
 ```sh
 rm -rf build/linux-release
@@ -158,7 +277,18 @@ cmake --preset linux-release
 cmake --build --preset linux-release
 ```
 
-vcpkg's binary cache (`~/.cache/vcpkg/archives/` on Linux/macOS, `%LOCALAPPDATA%\vcpkg\archives\` on Windows) survives a build-dir wipe, so subsequent configures don't re-compile OpenSSL etc.
+On Windows: `rmdir /s /q build\windows-release` (cmd) or `Remove-Item -Recurse -Force build\windows-release` (PowerShell).
+
+### Running a single test
+
+`ctest -R <regex>` filters tests by name:
+
+```sh
+ctest --test-dir build/linux-release -R native_http --output-on-failure
+ctest --test-dir build/linux-release -R "lib_.*" --output-on-failure
+```
+
+Expect **39 tests total** with `BNL_ENABLE_FFI=ON` (the default); **37** with `BNL_ENABLE_FFI=OFF` (the two FFI integration tests are skipped automatically).
 
 ---
 
@@ -175,42 +305,12 @@ Controls whether `bnl_core` is built as a shared or static library.
 | `ON` (default) | `bnl` + `bnl_core.{dll,so,dylib}` ship side by side; native plugins can be loaded at runtime via `import "name"` | normal builds, plugin development, production with a package ecosystem |
 | `OFF` | `bnl` only — `bnl_core` links statically into the CLI; native plugin `import` raises a clear runtime error | single-binary distributions; minimal footprint; reproducible-build sensitive contexts |
 
+Add it to any preset's configure step:
+
 ```sh
 cmake --preset linux-release -DBNL_ENABLE_FFI=OFF
 cmake --build --preset linux-release
-# build/linux-release/bin/bnl is now a single static executable, ~no .so files
-```
-
----
-
-## Running tests
-
-```sh
-ctest --test-dir build/linux-release --output-on-failure
-```
-
-Expect **39 tests** across language semantics, the built-in stdlib (`sys`, `io`, `timers`, `regex`, `crypto`, `net`, `http`, `tls`, `json`, `exec`, `dns`, `sqlite`), the embedded `lib/*.bnl` helpers, and two FFI integration tests (`proj_full`, `direct_plugin`).
-
-With `BNL_ENABLE_FFI=OFF` the two FFI tests are skipped automatically — expect 37 tests.
-
-On Windows include `-C Release` when running ctest from outside the build dir:
-
-```powershell
-ctest --test-dir build\windows-release --output-on-failure -C Release
-```
-
-### Running a single test
-
-```sh
-ctest --test-dir build/linux-release -R native_http --output-on-failure
-```
-
-### Running bnl directly
-
-```sh
-build/linux-release/bin/bnl tests/lang/arithmetic.bnl
-build/linux-release/bin/bnl -e 'print("hi");'
-build/linux-release/bin/bnl --version
+# build/linux-release/bin/bnl is now a single static executable, no .so files
 ```
 
 ---
