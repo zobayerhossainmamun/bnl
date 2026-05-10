@@ -44,6 +44,16 @@ bool starts_with_relative_or_absolute(const std::string& s) {
     return false;
 }
 
+// True when the path looks like a shared library on any of our target
+// platforms — checked regardless of host so a script can name a `.dll`
+// directly even on a non-matching OS (the actual load failure surfaces
+// later from DynamicLibrary). Match is case-insensitive on the extension.
+bool is_native_library_path(const fs::path& p) {
+    std::string ext = p.extension().string();
+    for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".dll" || ext == ".so" || ext == ".dylib";
+}
+
 // Result of resolving a dep dir's entry point: either a bnl source file or
 // a native shared library. Resolved canonical path either way.
 struct DepEntry {
@@ -296,10 +306,14 @@ ModulePtr ModuleLoader::load_native_library(const fs::path& canonical,
 ModulePtr ModuleLoader::load(const std::string&            path_string,
                               const fs::path&               requesting_dir,
                               const Token&                  import_token) {
-    // Relative or absolute path -> straight to file resolution.
+    // Relative or absolute path -> straight to file resolution. A path that
+    // ends in .dll / .so / .dylib is loaded as a native plugin; anything else
+    // is loaded as bnl source.
     if (starts_with_relative_or_absolute(path_string)) {
         fs::path canonical = resolve_file(path_string, requesting_dir, import_token);
-        return load_canonical_file(canonical, import_token);
+        return is_native_library_path(canonical)
+            ? load_native_library(canonical, import_token)
+            : load_canonical_file(canonical, import_token);
     }
 
     // ---- Bare-name resolution chain --------------------------------------
