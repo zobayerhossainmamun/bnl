@@ -71,7 +71,10 @@
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/squote.bnl)",
       "Bash(echo \"print\\('oops\\);\")",
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/bad.bnl)",
-      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/regex_smoke.bnl)"
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/regex_smoke.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" \"D:/bnlang/new-v/bnl/build/windows/multiline.bnl\")",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" \"D:/bnlang/new-v/bnl/build/windows/throw_test.bnl\")",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

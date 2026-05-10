@@ -103,6 +103,12 @@ bool Interpreter::run_source(const std::string&            source,
         fmt::print(stderr, "module error at {}:{} (near '{}'): {}\n",
                    e.token.line, e.token.column, e.token.lexeme, e.what());
         return false;
+    } catch (ThrowSignal& sig) {
+        // An uncaught `throw <value>;` would otherwise escape past main() into
+        // std::terminate, which on Windows pops the MSVC runtime crash dialog.
+        fmt::print(stderr, "uncaught throw at {}:{}: {}\n",
+                   sig.token.line, sig.token.column, sig.value.to_display());
+        return false;
     }
 }
 

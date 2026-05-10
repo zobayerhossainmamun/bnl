@@ -259,6 +259,10 @@ int run_repl() {
                 } catch (const bnl::ModuleError& e) {
                     print_single_error("module", source, display_path,
                                        e.token.line, e.token.column, e.what());
+                } catch (bnl::ThrowSignal& sig) {
+                    print_single_error("uncaught throw", source, display_path,
+                                       sig.token.line, sig.token.column,
+                                       sig.value.to_display());
                 } catch (const std::exception& e) {
                     fmt::print(stderr, "error: {}\n", e.what());
                 }
@@ -360,6 +364,14 @@ int main(int argc, char** argv) {
         } catch (const bnl::ModuleError& e) {
             print_single_error("module", source, display_path,
                                e.token.line, e.token.column, e.what());
+            return 4;
+        } catch (bnl::ThrowSignal& sig) {
+            // Uncaught `throw` from the script. Without this catch the signal
+            // escapes past main() into std::terminate (= MSVC crash dialog on
+            // Windows / abort on POSIX).
+            print_single_error("uncaught throw", source, display_path,
+                               sig.token.line, sig.token.column,
+                               sig.value.to_display());
             return 4;
         }
     } catch (const std::exception& e) {

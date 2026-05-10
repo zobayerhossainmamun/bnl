@@ -83,7 +83,7 @@ void Interpreter::visit(ReturnStmt& s) {
 
 void Interpreter::visit(ThrowStmt& s) {
     Value v = evaluate(*s.value);
-    throw ThrowSignal{std::move(v)};
+    throw ThrowSignal{std::move(v), s.keyword};
 }
 
 void Interpreter::visit(TryStmt& s) {

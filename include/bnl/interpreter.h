@@ -48,8 +48,12 @@ struct ReturnSignal {
 // Distinct from RuntimeError: a RuntimeError is a runtime-origin failure with
 // only a message; ThrowSignal carries a user-supplied value. TryStmt catches
 // both — for RuntimeError it binds `e` to the message string.
+//
+// `token` is the `throw` keyword from the source — used to render a clang-
+// style diagnostic when an uncaught throw escapes the program.
 struct ThrowSignal {
     Value value;
+    Token token;
 };
 
 class Interpreter : public ExprVisitor, public StmtVisitor {
