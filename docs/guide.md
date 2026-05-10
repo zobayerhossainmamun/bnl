@@ -162,18 +162,25 @@ Streaming forms (`io.open_read`, `io.open_write`) return a stream module with
 `read(size, cb)` / `write(data, cb)` and `close()` for backpressure-friendly
 chunk processing.
 
-### Error handling in callbacks
-
-A runtime error inside an async callback is logged to stderr and flips the
-interpreter into a failure state. `try_call(thunk, on_err)` catches errors
-inside synchronous code:
+### Error handling
 
 ```bnl
-var v = try_call(
-    function () { return io.read_file("missing.txt"); },
-    function (msg) { return "default"; }
-);
+try {
+    var contents = io.read_file("missing.txt");
+    print(contents);
+} catch (e) {
+    print("read failed:", e);
+}
 ```
+
+`throw <expr>;` raises any value; the nearest enclosing `catch (var)` binds it.
+For runtime-origin errors, `e` is the error message string. See
+[syntax — try/catch/throw](./syntax.md#try--catch--throw) for the full story.
+
+A runtime error inside an *async* callback (timer, io) is logged to stderr and
+flips the interpreter into a failure exit — async callbacks aren't enclosed by
+the script-level `try` because they fire after the script returns. Wrap the
+callback body in its own `try` if you need to recover.
 
 ## Classes
 

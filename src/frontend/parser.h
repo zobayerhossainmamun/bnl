@@ -38,6 +38,8 @@ private:
     StmtPtr while_statement();
     StmtPtr return_statement();
     StmtPtr import_statement(Token keyword);
+    StmtPtr try_statement();
+    StmtPtr throw_statement();
     StmtPtr block_statement();
     StmtPtr expression_statement();
 

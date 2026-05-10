@@ -30,6 +30,9 @@ enum class TokenType {
     And,
     Or,
     Not,
+    Try,
+    Catch,
+    Throw,
 
     // Punctuation
     LParen,

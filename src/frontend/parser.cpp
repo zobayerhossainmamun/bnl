@@ -95,6 +95,8 @@ StmtPtr Parser::statement() {
     if (match({TokenType::If}))     return if_statement();
     if (match({TokenType::While}))  return while_statement();
     if (match({TokenType::Return})) return return_statement();
+    if (match({TokenType::Try}))    return try_statement();
+    if (match({TokenType::Throw}))  return throw_statement();
     if (match({TokenType::LBrace})) return block_statement();
     return expression_statement();
 }
@@ -127,6 +129,32 @@ StmtPtr Parser::return_statement() {
     }
     consume(TokenType::Semicolon, "expected ';' after return value");
     return std::make_unique<ReturnStmt>(keyword, std::move(value));
+}
+
+StmtPtr Parser::try_statement() {
+    Token keyword = previous();   // 'try' / 'চেষ্টা'
+
+    consume(TokenType::LBrace, "expected '{' after 'try'");
+    std::vector<StmtPtr> try_block = block_body();
+
+    consume(TokenType::Catch, "expected 'catch' after try block");
+    consume(TokenType::LParen, "expected '(' after 'catch'");
+    Token catch_var = consume(TokenType::Identifier,
+                              "expected identifier for caught value");
+    consume(TokenType::RParen, "expected ')' after catch identifier");
+
+    consume(TokenType::LBrace, "expected '{' after catch declaration");
+    std::vector<StmtPtr> catch_block = block_body();
+
+    return std::make_unique<TryStmt>(keyword, std::move(try_block),
+                                     catch_var, std::move(catch_block));
+}
+
+StmtPtr Parser::throw_statement() {
+    Token keyword = previous();   // 'throw' / 'নিক্ষেপ'
+    ExprPtr value = expression();
+    consume(TokenType::Semicolon, "expected ';' after throw value");
+    return std::make_unique<ThrowStmt>(keyword, std::move(value));
 }
 
 StmtPtr Parser::block_statement() {
@@ -441,6 +469,8 @@ void Parser::synchronize() {
             case TokenType::If:
             case TokenType::While:
             case TokenType::Return:
+            case TokenType::Try:
+            case TokenType::Throw:
                 return;
             default:
                 advance();

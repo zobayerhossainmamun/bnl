@@ -41,6 +41,11 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"false",     TokenType::False},   {"\xe0\xa6\xae\xe0\xa6\xbf\xe0\xa6\xa5\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xbe", TokenType::False}, // মিথ্যা
         {"null",      TokenType::Null},    {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\x87",                                                         TokenType::Null},      // নাই
 
+        // Error handling
+        {"try",       TokenType::Try},     {"\xe0\xa6\x9a\xe0\xa7\x87\xe0\xa6\xb7\xe0\xa7\x8d\xe0\xa6\x9f\xe0\xa6\xbe",                     TokenType::Try},       // চেষ্টা
+        {"catch",     TokenType::Catch},   {"\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xbe",                                                         TokenType::Catch},     // ধরা
+        {"throw",     TokenType::Throw},   {"\xe0\xa6\xa8\xe0\xa6\xbf\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa7\x87\xe0\xa6\xaa",         TokenType::Throw},     // নিক্ষেপ
+
         // Note: `print` / `দেখাও` are deliberately NOT keywords. They are ordinary
         // identifiers that the runtime registers as builtin functions in the
         // global scope (with both Bangla and English names aliased to one impl).
@@ -379,6 +384,9 @@ const char* token_type_name(TokenType type) {
         case TokenType::And:        return "And";
         case TokenType::Or:         return "Or";
         case TokenType::Not:        return "Not";
+        case TokenType::Try:        return "Try";
+        case TokenType::Catch:      return "Catch";
+        case TokenType::Throw:      return "Throw";
         case TokenType::LParen:     return "LParen";
         case TokenType::RParen:     return "RParen";
         case TokenType::LBrace:     return "LBrace";

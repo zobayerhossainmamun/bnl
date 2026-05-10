@@ -1,0 +1,9 @@
+caught: boom
+caught number: 42 number
+caught map: 500 server error
+propagated: from inner
+runtime caught (type): string
+returns: via-try
+try ran
+after
+বাংলা: বাংলা ত্রুটি

@@ -43,6 +43,15 @@ struct ReturnSignal {
     Value value;
 };
 
+// Used to unwind out to the nearest `try { ... } catch (e) { ... }` when a
+// `throw <expr>;` runs. `value` is whatever the script threw (any bnl value).
+// Distinct from RuntimeError: a RuntimeError is a runtime-origin failure with
+// only a message; ThrowSignal carries a user-supplied value. TryStmt catches
+// both — for RuntimeError it binds `e` to the message string.
+struct ThrowSignal {
+    Value value;
+};
+
 class Interpreter : public ExprVisitor, public StmtVisitor {
 public:
     Interpreter();
@@ -115,6 +124,8 @@ public:
     void visit(ReturnStmt&)     override;
     void visit(ImportStmt&)     override;
     void visit(ClassStmt&)      override;
+    void visit(TryStmt&)        override;
+    void visit(ThrowStmt&)      override;
 
 private:
     Value evaluate(Expr& e);

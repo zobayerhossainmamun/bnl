@@ -39,6 +39,8 @@ class FunctionStmt;
 class ReturnStmt;
 class ImportStmt;
 class ClassStmt;
+class TryStmt;
+class ThrowStmt;
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
@@ -78,6 +80,8 @@ public:
     virtual void visit(ReturnStmt&)     = 0;
     virtual void visit(ImportStmt&)     = 0;
     virtual void visit(ClassStmt&)      = 0;
+    virtual void visit(TryStmt&)        = 0;
+    virtual void visit(ThrowStmt&)      = 0;
 };
 
 // ---- bases ------------------------------------------------------------------
@@ -338,6 +342,33 @@ public:
     std::vector<std::unique_ptr<FunctionStmt>> methods;
     ClassStmt(Token n, Token s, std::vector<std::unique_ptr<FunctionStmt>> m)
         : name(n), superclass(s), methods(std::move(m)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// try { ... } catch (e) { ... }
+//
+// On a runtime error or `throw` inside try_block, control jumps to catch_block
+// with `e` (the catch_var lexeme) bound in a fresh scope. The bound value is:
+//   - the value passed to `throw <expr>;`           (any bnl value)
+//   - or the runtime-error message string           (for runtime-origin errors)
+class TryStmt : public Stmt {
+public:
+    Token                keyword;     // 'try' / 'চেষ্টা' — for diagnostics
+    std::vector<StmtPtr> try_block;
+    Token                catch_var;   // identifier bound inside catch_block
+    std::vector<StmtPtr> catch_block;
+    TryStmt(Token k, std::vector<StmtPtr> t, Token cv, std::vector<StmtPtr> c)
+        : keyword(k), try_block(std::move(t)),
+          catch_var(cv), catch_block(std::move(c)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// throw <expr>;  (or 'নিক্ষেপ <expr>;')
+class ThrowStmt : public Stmt {
+public:
+    Token   keyword;   // 'throw' — kept for error reporting
+    ExprPtr value;
+    ThrowStmt(Token k, ExprPtr v) : keyword(k), value(std::move(v)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 

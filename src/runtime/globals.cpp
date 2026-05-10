@@ -98,6 +98,8 @@ void Interpreter::register_builtins() {
                 throw std::runtime_error("try_call: second arg must be a function");
             try {
                 return args[0].as_callable()->call(interp, {});
+            } catch (ThrowSignal& sig) {
+                return args[1].as_callable()->call(interp, { std::move(sig.value) });
             } catch (const RuntimeError& e) {
                 return args[1].as_callable()->call(interp, { Value{std::string(e.what())} });
             } catch (const std::exception& e) {

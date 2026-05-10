@@ -1,0 +1,64 @@
+// try / catch / throw — both English and Bangla forms.
+
+// 1. Throw a string, catch as a string.
+try {
+    throw "boom";
+} catch (e) {
+    print("caught:", e);
+}
+
+// 2. Throw a number — catch binds the value's actual type.
+try {
+    throw 42;
+} catch (n) {
+    print("caught number:", n, type(n));
+}
+
+// 3. Throw a map — structured payload.
+try {
+    throw {code: 500, msg: "server error"};
+} catch (err) {
+    print("caught map:", err.code, err.msg);
+}
+
+// 4. Throw from a deeper function call — propagates to nearest catch.
+function inner() { throw "from inner"; }
+function outer() { inner(); }
+try {
+    outer();
+} catch (e) {
+    print("propagated:", e);
+}
+
+// 5. Runtime-origin error (calling a non-callable) — `e` is the message string.
+try {
+    var x = 5;
+    x();   // calling a number — runtime error
+} catch (e) {
+    print("runtime caught (type):", type(e));
+}
+
+// 6. Catch does NOT swallow `return`. Function returns from inside try.
+function returns_via_try() {
+    try {
+        return "via-try";
+    } catch (e) {
+        return "via-catch";
+    }
+}
+print("returns:", returns_via_try());
+
+// 7. Code after a successful try block runs normally.
+try {
+    print("try ran");
+} catch (e) {
+    print("not reached");
+}
+print("after");
+
+// 8. Bilingual form — চেষ্টা / ধরা / নিক্ষেপ.
+চেষ্টা {
+    নিক্ষেপ "বাংলা ত্রুটি";
+} ধরা (ভুল) {
+    print("বাংলা:", ভুল);
+}

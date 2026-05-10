@@ -27,6 +27,7 @@ add_bnl_test(import_basic         lang)
 add_bnl_test(classes_basic        lang)
 add_bnl_test(classes_bilingual    lang)
 add_bnl_test(classes_inheritance  lang)
+add_bnl_test(try_catch            lang)
 
 # ---------- built-in stdlib (sys, io, timers only) ------------------------
 add_bnl_test(native_sys           stdlib)

@@ -46,6 +46,28 @@ void Interpreter::visit(ReturnStmt& s) {
     throw ReturnSignal{std::move(v)};
 }
 
+void Interpreter::visit(ThrowStmt& s) {
+    Value v = evaluate(*s.value);
+    throw ThrowSignal{std::move(v)};
+}
+
+void Interpreter::visit(TryStmt& s) {
+    auto run_catch = [&](Value caught) {
+        auto env = std::make_shared<Environment>(environment_);
+        env->define(std::string(s.catch_var.lexeme), std::move(caught));
+        execute_block(s.catch_block, env);
+    };
+    try {
+        execute_block(s.try_block, std::make_shared<Environment>(environment_));
+    } catch (ThrowSignal& sig) {
+        run_catch(std::move(sig.value));
+    } catch (RuntimeError& e) {
+        run_catch(Value{std::string(e.what())});
+    }
+    // ReturnSignal still propagates — return inside try should exit the
+    // enclosing function. Same for any std::exception we don't recognize.
+}
+
 void Interpreter::visit(ClassStmt& s) {
     // Resolve the optional superclass at definition time. Must be a Class
     // value already in scope.

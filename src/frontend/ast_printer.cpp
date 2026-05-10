@@ -264,6 +264,28 @@ public:
         out_ += ')';
     }
 
+    void visit(TryStmt& s) override {
+        indent();
+        out_ += "(try";
+        depth_++;
+        for (auto& st : s.try_block) { out_ += '\n'; st->accept(*this); }
+        depth_--;
+        out_ += '\n';
+        indent();
+        out_ += fmt::format("(catch {}", s.catch_var.lexeme);
+        depth_++;
+        for (auto& st : s.catch_block) { out_ += '\n'; st->accept(*this); }
+        depth_--;
+        out_ += "))";
+    }
+
+    void visit(ThrowStmt& s) override {
+        indent();
+        out_ += "(throw ";
+        s.value->accept(*this);
+        out_ += ')';
+    }
+
 private:
     void indent() {
         for (int i = 0; i < depth_; ++i) out_ += "  ";

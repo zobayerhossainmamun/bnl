@@ -25,7 +25,8 @@ Reserved in both forms. `for` is reserved but the parser does not yet accept it.
 | `var` | `চলক` | `and` | `এবং` |
 | `true` | `সত্য` | `or` | `অথবা` |
 | `false` | `মিথ্যা` | `not` | `না` |
-| `null` | `নাই` | | |
+| `null` | `নাই` | `try` | `চেষ্টা` |
+| `catch` | `ধরা` | `throw` | `নিক্ষেপ` |
 
 `print`, `str`, `type`, `to_number`, `chr`, `try_call` are **global functions**, not
 keywords. Their Bangla aliases are `দেখাও`, `লেখ`, `ধরণ` (others are English-only
@@ -255,10 +256,53 @@ mod.exported           // module export
 | map | `.has(k)` | bool |
 | map | `.keys()` | list of keys |
 
-## Errors
+### Try / catch / throw
 
-Runtime errors abort the script. There is no `try`/`catch` syntax yet, but
-`try_call(thunk, on_err)` catches runtime errors thrown from a 0-arg `thunk`:
+```bnl
+try {
+    do_something();
+    throw "something went wrong";
+} catch (e) {
+    print("caught:", e);
+}
+```
+
+`throw <expr>;` unwinds the stack to the nearest enclosing `try { ... } catch
+(e) { ... }` and binds `e` to the thrown value. The thrown value can be any
+type — a string, number, map, instance, etc.:
+
+```bnl
+try {
+    throw {code: 500, msg: "server error"};
+} catch (err) {
+    print(err.code, err.msg);
+}
+```
+
+For runtime-origin errors (calling a non-callable, divide-by-zero, accessing
+an undefined variable), `e` is bound to the **error message string**.
+
+`return` is *not* swallowed by `try` — returning from inside a `try` block
+exits the enclosing function as usual.
+
+Bilingual:
+
+```bnl
+চেষ্টা {
+    নিক্ষেপ "ভুল হয়েছে";
+} ধরা (ভুল) {
+    print(ভুল);
+}
+```
+
+There is no `finally` clause yet.
+
+### Other error handling
+
+`try_call(thunk, on_err)` is an older builtin equivalent to wrapping a 0-arg
+function call in a `try` / `catch`. Useful when you want catch-and-recover as
+an expression (returns the thunk's result, or `on_err`'s result if the thunk
+threw):
 
 ```bnl
 var result = try_call(
@@ -267,13 +311,14 @@ var result = try_call(
 );
 ```
 
-Async callbacks (timers, io) follow the Node-style `(err, data)` convention.
+Async callbacks (timers, io) follow the Node-style `(err, data)` convention —
+errors arrive as the first argument, not as a thrown value.
 
 ## Notes / known gaps
 
 - No `for` loop syntax (planned).
 - No string interpolation, no template strings, no multi-line strings.
-- No native error type / `try/catch` syntax — use `try_call`.
+- No `finally` clause for `try` / `catch`.
 - Maps return `null` for missing keys (not an error). Use `.has(k)` to disambiguate
   null-valued keys from absent keys.
 - Identifier-start uses a permissive rule (any non-ASCII codepoint is allowed).

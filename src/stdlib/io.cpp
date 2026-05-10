@@ -59,6 +59,10 @@ struct UvFile {
 void invoke_callback(Interpreter& interp, CallablePtr cb, std::vector<Value> args) {
     try {
         cb->call(interp, std::move(args));
+    } catch (ThrowSignal& sig) {
+        fmt::print(stderr, "uncaught throw in async io callback: {}\n",
+                   sig.value.to_display());
+        interp.mark_loop_failed();
     } catch (const RuntimeError& e) {
         fmt::print(stderr, "uncaught error in async io callback at {}:{} (near '{}'): {}\n",
                    e.token.line, e.token.column, e.token.lexeme, e.what());

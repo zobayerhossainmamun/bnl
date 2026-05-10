@@ -45,6 +45,12 @@ void on_timer_fire(uv_timer_t* timer) {
 
     try {
         data->callback->call(*data->interp, {});
+    } catch (ThrowSignal& sig) {
+        fmt::print(stderr, "uncaught throw in timer callback: {}\n",
+                   sig.value.to_display());
+        data->interp->mark_loop_failed();
+        close_timer_once(timer);
+        return;
     } catch (const RuntimeError& e) {
         fmt::print(stderr, "uncaught error in timer callback at {}:{} (near '{}'): {}\n",
                    e.token.line, e.token.column, e.token.lexeme, e.what());
