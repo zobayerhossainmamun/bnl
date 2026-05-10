@@ -40,6 +40,9 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/timers.cpp
     stdlib/regex.cpp
     stdlib/crypto.cpp
+    stdlib/net.cpp
+    stdlib/http.cpp
+    stdlib/tls.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -67,7 +70,9 @@ target_link_libraries(bnl_core
     PRIVATE
         fmt::fmt
         nlohmann_json::nlohmann_json    # module loader parses bnl.json
-        OpenSSL::Crypto                 # stdlib/crypto.cpp
+        OpenSSL::Crypto                 # stdlib/crypto.cpp + stdlib/tls.cpp
+        OpenSSL::SSL                    # stdlib/tls.cpp
+        $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
 
 if(BNL_ENABLE_FFI)

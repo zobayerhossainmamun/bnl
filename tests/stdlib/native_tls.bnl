@@ -1,0 +1,35 @@
+// Native tls module — TLS client + server with OpenSSL BIO-pair + libuv.
+// In-process roundtrip with a self-signed localhost cert.
+import "tls" as tls;
+import "io"  as io;
+
+var cert = io.read_file("../_fixtures/tls/cert.pem");
+var key  = io.read_file("../_fixtures/tls/key.pem");
+
+var server = tls.listen(0, {cert: cert, key: key}, function (conn) {
+    conn.on_data(function (data) {
+        print("server got:", data);
+        conn.write("pong");
+    });
+    conn.on_end(function () {
+        print("server: client gone");
+        conn.close();
+        server.close();
+    });
+});
+
+print("port valid:", server.port > 0);
+
+// verify=false because the cert is self-signed (test fixture).
+tls.connect("localhost", "127.0.0.1", server.port, function (err, client) {
+    if (err != null) {
+        print("connect err:", err);
+        server.close();
+        return;
+    }
+    client.on_data(function (data) {
+        print("client got:", data);
+        client.close();
+    });
+    client.write("ping");
+}, {verify: false});

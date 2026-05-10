@@ -1,0 +1,35 @@
+--- GET ---
+GET /hello?x=1
+1.1
+true
+true
+example.com
+bnl/0.1
+
+--- POST ---
+POST /submit
+hello world
+11
+true
+--- 200 ---
+200 OK
+hello
+text/plain
+true
+--- header case ---
+value
+--- incomplete ---
+false
+GET
+--- pipelined ---
+true
+/a
+true
+/b
+true
+--- 1.0 EOF body ---
+false
+true
+bye world
+--- bad ---
+ok

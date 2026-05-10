@@ -1,0 +1,688 @@
+#include "stdlib/registry.h"
+
+#include <fmt/core.h>
+#include <uv.h>
+
+#include <openssl/bio.h>
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#  include <wincrypt.h>
+#  pragma comment(lib, "crypt32.lib")
+#else
+#  include <arpa/inet.h>
+#  include <netinet/in.h>
+#endif
+
+#include <cstddef>
+#include <cstdlib>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "bnl/interpreter.h"
+#include "bnl/native_module.h"
+
+namespace bnl {
+
+namespace {
+
+// ===========================================================================
+// TLS over libuv via the OpenSSL BIO-pair pattern.
+//
+//   plaintext  -- SSL_read/SSL_write -- [ ssl ] -- internal_bio
+//                                                       ⇅          (paired)
+//                                                  network_bio  -- BIO_read/BIO_write
+//                                                                    ↕
+//                                                              uv_tcp_t (raw socket)
+//
+// The pump cycle: any time we feed encrypted bytes in via BIO_write or push
+// app bytes out via SSL_write, drain network_bio with BIO_read and ship the
+// resulting cipher text out through uv_write. Any time the socket delivers
+// cipher text via on_socket_data, BIO_write it into network_bio and try to
+// advance the SSL state machine (handshake or SSL_read).
+// ===========================================================================
+
+// ---------- system root CAs (Windows) --------------------------------------
+
+void load_system_root_cas(SSL_CTX* ctx) {
+#ifdef _WIN32
+    // OpenSSL on Windows ships no roots — pull them from the OS ROOT store
+    // so verification against real Internet endpoints works the way users
+    // expect (matches Schannel / curl behaviour).
+    HCERTSTORE store = CertOpenSystemStoreA(0, "ROOT");
+    if (!store) return;
+    X509_STORE* x509_store = SSL_CTX_get_cert_store(ctx);
+    PCCERT_CONTEXT cert_ctx = nullptr;
+    while ((cert_ctx = CertEnumCertificatesInStore(store, cert_ctx)) != nullptr) {
+        const unsigned char* enc = cert_ctx->pbCertEncoded;
+        X509* x509 = d2i_X509(nullptr, &enc, static_cast<long>(cert_ctx->cbCertEncoded));
+        if (x509) {
+            X509_STORE_add_cert(x509_store, x509);
+            X509_free(x509);
+        }
+    }
+    CertCloseStore(store, 0);
+#else
+    SSL_CTX_set_default_verify_paths(ctx);
+#endif
+}
+
+std::string ssl_err_message(int /*ssl_err*/) {
+    unsigned long e = ERR_get_error();
+    if (!e) return "unknown ssl error";
+    char buf[256];
+    ERR_error_string_n(e, buf, sizeof(buf));
+    return std::string(buf);
+}
+
+// ---------- per-connection / per-listener state ----------------------------
+
+struct TlsConn {
+    Interpreter*           interp = nullptr;
+    uv_tcp_t               handle{};
+    SSL_CTX*               ctx = nullptr;          // refcounted: up_ref'd per conn
+    SSL*                   ssl = nullptr;          // owns internal_bio
+    BIO*                   network_bio = nullptr;  // we own this side of the pair
+    CallablePtr            on_data;
+    CallablePtr            on_end;
+    CallablePtr            handshake_cb;           // fires once: (err, conn)
+    std::shared_ptr<bool>  alive;
+    bool                   handshake_done = false;
+    bool                   closing = false;
+    bool                   is_server = false;
+    std::vector<std::string> pending_writes;       // queued during handshake
+};
+
+struct TlsListener {
+    Interpreter*           interp = nullptr;
+    uv_tcp_t               handle{};
+    SSL_CTX*               ctx = nullptr;
+    CallablePtr            on_connection;
+    std::shared_ptr<bool>  alive;
+    bool                   closing = false;
+};
+
+struct TlsConnectReq {
+    uv_connect_t           req{};
+    CallablePtr            on_done;
+    TlsConn*               conn = nullptr;
+    Interpreter*           interp = nullptr;
+};
+
+struct SocketWriteReq {
+    uv_write_t             req{};
+    std::string            data;
+};
+
+// ---------- exception-safe callback ----------------------------------------
+
+void invoke_cb(Interpreter& interp, const CallablePtr& cb, std::vector<Value> args) {
+    if (!cb) return;
+    try {
+        cb->call(interp, std::move(args));
+    } catch (ThrowSignal& sig) {
+        fmt::print(stderr, "uncaught throw in tls callback: {}\n",
+                   sig.value.to_display());
+        interp.mark_loop_failed();
+    } catch (const RuntimeError& e) {
+        fmt::print(stderr, "uncaught error in tls callback at {}:{} (near '{}'): {}\n",
+                   e.token.line, e.token.column, e.token.lexeme, e.what());
+        interp.mark_loop_failed();
+    } catch (const std::exception& e) {
+        fmt::print(stderr, "uncaught error in tls callback: {}\n", e.what());
+        interp.mark_loop_failed();
+    }
+}
+
+// ---------- forward declarations -------------------------------------------
+
+void on_tls_socket_data(uv_stream_t* s, ssize_t nread, const uv_buf_t* buf);
+void try_handshake(TlsConn* conn);
+void try_read_app_data(TlsConn* conn);
+void close_tls_conn_once(TlsConn* conn);
+void close_tls_listener_once(TlsListener* lst);
+void on_tls_conn_close(uv_handle_t* h);
+void on_tls_listener_close(uv_handle_t* h);
+ModulePtr build_tls_conn_module(TlsConn* conn);
+void pump_outgoing(TlsConn* conn);
+
+// ---------- libuv read alloc -----------------------------------------------
+
+void alloc_buf(uv_handle_t*, std::size_t suggested, uv_buf_t* buf) {
+    buf->base = static_cast<char*>(std::malloc(suggested));
+    buf->len  = static_cast<decltype(uv_buf_t::len)>(suggested);
+}
+
+// ---------- pump cipher text from network_bio out to the socket ------------
+
+void pump_outgoing(TlsConn* conn) {
+    if (conn->closing) return;
+    while (true) {
+        char buf[16384];
+        int n = BIO_read(conn->network_bio, buf, sizeof(buf));
+        if (n <= 0) break;
+        auto* wr = new SocketWriteReq{};
+        wr->data     = std::string(buf, static_cast<std::size_t>(n));
+        wr->req.data = wr;
+        uv_buf_t b   = uv_buf_init(wr->data.data(),
+                                   static_cast<unsigned int>(wr->data.size()));
+        int rc = uv_write(&wr->req,
+                          reinterpret_cast<uv_stream_t*>(&conn->handle),
+                          &b, 1,
+                          [](uv_write_t* req, int /*status*/) {
+                              delete static_cast<SocketWriteReq*>(req->data);
+                          });
+        if (rc < 0) {
+            delete wr;
+            close_tls_conn_once(conn);
+            return;
+        }
+    }
+}
+
+// ---------- handshake / app-data pumps -------------------------------------
+
+void fire_handshake_error(TlsConn* conn, const std::string& msg) {
+    if (conn->handshake_cb && !conn->is_server) {
+        // Client signature: on_done(err, conn) — surface the error.
+        CallablePtr cb = std::move(conn->handshake_cb);
+        invoke_cb(*conn->interp, cb, { Value{msg}, Value{} });
+    }
+    // Server signature is on_connection(conn) — there is no error slot, so a
+    // failed handshake silently drops the connection (matches Node behaviour).
+    (void)msg;
+    close_tls_conn_once(conn);
+}
+
+void try_handshake(TlsConn* conn) {
+    if (conn->handshake_done || conn->closing) return;
+    int rc = SSL_do_handshake(conn->ssl);
+    if (rc == 1) {
+        conn->handshake_done = true;
+
+        // Drain any writes queued before the handshake completed.
+        for (auto& w : conn->pending_writes) {
+            int n = SSL_write(conn->ssl, w.data(), static_cast<int>(w.size()));
+            if (n <= 0) break;
+        }
+        conn->pending_writes.clear();
+        pump_outgoing(conn);
+
+        if (conn->handshake_cb) {
+            CallablePtr cb = std::move(conn->handshake_cb);
+            ModulePtr conn_module = build_tls_conn_module(conn);
+            // Client expects on_done(err, conn); server expects on_connection(conn).
+            if (conn->is_server)
+                invoke_cb(*conn->interp, cb, { Value{conn_module} });
+            else
+                invoke_cb(*conn->interp, cb, { Value{}, Value{conn_module} });
+        }
+        // Some app data may have arrived in the same read that completed the
+        // handshake — drain it now that the user has had a chance to install
+        // on_data via the handshake callback.
+        try_read_app_data(conn);
+        return;
+    }
+    int err = SSL_get_error(conn->ssl, rc);
+    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+        pump_outgoing(conn);
+        return;
+    }
+    fire_handshake_error(conn, ssl_err_message(err));
+}
+
+void try_read_app_data(TlsConn* conn) {
+    if (!conn->handshake_done || conn->closing) return;
+    while (true) {
+        char buf[16384];
+        int n = SSL_read(conn->ssl, buf, sizeof(buf));
+        if (n > 0) {
+            std::string chunk(buf, static_cast<std::size_t>(n));
+            invoke_cb(*conn->interp, conn->on_data, { Value{std::move(chunk)} });
+            if (conn->closing) return;
+            continue;
+        }
+        int err = SSL_get_error(conn->ssl, n);
+        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE) {
+            pump_outgoing(conn);
+            return;
+        }
+        if (err == SSL_ERROR_ZERO_RETURN) {
+            invoke_cb(*conn->interp, conn->on_end, {});
+            close_tls_conn_once(conn);
+            return;
+        }
+        // Hard error.
+        invoke_cb(*conn->interp, conn->on_end, {});
+        close_tls_conn_once(conn);
+        return;
+    }
+}
+
+void on_tls_socket_data(uv_stream_t* s, ssize_t nread, const uv_buf_t* buf) {
+    auto* conn = static_cast<TlsConn*>(s->data);
+
+    if (nread > 0) {
+        const char* p = buf->base;
+        std::size_t remaining = static_cast<std::size_t>(nread);
+        while (remaining > 0) {
+            int n = BIO_write(conn->network_bio, p,
+                              static_cast<int>(remaining));
+            if (n <= 0) break;  // BIO buffer full — best-effort for v1
+            p += n;
+            remaining -= static_cast<std::size_t>(n);
+        }
+        if (buf->base) std::free(buf->base);
+
+        if (!conn->handshake_done) try_handshake(conn);
+        if (conn->handshake_done) try_read_app_data(conn);
+        return;
+    }
+
+    if (buf->base) std::free(buf->base);
+    if (nread == 0) return;
+
+    // EOF or socket error.
+    if (!conn->handshake_done) {
+        fire_handshake_error(conn, "connection closed during handshake");
+        return;
+    }
+    invoke_cb(*conn->interp, conn->on_end, {});
+    close_tls_conn_once(conn);
+}
+
+// ---------- close paths ----------------------------------------------------
+
+void on_tls_conn_close(uv_handle_t* h) {
+    auto* conn = static_cast<TlsConn*>(h->data);
+    if (!conn) return;
+    if (conn->alive) *conn->alive = false;
+    if (conn->ssl)         SSL_free(conn->ssl);          // also frees internal_bio
+    if (conn->network_bio) BIO_free(conn->network_bio);
+    if (conn->ctx)         SSL_CTX_free(conn->ctx);      // refcounted
+    delete conn;
+}
+
+void close_tls_conn_once(TlsConn* conn) {
+    if (conn->closing) return;
+    conn->closing = true;
+    auto* h = reinterpret_cast<uv_handle_t*>(&conn->handle);
+    if (!uv_is_closing(h)) {
+        uv_read_stop(reinterpret_cast<uv_stream_t*>(&conn->handle));
+        uv_close(h, on_tls_conn_close);
+    }
+}
+
+void on_tls_listener_close(uv_handle_t* h) {
+    auto* lst = static_cast<TlsListener*>(h->data);
+    if (!lst) return;
+    if (lst->alive) *lst->alive = false;
+    if (lst->ctx) SSL_CTX_free(lst->ctx);
+    delete lst;
+}
+
+void close_tls_listener_once(TlsListener* lst) {
+    if (lst->closing) return;
+    lst->closing = true;
+    auto* h = reinterpret_cast<uv_handle_t*>(&lst->handle);
+    if (!uv_is_closing(h)) uv_close(h, on_tls_listener_close);
+}
+
+// ---------- conn module exposed to bnl -------------------------------------
+
+ModulePtr build_tls_conn_module(TlsConn* conn) {
+    Interpreter* interp = conn->interp;
+    auto         alive  = conn->alive;
+
+    return NativeModule("tls_conn")
+
+        // conn.write(data, on_done?) — same shape as net.conn.write so
+        // pure-bnl code can swap transports.
+        .add_function("write", -1,
+            [conn, alive, interp](Interpreter&, std::vector<Value> args) -> Value {
+                if (args.empty() || args.size() > 2)
+                    throw std::runtime_error("conn.write(data, on_done?): wrong arity");
+                if (!*alive || conn->closing)
+                    throw std::runtime_error("conn.write: connection is closed");
+                if (!args[0].is_string())
+                    throw std::runtime_error("conn.write: data must be a string");
+
+                CallablePtr on_done;
+                if (args.size() == 2 && !args[1].is_null()) {
+                    if (!args[1].is_callable())
+                        throw std::runtime_error("conn.write: on_done must be a function");
+                    on_done = args[1].as_callable();
+                }
+
+                const std::string& data = args[0].as_string();
+                if (!conn->handshake_done) {
+                    // Queue — drained when handshake completes.
+                    conn->pending_writes.push_back(data);
+                } else {
+                    int n = SSL_write(conn->ssl, data.data(),
+                                      static_cast<int>(data.size()));
+                    if (n <= 0) {
+                        int err = SSL_get_error(conn->ssl, n);
+                        throw std::runtime_error("conn.write: SSL_write: " +
+                                                 ssl_err_message(err));
+                    }
+                    pump_outgoing(conn);
+                }
+                // For v1, on_done fires once SSL_write has accepted the bytes
+                // (they are queued in network_bio + uv_write). Real backpressure
+                // tracking would defer until the last uv_write callback fires.
+                if (on_done) invoke_cb(*interp, on_done, { Value{} });
+                return Value{};
+            })
+
+        .add_function("on_data", 1,
+            [conn, alive](Interpreter&, std::vector<Value> args) -> Value {
+                if (!*alive) return Value{};
+                if (!args[0].is_callable())
+                    throw std::runtime_error("conn.on_data: callback must be a function");
+                conn->on_data = args[0].as_callable();
+                return Value{};
+            })
+
+        .add_function("on_end", 1,
+            [conn, alive](Interpreter&, std::vector<Value> args) -> Value {
+                if (!*alive) return Value{};
+                if (!args[0].is_callable())
+                    throw std::runtime_error("conn.on_end: callback must be a function");
+                conn->on_end = args[0].as_callable();
+                return Value{};
+            })
+
+        .add_function("close", 0,
+            [conn, alive](Interpreter&, std::vector<Value>) -> Value {
+                if (!*alive || conn->closing) return Value{};
+                if (conn->ssl) {
+                    // Best-effort close_notify; don't wait for peer.
+                    SSL_shutdown(conn->ssl);
+                    pump_outgoing(conn);
+                }
+                close_tls_conn_once(conn);
+                return Value{};
+            })
+
+        .build();
+}
+
+// ---------- listener: per-incoming-connection setup ------------------------
+
+void on_tls_listener_connection(uv_stream_t* server, int status) {
+    auto* lst = static_cast<TlsListener*>(server->data);
+    if (status < 0) return;
+
+    auto* conn = new TlsConn{};
+    conn->interp    = lst->interp;
+    conn->is_server = true;
+    conn->alive     = std::make_shared<bool>(true);
+    uv_tcp_init(lst->interp->loop(), &conn->handle);
+    conn->handle.data = conn;
+
+    if (uv_accept(server, reinterpret_cast<uv_stream_t*>(&conn->handle)) != 0) {
+        uv_close(reinterpret_cast<uv_handle_t*>(&conn->handle), on_tls_conn_close);
+        return;
+    }
+
+    SSL_CTX_up_ref(lst->ctx);
+    conn->ctx = lst->ctx;
+    conn->ssl = SSL_new(lst->ctx);
+    BIO* internal_bio = nullptr;
+    BIO_new_bio_pair(&internal_bio, 0, &conn->network_bio, 0);
+    SSL_set_bio(conn->ssl, internal_bio, internal_bio);
+    SSL_set_accept_state(conn->ssl);
+    conn->handshake_cb = lst->on_connection;
+
+    uv_read_start(reinterpret_cast<uv_stream_t*>(&conn->handle),
+                  alloc_buf, on_tls_socket_data);
+    try_handshake(conn);  // priming call (will WANT_READ until ClientHello)
+}
+
+// ---------- client connect post-TCP-establish ------------------------------
+
+void on_tls_tcp_connect(uv_connect_t* req, int status) {
+    auto* cr = static_cast<TlsConnectReq*>(req->data);
+    if (status < 0) {
+        Value err{std::string(uv_strerror(status))};
+        // Tear down the SSL state — handshake never started.
+        if (cr->conn->ssl)         { SSL_free(cr->conn->ssl);         cr->conn->ssl = nullptr; }
+        if (cr->conn->network_bio) { BIO_free(cr->conn->network_bio); cr->conn->network_bio = nullptr; }
+        if (cr->conn->ctx)         { SSL_CTX_free(cr->conn->ctx);     cr->conn->ctx = nullptr; }
+        invoke_cb(*cr->interp, cr->on_done, { std::move(err), Value{} });
+        uv_close(reinterpret_cast<uv_handle_t*>(&cr->conn->handle), on_tls_conn_close);
+        delete cr;
+        return;
+    }
+    cr->conn->handshake_cb = cr->on_done;
+    uv_read_start(reinterpret_cast<uv_stream_t*>(&cr->conn->handle),
+                  alloc_buf, on_tls_socket_data);
+    try_handshake(cr->conn);   // sends ClientHello
+    delete cr;
+}
+
+}  // namespace
+
+void register_tls(Interpreter& interp) {
+    auto m = NativeModule("tls")
+
+        // tls.connect(hostname, ip, port, on_done [, opts]) — TLS client.
+        // hostname is used for SNI + cert verification; ip is the already-
+        // resolved IPv4 to dial. Resolve hostnames separately via net.resolve.
+        // on_done(err, conn) fires once: err is null on success, otherwise
+        // a string. opts.verify (default true) toggles cert chain verification.
+        .add_function("connect", -1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                if (args.size() < 4 || args.size() > 5)
+                    throw std::runtime_error(
+                        "tls.connect(hostname, ip, port, on_done [, opts]): wrong arity");
+                if (!args[0].is_string())
+                    throw std::runtime_error("tls.connect: hostname must be a string");
+                if (!args[1].is_string())
+                    throw std::runtime_error("tls.connect: ip must be a string");
+                if (!args[2].is_number())
+                    throw std::runtime_error("tls.connect: port must be a number");
+                if (!args[3].is_callable())
+                    throw std::runtime_error("tls.connect: on_done must be a function");
+
+                bool verify = true;
+                if (args.size() == 5 && !args[4].is_null()) {
+                    if (!args[4].is_map())
+                        throw std::runtime_error("tls.connect: opts must be a map");
+                    auto opts = args[4].as_map();
+                    auto it = opts->find("verify");
+                    if (it != opts->end() && it->second.is_bool())
+                        verify = it->second.as_bool();
+                }
+
+                const std::string& hostname = args[0].as_string();
+                const std::string& ip       = args[1].as_string();
+                int                port     = static_cast<int>(args[2].as_number());
+                CallablePtr        on_done  = args[3].as_callable();
+
+                sockaddr_in addr{};
+                if (uv_ip4_addr(ip.c_str(), port, &addr) != 0)
+                    throw std::runtime_error("tls.connect: invalid IPv4 address: " + ip);
+
+                SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
+                if (!ctx) throw std::runtime_error("tls.connect: SSL_CTX_new failed");
+                SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+                if (verify) {
+                    load_system_root_cas(ctx);
+                    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+                } else {
+                    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, nullptr);
+                }
+
+                SSL* ssl = SSL_new(ctx);
+                BIO* internal_bio = nullptr;
+                BIO* network_bio  = nullptr;
+                if (BIO_new_bio_pair(&internal_bio, 0, &network_bio, 0) != 1) {
+                    SSL_free(ssl);
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.connect: BIO_new_bio_pair failed");
+                }
+                SSL_set_bio(ssl, internal_bio, internal_bio);
+                SSL_set_tlsext_host_name(ssl, hostname.c_str());
+                if (verify) SSL_set1_host(ssl, hostname.c_str());
+                SSL_set_connect_state(ssl);
+
+                auto* conn = new TlsConn{};
+                conn->interp      = &interp;
+                conn->ctx         = ctx;
+                conn->ssl         = ssl;
+                conn->network_bio = network_bio;
+                conn->alive       = std::make_shared<bool>(true);
+                uv_tcp_init(interp.loop(), &conn->handle);
+                conn->handle.data = conn;
+
+                auto* cr     = new TlsConnectReq{};
+                cr->on_done  = std::move(on_done);
+                cr->conn     = conn;
+                cr->interp   = &interp;
+                cr->req.data = cr;
+
+                int rc = uv_tcp_connect(&cr->req, &conn->handle,
+                                        reinterpret_cast<const sockaddr*>(&addr),
+                                        on_tls_tcp_connect);
+                if (rc < 0) {
+                    delete cr;
+                    SSL_free(ssl);
+                    BIO_free(network_bio);
+                    SSL_CTX_free(ctx);
+                    conn->ssl = nullptr;
+                    conn->network_bio = nullptr;
+                    conn->ctx = nullptr;
+                    uv_close(reinterpret_cast<uv_handle_t*>(&conn->handle),
+                             on_tls_conn_close);
+                    throw std::runtime_error(
+                        std::string("tls.connect: ") + uv_strerror(rc));
+                }
+                return Value{};
+            })
+
+        // tls.listen(port, {cert, key}, on_connection) — TLS server.
+        // cert and key are PEM strings (read from disk via io.read_file or
+        // baked into the source). on_connection(conn) fires AFTER the TLS
+        // handshake completes — conn already has the same write/on_data/
+        // on_end/close shape as net so transport-agnostic lib code works.
+        .add_function("listen", 3,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                if (!args[0].is_number())
+                    throw std::runtime_error("tls.listen: port must be a number");
+                if (!args[1].is_map())
+                    throw std::runtime_error("tls.listen: 2nd arg must be a {cert, key} map");
+                if (!args[2].is_callable())
+                    throw std::runtime_error("tls.listen: on_connection must be a function");
+
+                int  port = static_cast<int>(args[0].as_number());
+                auto opts = args[1].as_map();
+                auto cert_it = opts->find("cert");
+                auto key_it  = opts->find("key");
+                if (cert_it == opts->end() || !cert_it->second.is_string())
+                    throw std::runtime_error("tls.listen: opts.cert must be a PEM string");
+                if (key_it == opts->end() || !key_it->second.is_string())
+                    throw std::runtime_error("tls.listen: opts.key must be a PEM string");
+                const std::string& cert_pem = cert_it->second.as_string();
+                const std::string& key_pem  = key_it->second.as_string();
+
+                SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
+                if (!ctx) throw std::runtime_error("tls.listen: SSL_CTX_new failed");
+                SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+
+                BIO* cert_bio = BIO_new_mem_buf(cert_pem.data(),
+                                                static_cast<int>(cert_pem.size()));
+                X509* x509 = PEM_read_bio_X509(cert_bio, nullptr, nullptr, nullptr);
+                BIO_free(cert_bio);
+                if (!x509) {
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.listen: failed to parse cert PEM");
+                }
+                if (SSL_CTX_use_certificate(ctx, x509) != 1) {
+                    X509_free(x509);
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.listen: SSL_CTX_use_certificate failed");
+                }
+                X509_free(x509);
+
+                BIO* key_bio = BIO_new_mem_buf(key_pem.data(),
+                                               static_cast<int>(key_pem.size()));
+                EVP_PKEY* pkey = PEM_read_bio_PrivateKey(key_bio, nullptr, nullptr, nullptr);
+                BIO_free(key_bio);
+                if (!pkey) {
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.listen: failed to parse key PEM");
+                }
+                if (SSL_CTX_use_PrivateKey(ctx, pkey) != 1) {
+                    EVP_PKEY_free(pkey);
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.listen: SSL_CTX_use_PrivateKey failed");
+                }
+                EVP_PKEY_free(pkey);
+                if (SSL_CTX_check_private_key(ctx) != 1) {
+                    SSL_CTX_free(ctx);
+                    throw std::runtime_error("tls.listen: cert and key don't match");
+                }
+
+                auto* lst = new TlsListener{};
+                lst->interp        = &interp;
+                lst->ctx           = ctx;
+                lst->on_connection = args[2].as_callable();
+                lst->alive         = std::make_shared<bool>(true);
+                uv_tcp_init(interp.loop(), &lst->handle);
+                lst->handle.data   = lst;
+
+                sockaddr_in addr{};
+                uv_ip4_addr("0.0.0.0", port, &addr);
+
+                int rc = uv_tcp_bind(&lst->handle,
+                                     reinterpret_cast<const sockaddr*>(&addr), 0);
+                if (rc < 0) {
+                    uv_close(reinterpret_cast<uv_handle_t*>(&lst->handle),
+                             on_tls_listener_close);
+                    throw std::runtime_error(
+                        std::string("tls.listen: bind: ") + uv_strerror(rc));
+                }
+                rc = uv_listen(reinterpret_cast<uv_stream_t*>(&lst->handle),
+                               128, on_tls_listener_connection);
+                if (rc < 0) {
+                    uv_close(reinterpret_cast<uv_handle_t*>(&lst->handle),
+                             on_tls_listener_close);
+                    throw std::runtime_error(
+                        std::string("tls.listen: listen: ") + uv_strerror(rc));
+                }
+
+                struct sockaddr_storage actual;
+                int alen = sizeof(actual);
+                uv_tcp_getsockname(&lst->handle,
+                                   reinterpret_cast<sockaddr*>(&actual), &alen);
+                int actual_port = ntohs(reinterpret_cast<sockaddr_in*>(&actual)->sin_port);
+
+                TlsListener* lst_p = lst;
+                auto         alive = lst->alive;
+                auto listener = NativeModule("tls_listener")
+                    .add_value("port", Value{static_cast<double>(actual_port)})
+                    .add_function("close", 0,
+                        [lst_p, alive](Interpreter&, std::vector<Value>) -> Value {
+                            if (*alive) close_tls_listener_once(lst_p);
+                            return Value{};
+                        })
+                    .build();
+                return Value{listener};
+            })
+
+        .build();
+
+    interp.register_native_module("tls", m);
+}
+
+}  // namespace bnl

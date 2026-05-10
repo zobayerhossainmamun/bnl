@@ -1,0 +1,45 @@
+// Native net module — TCP listen/connect + IPv4 DNS via libuv.
+import "net" as net;
+
+// ---------- resolve (literal IP passes through) ----------------------------
+net.resolve("127.0.0.1", function (err, ip) {
+    if (err != null) { print("resolve err:", err); return; }
+    print("resolved:", ip);
+
+    // ---------- in-process echo roundtrip ----------------------------------
+    var server = net.tcp_listen(0, function (conn) {
+        conn.on_data(function (data) {
+            print("server got:", data);
+            conn.write("pong");
+        });
+        conn.on_end(function () {
+            print("server: client gone");
+            conn.close();
+            server.close();
+        });
+    });
+
+    print("port valid:", server.port > 0);
+
+    net.tcp_connect("127.0.0.1", server.port, function (cerr, client) {
+        if (cerr != null) {
+            print("connect err:", cerr);
+            server.close();
+            return;
+        }
+        client.on_data(function (data) {
+            print("client got:", data);
+            client.close();
+        });
+        client.write("ping");
+    });
+});
+
+// ---------- error: bad IP -------------------------------------------------
+print("--- bad ip ---");
+try {
+    net.tcp_connect("not-an-ip", 80, function (e, c) { print("FAIL"); });
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

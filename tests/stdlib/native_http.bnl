@@ -1,0 +1,78 @@
+// Native http module — request/response parsing via llhttp.
+import "http" as http;
+
+// ---------- request: simple GET -------------------------------------------
+print("--- GET ---");
+var b1 = "GET /hello?x=1 HTTP/1.1\r\nHost: example.com\r\nUser-Agent: bnl/0.1\r\n\r\n";
+var r1 = http.parse_request(b1);
+print(r1.method, r1.url);
+print(r1.version);
+print(r1.complete);
+print(r1.consumed == b1.byte_length);
+print(r1.headers["host"]);
+print(r1.headers["user-agent"]);
+print(r1.body);                // empty for GET
+
+// ---------- request: POST with body ---------------------------------------
+print("--- POST ---");
+var b2 = "POST /submit HTTP/1.1\r\nHost: x\r\nContent-Length: 11\r\n\r\nhello world";
+var r2 = http.parse_request(b2);
+print(r2.method, r2.url);
+print(r2.body);
+print(r2.body.byte_length);
+print(r2.complete);
+
+// ---------- response: 200 OK with Content-Length --------------------------
+print("--- 200 ---");
+var b3 = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nContent-Type: text/plain\r\n\r\nhello";
+var r3 = http.parse_response(b3);
+print(r3.status, r3.reason);
+print(r3.body);
+print(r3.headers["content-type"]);
+print(r3.complete);
+
+// ---------- header case-insensitivity (lowercased on read) ----------------
+print("--- header case ---");
+var b4 = "GET / HTTP/1.1\r\nX-MiXeD-CaSe: value\r\n\r\n";
+var r4 = http.parse_request(b4);
+print(r4.headers["x-mixed-case"]);
+
+// ---------- incomplete buffer ---------------------------------------------
+print("--- incomplete ---");
+var r5 = http.parse_request("GET / HTTP/1.1\r\nHost: x");
+print(r5.complete);
+print(r5.method);              // method is set after request-line parsed
+
+// ---------- pipelined: two requests in one buffer -------------------------
+print("--- pipelined ---");
+var pipe = "GET /a HTTP/1.1\r\nHost: x\r\n\r\nGET /b HTTP/1.1\r\nHost: x\r\n\r\n";
+var r6 = http.parse_request(pipe);
+print(r6.complete);
+print(r6.url);
+print(r6.consumed < pipe.byte_length);
+
+// And the second message is parseable from the leftover.
+var rest = pipe.byte_slice(r6.consumed);
+var r7 = http.parse_request(rest);
+print(r7.url);
+print(r7.complete);
+
+// ---------- HTTP/1.0 response with EOF-terminated body --------------------
+print("--- 1.0 EOF body ---");
+var b8 = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\nbye world";
+// Without finalize: body bytes accumulate but message is not complete.
+var r8a = http.parse_response(b8);
+print(r8a.complete);
+// With finalize: llhttp closes the message; body is the bytes after headers.
+var r8b = http.parse_response(b8, true);
+print(r8b.complete);
+print(r8b.body);
+
+// ---------- malformed ------------------------------------------------------
+print("--- bad ---");
+try {
+    http.parse_request("not http garbage\r\n\r\n");
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

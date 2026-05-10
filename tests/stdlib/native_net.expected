@@ -1,0 +1,7 @@
+--- bad ip ---
+ok
+resolved: 127.0.0.1
+port valid: true
+server got: ping
+client got: pong
+server: client gone

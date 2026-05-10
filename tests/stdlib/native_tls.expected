@@ -1,0 +1,4 @@
+port valid: true
+server got: ping
+client got: pong
+server: client gone

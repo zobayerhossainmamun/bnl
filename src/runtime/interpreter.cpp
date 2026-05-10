@@ -78,6 +78,9 @@ Interpreter::Interpreter()
     register_timers(*this);
     register_regex (*this);
     register_crypto(*this);
+    register_net   (*this);
+    register_http  (*this);
+    register_tls   (*this);
 }
 
 Interpreter::~Interpreter() {

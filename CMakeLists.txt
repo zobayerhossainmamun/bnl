@@ -40,8 +40,9 @@ endif()
 # plugins or pure-bnl packages, dropped into deps/<name>/ at runtime.
 find_package(fmt           CONFIG REQUIRED)
 find_package(libuv         CONFIG REQUIRED)
+find_package(llhttp        CONFIG REQUIRED)        # stdlib/http.cpp
 find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
-find_package(OpenSSL       REQUIRED)               # stdlib/crypto.cpp
+find_package(OpenSSL       REQUIRED)               # stdlib/crypto.cpp + tls.cpp
 
 add_subdirectory(src)
 
