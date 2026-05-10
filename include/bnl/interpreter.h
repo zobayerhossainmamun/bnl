@@ -104,6 +104,7 @@ public:
     void visit(IndexExpr&)      override;
     void visit(SetIndexExpr&)   override;
     void visit(SetMemberExpr&)  override;
+    void visit(SuperExpr&)      override;
 
     void visit(ExpressionStmt&) override;
     void visit(VarStmt&)        override;

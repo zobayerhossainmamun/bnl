@@ -28,8 +28,10 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"return",    TokenType::Return},  {"\xe0\xa6\xab\xe0\xa7\x87\xe0\xa6\xb0\xe0\xa6\xa4",                     TokenType::Return},    // ফেরত
         {"var",       TokenType::Var},     {"\xe0\xa6\x9a\xe0\xa6\xb2\xe0\xa6\x95",                                 TokenType::Var},       // চলক
         {"class",     TokenType::Class},   {"\xe0\xa6\xb6\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa7\x87\xe0\xa6\xa3\xe0\xa7\x80", TokenType::Class}, // শ্রেণী
-        {"import",    TokenType::Import},  {"\xe0\xa6\x86\xe0\xa6\xae\xe0\xa6\xa6\xe0\xa6\xbe\xe0\xa6\xa8\xe0\xa6\xbf", TokenType::Import}, // আমদানি
-        {"as",        TokenType::As},      {"\xe0\xa6\xaf\xe0\xa7\x87\xe0\xa6\xae\xe0\xa6\xa8",                         TokenType::As},     // যেমন
+        {"extends",   TokenType::Extends}, {"\xe0\xa6\xaa\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa6\xb8\xe0\xa6\xbe\xe0\xa6\xb0\xe0\xa6\xbf\xe0\xa6\xa4", TokenType::Extends}, // প্রসারিত
+        {"super",     TokenType::Super},   {"\xe0\xa6\x89\xe0\xa6\xaa\xe0\xa6\xb0\xe0\xa7\x87\xe0\xa6\xb0",                                       TokenType::Super},   // উপরের
+        {"import",    TokenType::Import},  {"\xe0\xa6\x86\xe0\xa6\xae\xe0\xa6\xa6\xe0\xa6\xbe\xe0\xa6\xa8\xe0\xa6\xbf",                           TokenType::Import},  // আমদানি
+        {"as",        TokenType::As},      {"\xe0\xa6\xaf\xe0\xa7\x87\xe0\xa6\xae\xe0\xa6\xa8",                                                   TokenType::As},      // যেমন
 
         // Logical / boolean
         {"and",       TokenType::And},     {"\xe0\xa6\x8f\xe0\xa6\xac\xe0\xa6\x82",                                 TokenType::And},       // এবং
@@ -370,6 +372,8 @@ const char* token_type_name(TokenType type) {
         case TokenType::Return:     return "Return";
         case TokenType::Var:        return "Var";
         case TokenType::Class:      return "Class";
+        case TokenType::Extends:    return "Extends";
+        case TokenType::Super:      return "Super";
         case TokenType::Import:     return "Import";
         case TokenType::As:         return "As";
         case TokenType::And:        return "And";

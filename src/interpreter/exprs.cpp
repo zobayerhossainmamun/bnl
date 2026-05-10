@@ -615,4 +615,34 @@ void Interpreter::visit(SetMemberExpr& e) {
                     std::string(e.name.lexeme), obj.type_name()));
 }
 
+void Interpreter::visit(SuperExpr& e) {
+    // `super` is bound in the method's closure environment by ClassStmt when
+    // a superclass is present. Missing → either we're outside a method body
+    // or the enclosing class has no `extends`.
+    const Value* super_val = environment_->lookup("super");
+    if (!super_val)
+        throw RuntimeError(e.keyword,
+            "'super' is only valid inside a method of a class declared with 'extends'");
+
+    auto parent = std::dynamic_pointer_cast<Class>(super_val->as_callable());
+    if (!parent)
+        throw RuntimeError(e.keyword, "internal: 'super' is not a class");
+
+    // The receiver is the user-named first parameter; the convention (and
+    // requirement when using super) is that it's named `self`.
+    const Value* self_val = environment_->lookup("self");
+    if (!self_val || !self_val->is_instance())
+        throw RuntimeError(e.keyword,
+            "'super' requires the enclosing method's first parameter to be named 'self'");
+
+    auto fn = parent->find_method(std::string(e.method.lexeme));
+    if (!fn)
+        throw RuntimeError(e.method,
+            fmt::format("superclass '{}' has no method '{}'",
+                        parent->name(), std::string(e.method.lexeme)));
+
+    auto bound = std::make_shared<BoundMethod>(self_val->as_instance(), fn);
+    result_ = Value{std::static_pointer_cast<Callable>(bound)};
+}
+
 }  // namespace bnl

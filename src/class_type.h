@@ -28,23 +28,33 @@ namespace bnl {
 class Class : public Callable, public std::enable_shared_from_this<Class> {
 public:
     Class(std::string                                     name,
-          std::unordered_map<std::string, CallablePtr>    methods)
-        : name_(std::move(name)), methods_(std::move(methods)) {}
+          std::unordered_map<std::string, CallablePtr>    methods,
+          std::shared_ptr<Class>                          parent = nullptr)
+        : name_(std::move(name)), methods_(std::move(methods)),
+          parent_(std::move(parent)) {}
 
     // Calling a class instantiates it. Arity matches the user-visible side of
     // `init` — i.e. init's declared arity minus 1 for the implicit `self`.
+    // For inherited classes with no own init, falls back to the parent's init.
     int         arity() const override;
     std::string name()  const override { return name_; }
     Value       call(Interpreter& interp, std::vector<Value> args) override;
 
+    // Method-resolution order: own methods first, then walk up the parent
+    // chain. Single inheritance, no MRO complications.
     CallablePtr find_method(const std::string& method_name) const {
         auto it = methods_.find(method_name);
-        return it != methods_.end() ? it->second : nullptr;
+        if (it != methods_.end()) return it->second;
+        if (parent_) return parent_->find_method(method_name);
+        return nullptr;
     }
+
+    const std::shared_ptr<Class>& parent() const { return parent_; }
 
 private:
     std::string                                  name_;
     std::unordered_map<std::string, CallablePtr> methods_;
+    std::shared_ptr<Class>                       parent_;
 };
 
 class Instance {

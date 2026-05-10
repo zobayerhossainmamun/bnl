@@ -152,6 +152,12 @@ public:
         out_ += ')';
     }
 
+    void visit(SuperExpr& e) override {
+        out_ += "(super .";
+        out_ += e.method.lexeme;
+        out_ += ')';
+    }
+
     // ---- statement visits --------------------------------------------------
 
     void visit(ExpressionStmt& s) override {
@@ -244,7 +250,11 @@ public:
 
     void visit(ClassStmt& s) override {
         indent();
-        out_ += fmt::format("(class {}", s.name.lexeme);
+        if (s.superclass.lexeme.size() > 0) {
+            out_ += fmt::format("(class {} extends {}", s.name.lexeme, s.superclass.lexeme);
+        } else {
+            out_ += fmt::format("(class {}", s.name.lexeme);
+        }
         depth_++;
         for (auto& m : s.methods) {
             out_ += '\n';

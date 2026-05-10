@@ -23,6 +23,8 @@ enum class TokenType {
     Return,
     Var,
     Class,
+    Extends,
+    Super,
     Import,
     As,
     And,

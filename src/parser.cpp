@@ -72,6 +72,13 @@ StmtPtr Parser::function_declaration(const std::string& kind) {
 
 StmtPtr Parser::class_declaration() {
     Token name = consume(TokenType::Identifier, "expected class name");
+
+    // Optional `extends Parent` for single inheritance.
+    Token superclass{TokenType::Identifier, "", name.line, name.column};
+    if (match({TokenType::Extends})) {
+        superclass = consume(TokenType::Identifier, "expected superclass name after 'extends'");
+    }
+
     consume(TokenType::LBrace, "expected '{' before class body");
     std::vector<std::unique_ptr<FunctionStmt>> methods;
     while (!check(TokenType::RBrace) && !at_end()) {
@@ -81,7 +88,7 @@ StmtPtr Parser::class_declaration() {
         methods.push_back(parse_function("method"));
     }
     consume(TokenType::RBrace, "expected '}' after class body");
-    return std::make_unique<ClassStmt>(name, std::move(methods));
+    return std::make_unique<ClassStmt>(name, superclass, std::move(methods));
 }
 
 StmtPtr Parser::statement() {
@@ -296,6 +303,17 @@ ExprPtr Parser::primary() {
     }
     if (match({TokenType::Function})) {
         return function_expression();
+    }
+    if (match({TokenType::Super})) {
+        Token keyword = previous();
+        if (match({TokenType::Dot})) {
+            Token method = consume(TokenType::Identifier, "expected method name after 'super.'");
+            return std::make_unique<SuperExpr>(keyword, method);
+        }
+        // Bare `super` is only legal as `super(args)` (call parent's init).
+        // Synthesize a method token "init" — runtime treats this uniformly.
+        Token init_method{TokenType::Identifier, "init", keyword.line, keyword.column};
+        return std::make_unique<SuperExpr>(keyword, init_method);
     }
     if (match({TokenType::LBracket})) {
         Token bracket = previous();

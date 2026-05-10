@@ -28,6 +28,7 @@ class MapExpr;
 class IndexExpr;
 class SetIndexExpr;
 class SetMemberExpr;
+class SuperExpr;
 
 class ExpressionStmt;
 class VarStmt;
@@ -62,6 +63,7 @@ public:
     virtual void visit(IndexExpr&)      = 0;
     virtual void visit(SetIndexExpr&)   = 0;
     virtual void visit(SetMemberExpr&)  = 0;
+    virtual void visit(SuperExpr&)      = 0;
 };
 
 class StmtVisitor {
@@ -237,6 +239,20 @@ public:
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 
+// super.method   (or bare `super` followed by `(args)`, which the parser
+// rewrites as SuperExpr with method.lexeme == "init")
+//
+// Only legal inside a method body of a class declared with `extends`. The
+// runtime resolves super.method by walking up the parent-class chain via
+// find_method, then binds it to the current `self`.
+class SuperExpr : public Expr {
+public:
+    Token keyword;   // the `super` token, kept for error reporting
+    Token method;    // identifier after the dot, or synthetic "init" for bare super
+    SuperExpr(Token k, Token m) : keyword(k), method(m) {}
+    void accept(ExprVisitor& v) override { v.visit(*this); }
+};
+
 // ---- statement nodes --------------------------------------------------------
 
 class ExpressionStmt : public Stmt {
@@ -306,17 +322,22 @@ public:
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 
-// class Foo { function method(self, ...) { ... } }
+// class Foo extends Bar { function method(self, ...) { ... } }
 // Methods are FunctionStmts so they reuse the existing function machinery —
 // each is bound at evaluation time as a Callable in the class's method
 // dictionary. The first parameter is conventionally `self`; calling
 // `instance.method(args)` prepends the instance via a BoundMethod wrapper.
+//
+// `extends` is optional. If superclass.lexeme is empty, the class has no
+// parent. If non-empty, the runtime looks up the named class at definition
+// time and chains parent for method-resolution + super support.
 class ClassStmt : public Stmt {
 public:
     Token                                      name;
+    Token                                      superclass;   // lexeme empty if none
     std::vector<std::unique_ptr<FunctionStmt>> methods;
-    ClassStmt(Token n, std::vector<std::unique_ptr<FunctionStmt>> m)
-        : name(n), methods(std::move(m)) {}
+    ClassStmt(Token n, Token s, std::vector<std::unique_ptr<FunctionStmt>> m)
+        : name(n), superclass(s), methods(std::move(m)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 

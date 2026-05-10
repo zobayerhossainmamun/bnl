@@ -1,0 +1,10 @@
+a.speak: generic makes a sound
+a.describe: Animal[generic]
+d.speak: Rex barks
+d.describe: Animal[Rex] breed=labrador
+d.name: Rex
+d.breed: labrador
+p.speak: Buddy barks (puppy yip!)
+p.name: Buddy
+p.describe: Animal[Buddy] breed=poodle
+type: instance

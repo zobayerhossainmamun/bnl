@@ -5,9 +5,11 @@
 namespace bnl {
 
 int Class::arity() const {
-    auto it = methods_.find("init");
-    if (it == methods_.end()) return 0;            // no init -> Foo() takes no args
-    int init_arity = it->second->arity();
+    // Walk the parent chain — a subclass without its own init inherits the
+    // parent's signature.
+    auto init = find_method("init");
+    if (!init) return 0;                           // no init anywhere -> Foo() takes no args
+    int init_arity = init->arity();
     if (init_arity < 0) return init_arity;         // variadic
     return init_arity > 0 ? init_arity - 1 : 0;    // hide self
 }

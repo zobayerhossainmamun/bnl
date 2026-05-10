@@ -1,6 +1,8 @@
 #include "bnl/interpreter.h"
 #include "interpreter/internal.h"
 
+#include <fmt/core.h>
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -45,16 +47,36 @@ void Interpreter::visit(ReturnStmt& s) {
 }
 
 void Interpreter::visit(ClassStmt& s) {
-    // Each method is a UserFunction whose closure is the surrounding scope.
-    // Stored under the method's identifier name in the class's method table.
+    // Resolve the optional superclass at definition time. Must be a Class
+    // value already in scope.
+    std::shared_ptr<Class> parent;
+    std::shared_ptr<Environment> method_closure = environment_;
+    if (s.superclass.lexeme.size() > 0) {
+        const Value* sv = environment_->lookup(std::string(s.superclass.lexeme));
+        if (!sv || !sv->is_callable())
+            throw RuntimeError(s.superclass,
+                fmt::format("superclass '{}' is not defined", s.superclass.lexeme));
+        parent = std::dynamic_pointer_cast<Class>(sv->as_callable());
+        if (!parent)
+            throw RuntimeError(s.superclass,
+                fmt::format("superclass '{}' is not a class", s.superclass.lexeme));
+
+        // Each method's closure gets a `super` binding pointing at the parent
+        // class. SuperExpr looks it up here at evaluation time.
+        method_closure = std::make_shared<Environment>(environment_);
+        method_closure->define("super",
+            Value{std::static_pointer_cast<Callable>(parent)});
+    }
+
     std::unordered_map<std::string, CallablePtr> methods;
     for (auto& m : s.methods) {
         auto fn = std::make_shared<interp_detail::UserFunction>(
-            std::string(m->name.lexeme), &m->params, &m->body, environment_);
+            std::string(m->name.lexeme), &m->params, &m->body, method_closure);
         methods.emplace(std::string(m->name.lexeme),
                         std::static_pointer_cast<Callable>(fn));
     }
-    auto klass = std::make_shared<Class>(std::string(s.name.lexeme), std::move(methods));
+    auto klass = std::make_shared<Class>(std::string(s.name.lexeme),
+                                         std::move(methods), parent);
     environment_->define(std::string(s.name.lexeme),
                          Value{std::static_pointer_cast<Callable>(klass)});
 }

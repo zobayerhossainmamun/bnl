@@ -1,0 +1,53 @@
+// Single inheritance with `extends`, method override, and `super`.
+
+class Animal {
+    function init(self, name) {
+        self.name = name;
+    }
+    function speak(self) {
+        return self.name + " makes a sound";
+    }
+    function describe(self) {
+        return "Animal[" + self.name + "]";
+    }
+}
+
+class Dog extends Animal {
+    function init(self, name, breed) {
+        super(name);                // chain parent's init
+        self.breed = breed;
+    }
+    function speak(self) {          // override
+        return self.name + " barks";
+    }
+    function describe(self) {       // call parent's method via super
+        return super.describe() + " breed=" + self.breed;
+    }
+}
+
+class Puppy extends Dog {
+    function speak(self) {
+        // chain through two levels of super
+        return super.speak() + " (puppy yip!)";
+    }
+}
+
+var a = Animal("generic");
+print("a.speak:",    a.speak());
+print("a.describe:", a.describe());
+
+var d = Dog("Rex", "labrador");
+print("d.speak:",    d.speak());          // overridden
+print("d.describe:", d.describe());       // uses super.describe
+print("d.name:",     d.name);             // set by super(name)
+print("d.breed:",    d.breed);
+
+var p = Puppy("Buddy", "poodle");
+print("p.speak:",    p.speak());          // chains super.speak (Dog's, not Animal's)
+print("p.name:",     p.name);             // inherited init through Dog -> Animal
+
+// Inherited method: Puppy never declares describe, falls back to Dog's.
+print("p.describe:", p.describe());
+
+// type() reports "instance" for any class instance.
+print("type:",       type(p));
