@@ -1,5 +1,5 @@
 // A program written entirely in Bangla, with the same behaviour as English.
-কাজ যোগ(ক, খ) {
+ফাংশন যোগ(ক, খ) {
     ফেরত ক + খ;
 }
 
@@ -7,7 +7,7 @@
 
 যদি (যোগ(1, 1) == 2) {
     দেখাও("সঠিক");
-} নয়তো {
+} নাহলে {
     দেখাও("ভুল");
 }
 

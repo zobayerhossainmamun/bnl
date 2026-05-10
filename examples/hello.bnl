@@ -2,13 +2,13 @@
 চলক greeting = "Hello";
 var name = "bnl";
 
-কাজ shout(s) {
+ফাংশন shout(s) {
     ফেরত s + "!";
 }
 
 যদি (1 < 2 এবং name != null) {
     print(shout(greeting + ", " + name));
-} নয়তো {
+} নাহলে {
     দেখাও("unreachable");
 }
 
@@ -25,7 +25,7 @@ function make_counter() {
 var c = make_counter();
 print("counter:", c(), c(), c());
 
-কাজ fib(n) {
+ফাংশন fib(n) {
     যদি (n < 2) { ফেরত n; }
     ফেরত fib(n - 1) + fib(n - 2);
 }

@@ -18,13 +18,13 @@ namespace {
 const std::unordered_map<std::string_view, TokenType>& keyword_table() {
     static const std::unordered_map<std::string_view, TokenType> table = {
         // Control flow
-        {"if",        TokenType::If},      {"\xe0\xa6\xaf\xe0\xa6\xa6\xe0\xa6\xbf",                                 TokenType::If},        // যদি
-        {"else",      TokenType::Else},    {"\xe0\xa6\xa8\xe0\xa6\xaf\xe0\xa6\xbc\xe0\xa6\xa4\xe0\xa7\x8b",         TokenType::Else},      // নয়তো
-        {"while",     TokenType::While},   {"\xe0\xa6\xaf\xe0\xa6\xa4\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa6\xa3", TokenType::While}, // যতক্ষণ
-        {"for",       TokenType::For},     {"\xe0\xa6\xaa\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa6\xa4\xe0\xa6\xbf\xe0\xa6\xac\xe0\xa6\xbe\xe0\xa6\xb0", TokenType::For}, // প্রতিবার
+        {"if",        TokenType::If},      {"\xe0\xa6\xaf\xe0\xa6\xa6\xe0\xa6\xbf",                                                         TokenType::If},        // যদি
+        {"else",      TokenType::Else},    {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\xb9\xe0\xa6\xb2\xe0\xa7\x87",                                 TokenType::Else},      // নাহলে
+        {"while",     TokenType::While},   {"\xe0\xa6\xaf\xe0\xa6\xa4\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa6\xa3",                     TokenType::While},     // যতক্ষণ
+        {"for",       TokenType::For},     {"\xe0\xa6\xaa\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa6\xa4\xe0\xa6\xbf",                                 TokenType::For},       // প্রতি
 
         // Definitions
-        {"function",  TokenType::Function},{"\xe0\xa6\x95\xe0\xa6\xbe\xe0\xa6\x9c",                                 TokenType::Function},  // কাজ
+        {"function",  TokenType::Function},{"\xe0\xa6\xab\xe0\xa6\xbe\xe0\xa6\x82\xe0\xa6\xb6\xe0\xa6\xa8",                                 TokenType::Function},  // ফাংশন
         {"return",    TokenType::Return},  {"\xe0\xa6\xab\xe0\xa7\x87\xe0\xa6\xb0\xe0\xa6\xa4",                     TokenType::Return},    // ফেরত
         {"var",       TokenType::Var},     {"\xe0\xa6\x9a\xe0\xa6\xb2\xe0\xa6\x95",                                 TokenType::Var},       // চলক
         {"class",     TokenType::Class},   {"\xe0\xa6\xb6\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa7\x87\xe0\xa6\xa3\xe0\xa7\x80", TokenType::Class}, // শ্রেণী
@@ -39,7 +39,7 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"not",       TokenType::Not},     {"\xe0\xa6\xa8\xe0\xa6\xbe",                                             TokenType::Not},       // না
         {"true",      TokenType::True},    {"\xe0\xa6\xb8\xe0\xa6\xa4\xe0\xa7\x8d\xe0\xa6\xaf",                     TokenType::True},      // সত্য
         {"false",     TokenType::False},   {"\xe0\xa6\xae\xe0\xa6\xbf\xe0\xa6\xa5\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xbe", TokenType::False}, // মিথ্যা
-        {"null",      TokenType::Null},    {"\xe0\xa6\xb6\xe0\xa7\x82\xe0\xa6\xa8\xe0\xa7\x8d\xe0\xa6\xaf",         TokenType::Null},      // শূন্য
+        {"null",      TokenType::Null},    {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\x87",                                                         TokenType::Null},      // নাই
 
         // Note: `print` / `দেখাও` are deliberately NOT keywords. They are ordinary
         // identifiers that the runtime registers as builtin functions in the

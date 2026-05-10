@@ -1,13 +1,13 @@
-// Class declared with the Bangla keyword `শ্রেণী`, methods with `কাজ`,
+// Class declared with the Bangla keyword `শ্রেণী`, methods with `ফাংশন`,
 // fields and method names written in Bangla. The whole vocabulary is bilingual.
 শ্রেণী হিসাব {
-    কাজ init(self, প্রারম্ভ) {
+    ফাংশন init(self, প্রারম্ভ) {
         self.মান = প্রারম্ভ;
     }
-    কাজ যোগ(self, n) {
+    ফাংশন যোগ(self, n) {
         self.মান = self.মান + n;
     }
-    কাজ পান(self) {
+    ফাংশন পান(self) {
         ফেরত self.মান;
     }
 }
