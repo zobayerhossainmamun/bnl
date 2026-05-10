@@ -74,11 +74,22 @@
         },
         {
             "name": "macos",
-            "displayName": "macOS dev    (Debug)",
+            "displayName": "macOS dev    (arm64, Debug)",
             "inherits": "_dev",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
             "cacheVariables": {
-                "VCPKG_TARGET_TRIPLET": "arm64-osx"
+                "VCPKG_TARGET_TRIPLET": "arm64-osx",
+                "CMAKE_OSX_ARCHITECTURES": "arm64"
+            }
+        },
+        {
+            "name": "macos-x64",
+            "displayName": "macOS dev    (x64 Intel, Debug)",
+            "inherits": "_dev",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx",
+                "CMAKE_OSX_ARCHITECTURES": "x86_64"
             }
         },
 
@@ -129,11 +140,23 @@
         },
         {
             "name": "macos-release",
-            "displayName": "macOS ship   (Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "macOS ship   (arm64, Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
             "cacheVariables": {
                 "VCPKG_TARGET_TRIPLET": "arm64-osx",
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_EXE_LINKER_FLAGS": "-Wl,-dead_strip"
+            }
+        },
+        {
+            "name": "macos-x64-release",
+            "displayName": "macOS ship   (x64 Intel, Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "inherits": "_release",
+            "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-osx",
+                "CMAKE_OSX_ARCHITECTURES": "x86_64",
                 "CMAKE_EXE_LINKER_FLAGS": "-Wl,-dead_strip"
             }
         }
@@ -144,10 +167,12 @@
         { "name": "linux",               "configurePreset": "linux"               },
         { "name": "linux-x86",           "configurePreset": "linux-x86"           },
         { "name": "macos",               "configurePreset": "macos"               },
+        { "name": "macos-x64",           "configurePreset": "macos-x64"           },
         { "name": "windows-release",     "configurePreset": "windows-release",     "configuration": "Release" },
         { "name": "windows-x86-release", "configurePreset": "windows-x86-release", "configuration": "Release" },
         { "name": "linux-release",       "configurePreset": "linux-release",       "configuration": "Release" },
         { "name": "linux-x86-release",   "configurePreset": "linux-x86-release",   "configuration": "Release" },
-        { "name": "macos-release",       "configurePreset": "macos-release",       "configuration": "Release" }
+        { "name": "macos-release",       "configurePreset": "macos-release",       "configuration": "Release" },
+        { "name": "macos-x64-release",   "configurePreset": "macos-x64-release",   "configuration": "Release" }
     ]
 }
