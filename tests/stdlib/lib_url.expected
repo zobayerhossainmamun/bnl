@@ -1,0 +1,24 @@
+--- parse ---
+https
+example.com
+8443
+/api/users
+id=42&name=alice
+top
+80
+443
+/
+--- codec ---
+hello%20world%21
+a%2Fb%3Fc%3D1
+hello world!
+a/b?c=1
+a b
+--- query ---
+42
+alice smith
+
+
+k=v%20with%20space
+--- bad ---
+ok

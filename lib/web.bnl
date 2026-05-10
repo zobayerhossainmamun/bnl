@@ -1,0 +1,173 @@
+// Combined HTTP / HTTPS server. Wraps net + tls + http into a single import.
+//
+// Usage:
+//   import "web" as web;
+//   var server = web.serve({port: 8080}, function (req) {
+//       return {status: 200, body: "hi"};
+//   });
+//
+// HTTPS — pass opts.tls = {cert, key} (PEM strings):
+//   web.serve({port: 8443, tls: {cert: cert, key: key}}, handler);
+//
+// Handler signature:
+//   sync:  return {status, headers?, body?}
+//   async: return null, then call req.respond({status, headers?, body?}) later
+//
+// Errors thrown from the handler become 500 responses (logged to stderr).
+
+import "net"   as _net;
+import "tls"   as _tls;
+import "http"  as _http;
+import "url"   as _url;
+import "json"  as _json;
+
+// ---------- response helpers (exported) ------------------------------------
+
+function text(s) {
+    return { status: 200,
+             headers: { "Content-Type": "text/plain; charset=utf-8" },
+             body: s };
+}
+
+function html(s) {
+    return { status: 200,
+             headers: { "Content-Type": "text/html; charset=utf-8" },
+             body: s };
+}
+
+function json(value) {
+    return { status: 200,
+             headers: { "Content-Type": "application/json; charset=utf-8" },
+             body: _json.stringify(value) };
+}
+
+// ---------- request helpers (exported) -------------------------------------
+
+// Parse req.body as application/x-www-form-urlencoded → {k: v, ...}.
+function parse_form(req) {
+    return _url.parse_query(req.body);
+}
+
+// Parse req.body as JSON. Returns null on malformed input (json.parse
+// contract — an error message is also written to stderr by the native).
+function parse_json(req) {
+    return _json.parse(req.body);
+}
+
+// ---------- internals -------------------------------------------------------
+
+function _status_text(s) {
+    if (s == 200) { return "OK"; }
+    if (s == 201) { return "Created"; }
+    if (s == 204) { return "No Content"; }
+    if (s == 301) { return "Moved Permanently"; }
+    if (s == 302) { return "Found"; }
+    if (s == 304) { return "Not Modified"; }
+    if (s == 400) { return "Bad Request"; }
+    if (s == 401) { return "Unauthorized"; }
+    if (s == 403) { return "Forbidden"; }
+    if (s == 404) { return "Not Found"; }
+    if (s == 405) { return "Method Not Allowed"; }
+    if (s == 500) { return "Internal Server Error"; }
+    if (s == 501) { return "Not Implemented"; }
+    if (s == 503) { return "Service Unavailable"; }
+    return "OK";
+}
+
+function _has_header(h, name_lower) {
+    for (var k of h.keys()) {
+        if (k.to_lower() == name_lower) { return true; }
+    }
+    return false;
+}
+
+function _send_response(conn, resp) {
+    var status = resp.status;
+    if (status == null) { status = 200; }
+    var headers = resp.headers;
+    if (headers == null) { headers = {}; }
+    var body = resp.body;
+    if (body == null) { body = ""; }
+
+    if (not _has_header(headers, "content-type")) {
+        headers["Content-Type"] = "text/plain; charset=utf-8";
+    }
+    if (not _has_header(headers, "content-length")) {
+        headers["Content-Length"] = str(body.byte_length);
+    }
+    if (not _has_header(headers, "connection")) {
+        headers["Connection"] = "close";
+    }
+
+    var out = "HTTP/1.1 " + str(status) + " " + _status_text(status) + "\r\n";
+    for (var k of headers.keys()) {
+        out = out + k + ": " + str(headers[k]) + "\r\n";
+    }
+    out = out + "\r\n" + body;
+
+    conn.write(out, function (err) {
+        conn.close();
+    });
+}
+
+function _enrich(parsed, conn) {
+    // parsed already has {method, url, version, headers, body, complete, consumed}
+    var qmark = parsed.url.index_of("?");
+    if (qmark >= 0) {
+        parsed.path  = parsed.url.byte_slice(0, qmark);
+        parsed.query = _url.parse_query(parsed.url.byte_slice(qmark + 1));
+    } else {
+        parsed.path  = parsed.url;
+        parsed.query = {};
+    }
+    var done = false;
+    parsed.respond = function (r) {
+        if (done) { return; }
+        done = true;
+        _send_response(conn, r);
+    };
+    return parsed;
+}
+
+// One handler call per connection. v1 closes after a single response — no
+// keep-alive yet (the response forces Connection: close).
+function _handle_connection(conn, handler) {
+    var buf = "";
+    var dispatched = false;
+    conn.on_data(function (chunk) {
+        if (dispatched) { return; }
+        buf = buf + chunk;
+        var parsed = _http.parse_request(buf);
+        if (not parsed.complete) { return; }
+
+        dispatched = true;
+        var req = _enrich(parsed, conn);
+
+        var resp = null;
+        try {
+            resp = handler(req);
+        } catch (e) {
+            print("[web] handler error:", e);
+            resp = { status: 500, body: "Internal Server Error" };
+        }
+        if (resp != null) { _send_response(conn, resp); }
+        // null → handler will call req.respond(resp) asynchronously.
+    });
+    conn.on_end(function () { conn.close(); });
+}
+
+// ---------- exported entry point -------------------------------------------
+
+function serve(opts, handler) {
+    var port = opts.port;
+    if (port == null) { port = 0; }
+
+    if (opts.tls != null) {
+        return _tls.listen(port, opts.tls, function (conn) {
+            _handle_connection(conn, handler);
+        });
+    }
+    return _net.tcp_listen(port, function (conn) {
+        _handle_connection(conn, handler);
+    });
+}

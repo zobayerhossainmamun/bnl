@@ -1,0 +1,71 @@
+// Native json module — parse + stringify via nlohmann_json.
+import "json" as j;
+
+// ---------- parse: scalars ------------------------------------------------
+print("--- parse: scalars ---");
+print(j.parse("null"));
+print(j.parse("true"));
+print(j.parse("false"));
+print(j.parse("42"));
+print(j.parse("3.14"));
+print(j.parse("\"hello\""));
+
+// ---------- parse: array --------------------------------------------------
+print("--- parse: array ---");
+var arr = j.parse("[1, 2, 3]");
+print(arr.length);
+print(arr[0], arr[1], arr[2]);
+
+// ---------- parse: object -------------------------------------------------
+print("--- parse: object ---");
+var obj = j.parse("{\"name\":\"alice\",\"age\":30}");
+print(obj.name, obj.age);
+
+// ---------- parse: nested -------------------------------------------------
+print("--- parse: nested ---");
+var nest = j.parse("{\"users\":[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"}]}");
+print(nest.users.length);
+print(nest.users[0].id, nest.users[0].name);
+print(nest.users[1].id, nest.users[1].name);
+
+// ---------- parse: error -> null -----------------------------------------
+print("--- parse: bad ---");
+print(j.parse("{not json"));    // null (stderr-logged)
+
+// ---------- stringify: scalars -------------------------------------------
+print("--- stringify: scalars ---");
+print(j.stringify(null));
+print(j.stringify(true));
+print(j.stringify(false));
+print(j.stringify(42));
+print(j.stringify(1.5));
+print(j.stringify("hi"));
+print(j.stringify("with \"quotes\" and\nnewlines"));
+
+// ---------- stringify: collections (keys sorted) -------------------------
+print("--- stringify: collections ---");
+print(j.stringify([]));
+print(j.stringify([1, 2, "x"]));
+print(j.stringify({}));
+print(j.stringify({b: 2, a: 1}));
+
+// ---------- stringify: pretty --------------------------------------------
+print("--- stringify: pretty ---");
+print(j.stringify({a: [1, 2]}, 2));
+
+// ---------- roundtrip ----------------------------------------------------
+print("--- roundtrip ---");
+var src = {nested: {a: 1, b: [true, false, null, "x"]}};
+var s = j.stringify(src);
+var back = j.parse(s);
+print(back.nested.a);
+print(back.nested.b[0], back.nested.b[1], back.nested.b[2], back.nested.b[3]);
+
+// ---------- error: cannot stringify a function ---------------------------
+print("--- bad stringify ---");
+try {
+    j.stringify(function () {});
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

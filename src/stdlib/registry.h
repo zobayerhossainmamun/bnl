@@ -16,8 +16,9 @@ class Interpreter;
 //   net     — TCP sockets + IPv4 DNS (libuv)
 //   http    — request/response parsing (llhttp)
 //   tls     — TLS client + server over net (OpenSSL BIO-pair + libuv)
+//   json    — JSON parse / stringify (nlohmann_json)
 //
-// Anything else (json, sqlite, …) is delivered as a plugin by the separate
+// Anything else (sqlite, …) is delivered as a plugin by the separate
 // package manager.
 void register_sys   (Interpreter& interp);
 void register_io    (Interpreter& interp);
@@ -27,5 +28,6 @@ void register_crypto(Interpreter& interp);
 void register_net   (Interpreter& interp);
 void register_http  (Interpreter& interp);
 void register_tls   (Interpreter& interp);
+void register_json  (Interpreter& interp);
 
 }  // namespace bnl

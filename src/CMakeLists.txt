@@ -43,6 +43,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/net.cpp
     stdlib/http.cpp
     stdlib/tls.cpp
+    stdlib/json.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -60,7 +61,11 @@ target_include_directories(bnl_core
                                           # still resolve correctly.
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}       # src/*.h — internal headers
+        ${CMAKE_BINARY_DIR}/generated     # stdlib_embedded.h (baked lib/*.bnl)
 )
+
+# Make sure the embedded-stdlib header is regenerated before bnl_core builds.
+add_dependencies(bnl_core bnl_stdlib_embedded)
 
 # libuv is in the public header surface (uv_loop_t* exposed via Interpreter).
 # Hosts that link bnl_core get libuv transitively. fmt stays PRIVATE.

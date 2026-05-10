@@ -1,0 +1,8 @@
+port valid: true
+hello: 200 hello, alice
+text: 200 plain
+text ct: text/plain; charset=utf-8
+json: 200 {"n":7,"ok":true}
+json ct: application/json; charset=utf-8
+echo: 200 {"echo":42}
+404: 404 nope

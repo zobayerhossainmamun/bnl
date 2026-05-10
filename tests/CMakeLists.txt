@@ -41,6 +41,13 @@ add_bnl_test(native_crypto        stdlib)
 add_bnl_test(native_net           stdlib)
 add_bnl_test(native_http          stdlib)
 add_bnl_test(native_tls           stdlib)
+add_bnl_test(native_json          stdlib)
+
+# ---------- embedded bnl stdlib (lib/*.bnl) -------------------------------
+add_bnl_test(lib_url              stdlib)
+add_bnl_test(lib_web              stdlib)
+add_bnl_test(lib_request          stdlib)
+add_bnl_test(lib_web_https        stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

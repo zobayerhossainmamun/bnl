@@ -1,0 +1,47 @@
+// Embedded bnl stdlib — url module.
+import "url" as url;
+
+// ---------- parse ---------------------------------------------------------
+print("--- parse ---");
+var u = url.parse("https://example.com:8443/api/users?id=42&name=alice#top");
+print(u.scheme);
+print(u.host);
+print(u.port);
+print(u.path);
+print(u.query);
+print(u.fragment);
+
+// default port from scheme
+print(url.parse("http://example.com/").port);
+print(url.parse("https://example.com/").port);
+
+// missing path -> "/"
+print(url.parse("https://example.com").path);
+
+// ---------- encode / decode ----------------------------------------------
+print("--- codec ---");
+print(url.encode("hello world!"));
+print(url.encode("a/b?c=1"));
+print(url.decode("hello%20world%21"));
+print(url.decode("a%2Fb%3Fc%3D1"));
+print(url.decode("a+b"));                  // + -> space (form-style)
+
+// ---------- query --------------------------------------------------------
+print("--- query ---");
+var qs = url.parse_query("id=42&name=alice%20smith&empty=&bare");
+print(qs["id"]);
+print(qs["name"]);
+print(qs["empty"]);
+print(qs["bare"]);
+
+// build_query with one key (deterministic regardless of map order)
+print(url.build_query({k: "v with space"}));
+
+// ---------- error: no scheme ---------------------------------------------
+print("--- bad ---");
+try {
+    url.parse("example.com/");
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

@@ -1,0 +1,158 @@
+// URL parsing + percent-encoding for HTTP/HTTPS clients and servers.
+// Supports the subset that web work needs: scheme://host[:port][/path][?query][#fragment].
+
+function _hex_nibble(n) {
+    if (n < 10) { return chr(48 + n); }            // 0-9
+    return chr(65 + n - 10);                        // A-F
+}
+
+function _nibble_val(b) {
+    if (b >= 48 and b <= 57)  { return b - 48; }
+    if (b >= 65 and b <= 70)  { return b - 55; }   // A-F  -> 10..15
+    if (b >= 97 and b <= 102) { return b - 87; }   // a-f
+    return -1;
+}
+
+function _join(parts, sep) {
+    if (parts.length == 0) { return ""; }
+    var out = parts[0];
+    var i = 1;
+    while (i < parts.length) {
+        out = out + sep + parts[i];
+        i = i + 1;
+    }
+    return out;
+}
+
+// Parse a URL string into {scheme, host, port, path, query, fragment}.
+// Port defaults from scheme (http=80, https=443, else 0). Throws on no scheme.
+function parse(s) {
+    var url = { scheme: "", host: "", port: 0, path: "/", query: "", fragment: "" };
+
+    var ci = s.index_of("://");
+    if (ci < 0) { throw "url.parse: missing scheme://"; }
+    url.scheme = s.byte_slice(0, ci);
+
+    var rest = s.byte_slice(ci + 3);
+
+    // Compute boundaries within `rest`.
+    var len = rest.byte_length;
+    var ps = rest.index_of("/");
+    var qs = rest.index_of("?");
+    var fs = rest.index_of("#");
+
+    var host_end = len;
+    if (ps >= 0 and ps < host_end) { host_end = ps; }
+    if (qs >= 0 and qs < host_end) { host_end = qs; }
+    if (fs >= 0 and fs < host_end) { host_end = fs; }
+
+    var host_part = rest.byte_slice(0, host_end);
+    var colon = host_part.index_of(":");
+    if (colon >= 0) {
+        url.host = host_part.byte_slice(0, colon);
+        var pn = to_number(host_part.byte_slice(colon + 1));
+        if (pn == null) { throw "url.parse: invalid port"; }
+        url.port = pn;
+    } else {
+        url.host = host_part;
+        if (url.scheme == "https")     { url.port = 443; }
+        else if (url.scheme == "http") { url.port = 80; }
+    }
+
+    rest = rest.byte_slice(host_end);
+
+    // path
+    if (rest.byte_length == 0 or rest.starts_with("?") or rest.starts_with("#")) {
+        url.path = "/";
+    } else {
+        var pe = rest.byte_length;
+        var qq = rest.index_of("?");
+        var ff = rest.index_of("#");
+        if (qq >= 0 and qq < pe) { pe = qq; }
+        if (ff >= 0 and ff < pe) { pe = ff; }
+        url.path = rest.byte_slice(0, pe);
+        rest = rest.byte_slice(pe);
+    }
+
+    // query
+    if (rest.starts_with("?")) {
+        var qe = rest.byte_length;
+        var ff2 = rest.index_of("#");
+        if (ff2 >= 0 and ff2 < qe) { qe = ff2; }
+        url.query = rest.byte_slice(1, qe);
+        rest = rest.byte_slice(qe);
+    }
+
+    // fragment
+    if (rest.starts_with("#")) { url.fragment = rest.byte_slice(1); }
+
+    return url;
+}
+
+// RFC 3986 percent-encoding. Unreserved set: A-Z a-z 0-9 - _ . ~
+function encode(s) {
+    var out = "";
+    var i = 0;
+    while (i < s.byte_length) {
+        var b = s.byte_at(i);
+        var safe = (b >= 65 and b <= 90)
+                or (b >= 97 and b <= 122)
+                or (b >= 48 and b <= 57)
+                or b == 45 or b == 95 or b == 46 or b == 126;
+        if (safe) { out = out + chr(b); }
+        else      { out = out + "%" + _hex_nibble(b / 16) + _hex_nibble(b % 16); }
+        i = i + 1;
+    }
+    return out;
+}
+
+// Decode percent-encoded bytes. `+` becomes a space (form-encoding compatible).
+function decode(s) {
+    var out = "";
+    var i = 0;
+    while (i < s.byte_length) {
+        var b = s.byte_at(i);
+        var took_pct = false;
+        if (b == 37 and i + 2 < s.byte_length) {
+            var hi = _nibble_val(s.byte_at(i + 1));
+            var lo = _nibble_val(s.byte_at(i + 2));
+            if (hi >= 0 and lo >= 0) {
+                out = out + chr(hi * 16 + lo);
+                i = i + 3;
+                took_pct = true;
+            }
+        }
+        if (not took_pct) {
+            if (b == 43) { out = out + " "; }
+            else         { out = out + chr(b); }
+            i = i + 1;
+        }
+    }
+    return out;
+}
+
+// Encode a {k: v, ...} map to k=v&k2=v2 (values are str()-ified, null → "").
+function build_query(params) {
+    var parts = [];
+    for (var k of params.keys()) {
+        var v = params[k];
+        if (v == null) { v = ""; }
+        parts.push(encode(k) + "=" + encode(str(v)));
+    }
+    return _join(parts, "&");
+}
+
+// Decode k=v&k2=v2 into a map. Bare keys (no `=`) get "".
+function parse_query(s) {
+    var out = {};
+    if (s.byte_length == 0) { return out; }
+    var pairs = s.split("&");
+    for (var p of pairs) {
+        var eq = p.index_of("=");
+        if (eq < 0) { out[decode(p)] = ""; }
+        else {
+            out[decode(p.byte_slice(0, eq))] = decode(p.byte_slice(eq + 1));
+        }
+    }
+    return out;
+}

@@ -13,6 +13,7 @@
 #include "bnl/interpreter.h"
 #include "frontend/lexer.h"
 #include "frontend/parser.h"
+#include "stdlib_embedded.h"
 
 #ifdef BNL_FFI_ENABLED
 #  include "ffi/dynamic_library.h"
@@ -318,20 +319,41 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
 
     // ---- Bare-name resolution chain --------------------------------------
     //
-    // 1. Built-in native modules (sys, io, timers)   <- src/stdlib/*.cpp
-    // 2. Walk up: <ancestor>/deps/<name>/            <- project-local deps
-    //                                                   (entry: bnl.json main /
-    //                                                    native, else index.bnl)
-    // 3. Global:  $BNL_HOME/deps/<name>/ or
-    //             ~/.bnl/deps/<name>/                <- only outside a project
-    // 4. Error.
-    //
-    // Anything else (crypto, net, tls, http, json, sqlite, …) is a plugin or
-    // package delivered by the separate package manager — installed under
-    // deps/<name>/ in your project, or under ~/.bnl/deps/<name>/ globally.
+    // 1. Built-in native modules (sys, io, timers, …) <- src/stdlib/*.cpp
+    // 2. Embedded bnl stdlib (web, request, url, …)   <- lib/*.bnl, baked at
+    //                                                    build time into
+    //                                                    stdlib_embedded.h
+    // 3. Walk up: <ancestor>/deps/<name>/             <- project-local deps
+    //                                                    (entry: bnl.json main /
+    //                                                     native, else index.bnl)
+    // 4. Global:  $BNL_HOME/deps/<name>/ or
+    //             ~/.bnl/deps/<name>/                 <- only outside a project
+    // 5. Error.
 
     // 1. Native modules.
     if (auto m = interp_.native_module(path_string); m) {
+        return m;
+    }
+
+    // 2. Embedded bnl stdlib — source baked into the binary at build time.
+    //    Cached + cycle-protected the same way file imports are.
+    if (auto eit = embedded_stdlib().find(path_string); eit != embedded_stdlib().end()) {
+        std::string key = "<embedded:" + path_string + ">";
+        if (auto cit = cache_.find(key); cit != cache_.end()) return cit->second;
+        if (in_progress_.count(key)) {
+            throw ModuleError(import_token,
+                fmt::format("circular embedded import: {}", path_string));
+        }
+        in_progress_.insert(key);
+        ModulePtr m;
+        try {
+            m = evaluate_source(key, key, eit->second, import_token);
+        } catch (...) {
+            in_progress_.erase(key);
+            throw;
+        }
+        in_progress_.erase(key);
+        cache_[key] = m;
         return m;
     }
 

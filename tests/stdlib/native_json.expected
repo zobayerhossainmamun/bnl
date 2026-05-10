@@ -1,0 +1,43 @@
+--- parse: scalars ---
+null
+true
+false
+42
+3.14
+hello
+--- parse: array ---
+3
+1 2 3
+--- parse: object ---
+alice 30
+--- parse: nested ---
+2
+1 a
+2 b
+--- parse: bad ---
+null
+--- stringify: scalars ---
+null
+true
+false
+42
+1.5
+"hi"
+"with \"quotes\" and\nnewlines"
+--- stringify: collections ---
+[]
+[1,2,"x"]
+{}
+{"a":1,"b":2}
+--- stringify: pretty ---
+{
+  "a": [
+    1,
+    2
+  ]
+}
+--- roundtrip ---
+1
+true false null x
+--- bad stringify ---
+ok

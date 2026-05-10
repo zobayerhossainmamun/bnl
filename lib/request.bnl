@@ -1,0 +1,104 @@
+// HTTP / HTTPS client. Wraps net + tls + http into a single import.
+//
+//   import "request" as r;
+//   r.get("http://example.com/", function (err, resp) { ... });
+//   r.post("https://example.com/api", "{...}", function (err, resp) { ... });
+//   r.send({url, method?, headers?, body?, tls?: {verify}}, cb);
+//
+// cb(err, resp). resp is {status, reason, version, headers, body, ...}.
+
+import "net"   as _net;
+import "tls"   as _tls;
+import "http"  as _http;
+import "url"   as _url;
+
+function _has_header(h, name_lower) {
+    for (var k of h.keys()) {
+        if (k.to_lower() == name_lower) { return true; }
+    }
+    return false;
+}
+
+function _build_request_bytes(method, u, headers, body) {
+    if (not _has_header(headers, "host")) {
+        if ((u.scheme == "http"  and u.port == 80)
+         or (u.scheme == "https" and u.port == 443)) {
+            headers["Host"] = u.host;
+        } else {
+            headers["Host"] = u.host + ":" + str(u.port);
+        }
+    }
+    if (body.byte_length > 0 and not _has_header(headers, "content-length")) {
+        headers["Content-Length"] = str(body.byte_length);
+    }
+    if (not _has_header(headers, "connection")) {
+        headers["Connection"] = "close";
+    }
+
+    var path = u.path;
+    if (u.query.byte_length > 0) { path = path + "?" + u.query; }
+
+    var out = method + " " + path + " HTTP/1.1\r\n";
+    for (var k of headers.keys()) {
+        out = out + k + ": " + str(headers[k]) + "\r\n";
+    }
+    out = out + "\r\n" + body;
+    return out;
+}
+
+// Once connected, write the request, accumulate bytes until on_end, then
+// parse and deliver to cb. is_final=true on parse_response wraps up the
+// message even if the server closed without Content-Length.
+function _send_and_collect(conn, req_bytes, cb) {
+    var buf = "";
+    var done = false;
+    conn.on_data(function (d) { buf = buf + d; });
+    conn.on_end(function () {
+        if (done) { return; }
+        done = true;
+        cb(null, _http.parse_response(buf, true));
+    });
+    conn.write(req_bytes);
+}
+
+// ---------- exported entry points ------------------------------------------
+
+function send(opts, cb) {
+    var u = _url.parse(opts.url);
+
+    var method = opts.method;
+    if (method == null) { method = "GET"; }
+    var headers = opts.headers;
+    if (headers == null) { headers = {}; }
+    var body = opts.body;
+    if (body == null) { body = ""; }
+
+    var req_bytes = _build_request_bytes(method, u, headers, body);
+
+    _net.resolve(u.host, function (rerr, ip) {
+        if (rerr != null) { cb("resolve: " + rerr, null); return; }
+
+        if (u.scheme == "https") {
+            var topts = opts.tls;
+            if (topts == null) { topts = {}; }
+            _tls.connect(u.host, ip, u.port, function (cerr, conn) {
+                if (cerr != null) { cb("tls.connect: " + cerr, null); return; }
+                _send_and_collect(conn, req_bytes, cb);
+            }, topts);
+        } else {
+            _net.tcp_connect(ip, u.port, function (cerr, conn) {
+                if (cerr != null) { cb("tcp_connect: " + cerr, null); return; }
+                _send_and_collect(conn, req_bytes, cb);
+            });
+        }
+    });
+}
+
+function get(url, cb) {
+    send({ url: url, method: "GET" }, cb);
+}
+
+function post(url, body, cb) {
+    send({ url: url, method: "POST", body: body,
+           headers: { "Content-Type": "application/octet-stream" } }, cb);
+}

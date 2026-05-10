@@ -44,6 +44,22 @@ find_package(llhttp        CONFIG REQUIRED)        # stdlib/http.cpp
 find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
 find_package(OpenSSL       REQUIRED)               # stdlib/crypto.cpp + tls.cpp
 
+# Bake lib/*.bnl into a header that bnl_core's module loader can look up.
+# Re-runs whenever a lib file changes; empty table when lib/ is empty.
+set(BNL_STDLIB_EMBEDDED_HEADER ${CMAKE_BINARY_DIR}/generated/stdlib_embedded.h)
+file(GLOB BNL_LIB_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/lib/*.bnl)
+add_custom_command(
+    OUTPUT  ${BNL_STDLIB_EMBEDDED_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -DLIB_DIR=${CMAKE_SOURCE_DIR}/lib
+        -DOUT_FILE=${BNL_STDLIB_EMBEDDED_HEADER}
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_stdlib.cmake
+    DEPENDS ${BNL_LIB_FILES} ${CMAKE_SOURCE_DIR}/cmake/embed_stdlib.cmake
+    COMMENT "Baking lib/*.bnl into stdlib_embedded.h"
+    VERBATIM
+)
+add_custom_target(bnl_stdlib_embedded ALL DEPENDS ${BNL_STDLIB_EMBEDDED_HEADER})
+
 add_subdirectory(src)
 
 # Embedding examples (host C++ apps that link bnl_core).
