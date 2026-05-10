@@ -52,20 +52,19 @@ void Interpreter::mark_loop_failed() {
     uv_stop(&loop_);
 }
 
-bool Interpreter::run(const std::vector<StmtPtr>& program,
+bool Interpreter::run(std::vector<StmtPtr> program,
                       const std::filesystem::path& entry_path) {
     current_file_ = entry_path;
-    try {
-        for (const auto& s : program) execute(*s);
-    } catch (const RuntimeError& e) {
-        fmt::print(stderr, "runtime error at {}:{} (near '{}'): {}\n",
-                   e.token.line, e.token.column, e.token.lexeme, e.what());
-        return false;
-    } catch (const ModuleError& e) {
-        fmt::print(stderr, "module error at {}:{} (near '{}'): {}\n",
-                   e.token.line, e.token.column, e.token.lexeme, e.what());
-        return false;
-    }
+    // Take ownership of the AST. UserFunctions (and any closures over them)
+    // hold raw pointers into it; the AST must live at least as long as the
+    // Interpreter so REPL / async-callback paths don't dangle.
+    kept_programs_.push_back(std::move(program));
+    auto& prog = kept_programs_.back();
+
+    // RuntimeError / ModuleError propagate to the caller — main.cpp has the
+    // source + path and renders a clang-style diagnostic. run_source catches
+    // them itself for embedders that don't want exceptions in their host.
+    for (const auto& s : prog) execute(*s);
 
     // Drain the event loop. Async callbacks (timers, fs, net, ...) run here.
     // If any of them sets loop_failed_, the program exits non-zero.
@@ -93,7 +92,17 @@ bool Interpreter::run_source(const std::string&            source,
         return false;
     }
 
-    return run(program, path);
+    try {
+        return run(std::move(program), path);
+    } catch (const RuntimeError& e) {
+        fmt::print(stderr, "runtime error at {}:{} (near '{}'): {}\n",
+                   e.token.line, e.token.column, e.token.lexeme, e.what());
+        return false;
+    } catch (const ModuleError& e) {
+        fmt::print(stderr, "module error at {}:{} (near '{}'): {}\n",
+                   e.token.line, e.token.column, e.token.lexeme, e.what());
+        return false;
+    }
 }
 
 void Interpreter::run_module(Module& m) {

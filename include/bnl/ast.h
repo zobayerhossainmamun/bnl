@@ -41,6 +41,8 @@ class ImportStmt;
 class ClassStmt;
 class TryStmt;
 class ThrowStmt;
+class ForStmt;
+class ForOfStmt;
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
@@ -82,6 +84,8 @@ public:
     virtual void visit(ClassStmt&)      = 0;
     virtual void visit(TryStmt&)        = 0;
     virtual void visit(ThrowStmt&)      = 0;
+    virtual void visit(ForStmt&)        = 0;
+    virtual void visit(ForOfStmt&)      = 0;
 };
 
 // ---- bases ------------------------------------------------------------------
@@ -296,6 +300,34 @@ public:
     ExprPtr cond;
     StmtPtr body;
     WhileStmt(ExprPtr c, StmtPtr b) : cond(std::move(c)), body(std::move(b)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// for (init; cond; update) body  — C-style. All three clauses are optional.
+//   init   : a VarStmt or ExpressionStmt (or null)
+//   cond   : an Expr (or null = always true)
+//   update : an Expr (or null = no-op)
+class ForStmt : public Stmt {
+public:
+    StmtPtr init;
+    ExprPtr cond;
+    ExprPtr update;
+    StmtPtr body;
+    ForStmt(StmtPtr i, ExprPtr c, ExprPtr u, StmtPtr b)
+        : init(std::move(i)), cond(std::move(c)),
+          update(std::move(u)), body(std::move(b)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// for (var X of EXPR) body  — iterates the elements of a list (other types
+// throw at runtime). The var is bound fresh each iteration in a new scope.
+class ForOfStmt : public Stmt {
+public:
+    Token   var;          // identifier introduced by `var X`
+    ExprPtr iterable;
+    StmtPtr body;
+    ForOfStmt(Token v, ExprPtr it, StmtPtr b)
+        : var(v), iterable(std::move(it)), body(std::move(b)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 

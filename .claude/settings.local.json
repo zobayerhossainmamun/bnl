@@ -50,7 +50,22 @@
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('size_bytes type:', type\\(d['assets'][0]['size_bytes']\\).__name__, 'value:', d['assets'][0]['size_bytes']\\)\")",
       "Bash(rm -rf deps bnl.lock)",
       "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" install *)",
-      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" --quiet \"D:/bnlang/new-v/sqlite-lib/examples/demo.bnl\")"
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" --quiet \"D:/bnlang/new-v/sqlite-lib/examples/demo.bnl\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); r=d.get\\('readme'\\); print\\('readme:', 'null' if r is None else \\(str\\(len\\(r\\)\\)+' chars: '+repr\\(r[:80]\\)\\)\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('size:', d['assets'][0]['size_bytes']\\); print\\('readme len:', len\\(d.get\\('readme'\\) or ''\\)\\)\")",
+      "Bash(cat)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/hello.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/missing-semi.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/parse-mid.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" -e 'var x = @bad;')",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/bn.bnl)",
+      "Bash(cd /tmp)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" cwd.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\")",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/add.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt1.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt2.bnl)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt3.bnl)"
     ]
   }
 }

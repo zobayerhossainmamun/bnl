@@ -94,6 +94,7 @@ StmtPtr Parser::class_declaration() {
 StmtPtr Parser::statement() {
     if (match({TokenType::If}))     return if_statement();
     if (match({TokenType::While}))  return while_statement();
+    if (match({TokenType::For}))    return for_statement();
     if (match({TokenType::Return})) return return_statement();
     if (match({TokenType::Try}))    return try_statement();
     if (match({TokenType::Throw}))  return throw_statement();
@@ -119,6 +120,54 @@ StmtPtr Parser::while_statement() {
     consume(TokenType::RParen, "expected ')' after while condition");
     StmtPtr body = statement();
     return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
+}
+
+// for-loop is a tiny grammar fork:
+//
+//   for ( var X of EXPR )  body          → ForOfStmt
+//   for ( init; cond; update )  body     → ForStmt   (any of the three may be empty)
+//
+// We disambiguate by lookahead: after `for (`, if we see `var IDENT of`, it's
+// the iterator form; otherwise C-style.
+StmtPtr Parser::for_statement() {
+    consume(TokenType::LParen, "expected '(' after 'for'");
+
+    // ---- iterator form: for (var X of EXPR) body -----------------------
+    if (check(TokenType::Var) &&
+        current_ + 2 < tokens_.size() &&
+        tokens_[current_ + 1].type == TokenType::Identifier &&
+        tokens_[current_ + 2].type == TokenType::Of) {
+
+        advance();                        // consume `var`
+        Token name = consume(TokenType::Identifier, "expected loop variable name");
+        consume(TokenType::Of, "expected 'of' after loop variable");
+        ExprPtr iter = expression();
+        consume(TokenType::RParen, "expected ')' after for-of header");
+        StmtPtr body = statement();
+        return std::make_unique<ForOfStmt>(name, std::move(iter), std::move(body));
+    }
+
+    // ---- C-style: for (init; cond; update) body ------------------------
+    StmtPtr init;
+    if (match({TokenType::Semicolon})) {
+        init = nullptr;
+    } else if (match({TokenType::Var})) {
+        init = var_declaration();
+    } else {
+        init = expression_statement();
+    }
+
+    ExprPtr cond;
+    if (!check(TokenType::Semicolon)) cond = expression();
+    consume(TokenType::Semicolon, "expected ';' after for condition");
+
+    ExprPtr update;
+    if (!check(TokenType::RParen)) update = expression();
+    consume(TokenType::RParen, "expected ')' after for header");
+
+    StmtPtr body = statement();
+    return std::make_unique<ForStmt>(std::move(init), std::move(cond),
+                                     std::move(update), std::move(body));
 }
 
 StmtPtr Parser::return_statement() {

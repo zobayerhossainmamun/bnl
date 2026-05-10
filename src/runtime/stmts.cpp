@@ -34,6 +34,41 @@ void Interpreter::visit(WhileStmt& s) {
     while (evaluate(*s.cond).truthy()) execute(*s.body);
 }
 
+void Interpreter::visit(ForStmt& s) {
+    // The init clause introduces `var x = ...` into a fresh scope so the
+    // loop variable doesn't leak past the loop.
+    auto loop_env = std::make_shared<Environment>(environment_);
+    auto saved    = environment_;
+    environment_  = loop_env;
+
+    if (s.init) execute(*s.init);
+    while (!s.cond || evaluate(*s.cond).truthy()) {
+        execute(*s.body);
+        if (s.update) evaluate(*s.update);
+    }
+
+    environment_ = saved;
+}
+
+void Interpreter::visit(ForOfStmt& s) {
+    Value iter = evaluate(*s.iterable);
+    if (!iter.is_list()) {
+        throw RuntimeError(s.var,
+            fmt::format("for-of requires a list, got {}", iter.type_name()));
+    }
+    const auto& items = *iter.as_list();
+    for (const auto& v : items) {
+        // Each iteration gets a fresh scope so the body's `var` decls don't
+        // collide with the next iteration.
+        auto env = std::make_shared<Environment>(environment_);
+        env->define(std::string(s.var.lexeme), v);
+        auto saved   = environment_;
+        environment_ = env;
+        execute(*s.body);
+        environment_ = saved;
+    }
+}
+
 void Interpreter::visit(FunctionStmt& s) {
     auto fn = std::make_shared<interp_detail::UserFunction>(
         std::string(s.name.lexeme), &s.params, &s.body, environment_);

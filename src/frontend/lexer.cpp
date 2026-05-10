@@ -41,6 +41,9 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"false",     TokenType::False},   {"\xe0\xa6\xae\xe0\xa6\xbf\xe0\xa6\xa5\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xbe", TokenType::False}, // মিথ্যা
         {"null",      TokenType::Null},    {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\x87",                                                         TokenType::Null},      // নাই
 
+        // for-of iteration
+        {"of",        TokenType::Of},      {"\xe0\xa6\x8f\xe0\xa6\xb0",                                                                     TokenType::Of},        // এর
+
         // Error handling
         {"try",       TokenType::Try},     {"\xe0\xa6\x9a\xe0\xa7\x87\xe0\xa6\xb7\xe0\xa7\x8d\xe0\xa6\x9f\xe0\xa6\xbe",                     TokenType::Try},       // চেষ্টা
         {"catch",     TokenType::Catch},   {"\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa7\x81\xe0\xa6\xa8",                                             TokenType::Catch},     // ধরুন
@@ -389,6 +392,7 @@ const char* token_type_name(TokenType type) {
         case TokenType::Catch:      return "Catch";
         case TokenType::Throw:      return "Throw";
         case TokenType::Finally:    return "Finally";
+        case TokenType::Of:         return "Of";
         case TokenType::LParen:     return "LParen";
         case TokenType::RParen:     return "RParen";
         case TokenType::LBrace:     return "LBrace";

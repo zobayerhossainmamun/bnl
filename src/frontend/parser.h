@@ -36,6 +36,7 @@ private:
     StmtPtr statement();
     StmtPtr if_statement();
     StmtPtr while_statement();
+    StmtPtr for_statement();
     StmtPtr return_statement();
     StmtPtr import_statement(Token keyword);
     StmtPtr try_statement();

@@ -34,6 +34,7 @@ enum class TokenType {
     Catch,
     Throw,
     Finally,
+    Of,
 
     // Punctuation
     LParen,

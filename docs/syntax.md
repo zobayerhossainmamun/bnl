@@ -13,7 +13,7 @@ any callsite, including inside a single file.
 
 ## Keywords
 
-Reserved in both forms. `for` is reserved but the parser does not yet accept it.
+Reserved in both forms.
 
 | English | Bangla | English | Bangla |
 |---|---|---|---|
@@ -27,7 +27,8 @@ Reserved in both forms. `for` is reserved but the parser does not yet accept it.
 | `false` | `মিথ্যা` | `not` | `না` |
 | `null` | `নাই` | `try` | `চেষ্টা` |
 | `catch` | `ধরুন` | `throw` | `নিক্ষেপ` |
-| `finally` | `অবশেষে` | | |
+| `finally` | `অবশেষে` | `for` | `প্রতি` |
+| `of` | `এর` | | |
 
 `print`, `str`, `type`, `to_number`, `chr`, `try_call` are **global functions**, not
 keywords. Their Bangla aliases are `লিখুন`, `লেখ`, `ধরণ` (others are English-only
@@ -127,15 +128,29 @@ while (cond) { ... }
 যতক্ষণ (cond) { ... }
 ```
 
-There is no `for` loop yet. Iterate by index:
+### For
+
+C-style and iterator forms. Init / cond / update are all optional in the C-style form:
 
 ```bnl
-var i = 0;
-while (i < xs.length) {
-    print(xs[i]);
-    i = i + 1;
+for (var i = 0; i < 10; i = i + 1) {
+    print(i);
 }
+
+for (var x of [1, 2, 3]) {
+    print(x);
+}
+
+প্রতি (চলক x এর fruits) { print(x); }    // Bangla form
 ```
+
+`for-of` works on lists. Pair with `m.keys()` to iterate map keys:
+
+```bnl
+for (var k of m.keys()) { print(k, m[k]); }
+```
+
+The loop variable lives in a fresh scope per iteration and doesn't leak after the loop.
 
 ### Function declaration
 
@@ -334,7 +349,6 @@ errors arrive as the first argument, not as a thrown value.
 
 ## Notes / known gaps
 
-- No `for` loop syntax (planned).
 - No string interpolation, no template strings, no multi-line strings.
 - Maps return `null` for missing keys (not an error). Use `.has(k)` to disambiguate
   null-valued keys from absent keys.

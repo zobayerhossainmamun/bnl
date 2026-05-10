@@ -68,8 +68,12 @@ public:
     bool run_source(const std::string&            source,
                     const std::filesystem::path&  path = {});
 
-    // Run an already-parsed program. run_source() is the higher-level path.
-    bool run(const std::vector<StmtPtr>&     program,
+    // Run an already-parsed program. The Interpreter takes ownership of the
+    // AST (via std::move) — UserFunctions and other closures hold raw
+    // pointers into it, so the AST must outlive any function value defined
+    // during the run. The Interpreter retains every program until its
+    // destruction. Pass an rvalue:  interp.run(std::move(program), entry).
+    bool run(std::vector<StmtPtr>            program,
              const std::filesystem::path&    entry_path = {});
 
     // Register a custom native module so user bnl code can `import "name"`.
@@ -126,6 +130,8 @@ public:
     void visit(ClassStmt&)      override;
     void visit(TryStmt&)        override;
     void visit(ThrowStmt&)      override;
+    void visit(ForStmt&)        override;
+    void visit(ForOfStmt&)      override;
 
 private:
     Value evaluate(Expr& e);
@@ -140,6 +146,11 @@ private:
     std::unique_ptr<ModuleLoader>                  modules_;
     std::unordered_map<std::string, ModulePtr>     native_modules_;
     std::vector<std::string>                       program_args_;
+
+    // Programs accumulated across successive run() calls. Owns the AST so
+    // UserFunctions defined in earlier calls (REPL state, async timer
+    // closures, ...) keep valid pointers to their params/body.
+    std::vector<std::vector<StmtPtr>>              kept_programs_;
     uv_loop_t                                      loop_{};
     bool                                           loop_failed_ = false;
 };

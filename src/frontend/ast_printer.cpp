@@ -216,6 +216,32 @@ public:
         out_ += ')';
     }
 
+    void visit(ForStmt& s) override {
+        indent();
+        out_ += "(for ";
+        if (s.init)   { s.init->accept(*this); } else out_ += "_";
+        out_ += "; ";
+        if (s.cond)   { s.cond->accept(*this); } else out_ += "_";
+        out_ += "; ";
+        if (s.update) { s.update->accept(*this); } else out_ += "_";
+        depth_++;
+        out_ += '\n';
+        s.body->accept(*this);
+        depth_--;
+        out_ += ')';
+    }
+
+    void visit(ForOfStmt& s) override {
+        indent();
+        out_ += fmt::format("(for-of {} ", s.var.lexeme);
+        s.iterable->accept(*this);
+        depth_++;
+        out_ += '\n';
+        s.body->accept(*this);
+        depth_--;
+        out_ += ')';
+    }
+
     void visit(FunctionStmt& s) override {
         indent();
         out_ += fmt::format("(function {} (params", s.name.lexeme);
