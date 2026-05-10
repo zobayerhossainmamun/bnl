@@ -37,7 +37,7 @@ endif()
 # Core ships only the language + the three intrinsic native modules
 # (sys, io, timers). Everything else (crypto, net, tls, http, json, sqlite,
 # etc.) is delivered by the separate package manager as plugins or pure-bnl
-# packages, dropped into deps/ and plugins/ at runtime.
+# packages, dropped into deps/<name>/ at runtime.
 find_package(fmt           CONFIG REQUIRED)
 find_package(libuv         CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
