@@ -1,8 +1,8 @@
 // Native exec primitive — child process spawn with stdin/stdout/stderr
 // pipes. Imports "_exec" because the public "exec" name belongs to
 // lib/exec.bnl (which builds run / run_with_input on top of this).
-// Uses cmd.exe (Windows-only test, mirrors the pre-slim convention).
 import "_exec" as exec;
+import "sys"   as sys;
 
 print("--- spawn echo ---");
 var out      = "";
@@ -19,7 +19,19 @@ function check() {
     }
 }
 
-var p = exec.spawn("cmd.exe", ["/c", "echo", "spawn-hello"], null,
+// `echo` is a shell built-in on Windows (so we go through cmd.exe), but a
+// real executable on Unix where libuv's PATH lookup finds it directly.
+var cmd;
+var argv;
+if (sys.platform == "windows") {
+    cmd  = "cmd.exe";
+    argv = ["/c", "echo", "spawn-hello"];
+} else {
+    cmd  = "echo";
+    argv = ["spawn-hello"];
+}
+
+var p = exec.spawn(cmd, argv, null,
     function (code, sig) { ec = code; check(); });
 
 print("pid > 0:", p.pid > 0);

@@ -1,22 +1,48 @@
 // Embedded bnl stdlib — exec.run / exec.run_with_input. Exercises the
 // collect-on-completion helper built on top of the native exec.spawn.
 import "exec" as exec;
+import "sys"  as sys;
+
+var win = sys.platform == "windows";
 
 print("--- run echo ---");
-exec.run("cmd.exe", ["/c", "echo", "lib-hello"], function (e1, r1) {
+
+var echo_cmd;
+var echo_argv;
+if (win) { echo_cmd = "cmd.exe"; echo_argv = ["/c", "echo", "lib-hello"]; }
+else     { echo_cmd = "echo";    echo_argv = ["lib-hello"]; }
+
+exec.run(echo_cmd, echo_argv, function (e1, r1) {
     print("code:", r1.code);
     print("stdout:", r1.stdout.trim());
     print("stderr len:", r1.stderr.byte_length);
 
     print("--- exit code 5 ---");
-    exec.run("cmd.exe", ["/c", "exit", "5"], function (e2, r2) {
+
+    var exit_cmd;
+    var exit_argv;
+    if (win) { exit_cmd = "cmd.exe"; exit_argv = ["/c", "exit", "5"]; }
+    else     { exit_cmd = "sh";      exit_argv = ["-c", "exit 5"]; }
+
+    exec.run(exit_cmd, exit_argv, function (e2, r2) {
         print("code:", r2.code);
 
         print("--- run_with_input sort ---");
-        exec.run_with_input(
-            "cmd.exe",
-            ["/c", "sort"],
-            "banana\r\napple\r\ncherry\r\n",
+
+        var sort_cmd;
+        var sort_argv;
+        var sort_input;
+        if (win) {
+            sort_cmd   = "cmd.exe";
+            sort_argv  = ["/c", "sort"];
+            sort_input = "banana\r\napple\r\ncherry\r\n";
+        } else {
+            sort_cmd   = "sort";
+            sort_argv  = [];
+            sort_input = "banana\napple\ncherry\n";
+        }
+
+        exec.run_with_input(sort_cmd, sort_argv, sort_input,
             function (e3, r3) {
                 print("code:", r3.code);
                 print(r3.stdout.trim());

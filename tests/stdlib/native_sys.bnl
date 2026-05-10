@@ -1,7 +1,9 @@
 // Native sys module — platform, env vars, args.
 import "sys" as sys;
 
-print(sys.platform);
+// Don't lock the expected output to a single OS — just verify the value
+// is one of the known platform strings the runtime can return.
+print(sys.platform == "windows" or sys.platform == "linux" or sys.platform == "macos");
 
 // PATH is always set on every platform we target.
 print(type(sys.env("PATH")));
