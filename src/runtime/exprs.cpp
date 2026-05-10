@@ -413,7 +413,7 @@ void Interpreter::visit(MemberExpr& e) {
                     long long i = static_cast<long long>(args[0].as_number());
                     if (i < 0 || static_cast<std::size_t>(i) >= captured.size())
                         return Value{static_cast<double>(-1)};
-                    return Value{static_cast<double>(static_cast<unsigned char>(captured[i]))};
+                    return Value{static_cast<double>(static_cast<unsigned char>(captured[static_cast<std::size_t>(i)]))};
                 })};
             return;
         }
