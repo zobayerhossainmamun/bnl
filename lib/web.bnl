@@ -1,27 +1,8 @@
-// Combined HTTP / HTTPS server. Wraps net + tls + http into a single import.
-//
-// Usage:
-//   import "web" as web;
-//   var server = web.serve({port: 8080}, function (req) {
-//       return {status: 200, body: "hi"};
-//   });
-//
-// HTTPS — pass opts.tls = {cert, key} (PEM strings):
-//   web.serve({port: 8443, tls: {cert: cert, key: key}}, handler);
-//
-// Handler signature:
-//   sync:  return {status, headers?, body?}
-//   async: return null, then call req.respond({status, headers?, body?}) later
-//
-// Errors thrown from the handler become 500 responses (logged to stderr).
-
 import "net"   as _net;
 import "tls"   as _tls;
 import "http"  as _http;
 import "url"   as _url;
 import "json"  as _json;
-
-// ---------- response helpers (exported) ------------------------------------
 
 function text(s) {
     return { status: 200,

@@ -1,6 +1,3 @@
-// URL parsing + percent-encoding for HTTP/HTTPS clients and servers.
-// Supports the subset that web work needs: scheme://host[:port][/path][?query][#fragment].
-
 function _hex_nibble(n) {
     if (n < 10) { return chr(48 + n); }            // 0-9
     return chr(65 + n - 10);                        // A-F
@@ -24,8 +21,6 @@ function _join(parts, sep) {
     return out;
 }
 
-// Parse a URL string into {scheme, host, port, path, query, fragment}.
-// Port defaults from scheme (http=80, https=443, else 0). Throws on no scheme.
 function parse(s) {
     var url = { scheme: "", host: "", port: 0, path: "/", query: "", fragment: "" };
 

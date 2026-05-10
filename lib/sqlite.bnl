@@ -1,23 +1,8 @@
-// SQLite — open + transaction + migration + auto-INSERT helpers.
-//
-//   import "sqlite" as sqlite;
-//   var db = sqlite.open(":memory:");
-//   sqlite.migrate(db, ["CREATE TABLE users (...)", "CREATE INDEX ..."]);
-//   var id = sqlite.insert(db, "users", {name: "alice", age: 30});
-//   var user = db.query_one("SELECT * FROM users WHERE id = ?", [id]);
-//
-// Direct primitives also exist on the db handle: db.exec, db.query,
-// db.query_one, db.last_insert_id, db.changes, db.close.
-
 import "_sqlite" as _sqlite;
 
-// Re-export so callers only need one import.
 function open(path) { return _sqlite.open(path); }
 function version()  { return _sqlite.version(); }
 
-// transaction(db, fn) — run fn(db) inside BEGIN/COMMIT. ROLLBACK on throw,
-// then re-throw so the caller still sees the failure. Returns whatever fn
-// returned on success.
 function transaction(db, fn) {
     db.exec("BEGIN");
     try {
@@ -30,10 +15,6 @@ function transaction(db, fn) {
     }
 }
 
-// migrate(db, statements) — apply a list of SQL strings inside a single
-// transaction. Returns the number of statements applied. Idiomatic shape
-// for one-shot schema setup; for versioned migrations, store a version
-// number in a `_migrations` table yourself.
 function migrate(db, statements) {
     return transaction(db, function (d) {
         for (var s of statements) { d.exec(s); }
@@ -41,10 +22,6 @@ function migrate(db, statements) {
     });
 }
 
-// insert(db, table, row) — build INSERT INTO table (k1, k2, …) VALUES
-// (?, ?, …) from a row map and run it. Returns last_insert_id().
-// Map iteration order is undefined, but key list and value list are
-// built in lockstep so column-to-value alignment stays correct.
 function insert(db, table, row) {
     var keys = row.keys();
     if (keys.length == 0) {

@@ -1,12 +1,3 @@
-// HTTP / HTTPS client. Wraps net + tls + http into a single import.
-//
-//   import "request" as r;
-//   r.get("http://example.com/", function (err, resp) { ... });
-//   r.post("https://example.com/api", "{...}", function (err, resp) { ... });
-//   r.send({url, method?, headers?, body?, tls?: {verify}}, cb);
-//
-// cb(err, resp). resp is {status, reason, version, headers, body, ...}.
-
 import "net"   as _net;
 import "tls"   as _tls;
 import "http"  as _http;
@@ -46,9 +37,6 @@ function _build_request_bytes(method, u, headers, body) {
     return out;
 }
 
-// Once connected, write the request, accumulate bytes until on_end, then
-// parse and deliver to cb. is_final=true on parse_response wraps up the
-// message even if the server closed without Content-Length.
 function _send_and_collect(conn, req_bytes, cb) {
     var buf = "";
     var done = false;
@@ -60,8 +48,6 @@ function _send_and_collect(conn, req_bytes, cb) {
     });
     conn.write(req_bytes);
 }
-
-// ---------- exported entry points ------------------------------------------
 
 function send(opts, cb) {
     var u = _url.parse(opts.url);
