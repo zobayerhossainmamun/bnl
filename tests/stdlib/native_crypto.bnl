@@ -1,0 +1,61 @@
+// Native crypto module — randomness, hashes, HMAC, encodings.
+import "crypto" as c;
+
+// ---------- random --------------------------------------------------------
+print("--- random ---");
+print(c.random_hex(8).length);              // 16 (chars)
+print(c.random_bytes(16).byte_length);      // 16 (bytes)
+print(c.random_hex(0));                     // empty string
+
+// ---------- hash (well-known vectors) -------------------------------------
+print("--- hash ---");
+print(c.hash("md5",    "hello"));
+print(c.hash("sha1",   "hello"));
+print(c.hash("sha256", "hello"));
+print(c.hash("sha256", ""));
+
+// ---------- hmac (RFC 4231-style canonical example) -----------------------
+print("--- hmac ---");
+print(c.hmac("sha256", "key", "The quick brown fox jumps over the lazy dog"));
+
+// ---------- base64 --------------------------------------------------------
+print("--- base64 ---");
+print(c.b64_encode("hello"));               // aGVsbG8=
+print(c.b64_decode("aGVsbG8="));            // hello
+print(c.b64url_encode("hello?"));           // aGVsbG8_   (URL-safe, no padding)
+print(c.b64url_decode("aGVsbG8_"));         // hello?
+print(c.b64_encode(""));                    // empty
+print(c.b64_decode(""));                    // empty
+
+// ---------- hex -----------------------------------------------------------
+print("--- hex ---");
+print(c.hex_encode("ok"));                  // 6f6b
+print(c.hex_decode("6F6B"));                // ok  (case-insensitive in)
+
+// roundtrip random bytes through hex
+var r = c.random_bytes(8);
+print(c.hex_decode(c.hex_encode(r)).byte_length);  // 8
+
+// ---------- equals (constant-time) ----------------------------------------
+print("--- equals ---");
+print(c.equals("abc", "abc"));              // true
+print(c.equals("abc", "abd"));              // false
+print(c.equals("abc", "abcd"));             // false
+
+// ---------- error: unknown hash algo --------------------------------------
+print("--- bad-algo ---");
+try {
+    c.hash("nosuch", "x");
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}
+
+// ---------- error: malformed hex ------------------------------------------
+print("--- bad-hex ---");
+try {
+    c.hex_decode("zz");
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

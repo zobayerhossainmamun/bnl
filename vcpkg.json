@@ -10,6 +10,7 @@
             "version>=": "12.1.0"
         },
         "libuv",
-        "nlohmann-json"
+        "nlohmann-json",
+        "openssl"
     ]
 }

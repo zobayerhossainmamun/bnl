@@ -34,13 +34,14 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 endif()
 
-# Core ships only the language + the three intrinsic native modules
-# (sys, io, timers). Everything else (crypto, net, tls, http, json, sqlite,
-# etc.) is delivered by the separate package manager as plugins or pure-bnl
-# packages, dropped into deps/<name>/ at runtime.
+# Core ships the language + a small set of intrinsic native modules
+# (sys, io, timers, regex, crypto). Higher-level things (net, tls, http,
+# json, sqlite, etc.) are delivered by the separate package manager as
+# plugins or pure-bnl packages, dropped into deps/<name>/ at runtime.
 find_package(fmt           CONFIG REQUIRED)
 find_package(libuv         CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
+find_package(OpenSSL       REQUIRED)               # stdlib/crypto.cpp
 
 add_subdirectory(src)
 

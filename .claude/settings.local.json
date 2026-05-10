@@ -81,7 +81,9 @@
       "PowerShell(Out-Null *)",
       "PowerShell(\"Alice`nplain line`nবাংলা\" | & \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe\" \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\input_demo.bnl\"; Write-Host \"EXIT=$LASTEXITCODE\")",
       "PowerShell([Console]::InputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; \"Alice`nplain`nবাংলা\" | & \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe\" \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\input_demo.bnl\"; Write-Host \"EXIT=$LASTEXITCODE\")",
-      "Bash(./bin/bnl.exe input_demo.bnl)"
+      "Bash(./bin/bnl.exe input_demo.bnl)",
+      "Bash(vcpkg search *)",
+      "Bash(findstr /R \"^openssl[ :]\")"
     ]
   }
 }

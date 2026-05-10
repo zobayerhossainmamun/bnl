@@ -77,6 +77,7 @@ Interpreter::Interpreter()
     register_io    (*this);
     register_timers(*this);
     register_regex (*this);
+    register_crypto(*this);
 }
 
 Interpreter::~Interpreter() {

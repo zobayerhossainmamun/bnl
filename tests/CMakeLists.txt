@@ -30,13 +30,14 @@ add_bnl_test(classes_inheritance  lang)
 add_bnl_test(try_catch            lang)
 add_bnl_test(for_loop             lang)
 
-# ---------- built-in stdlib (sys, io, timers, regex) ----------------------
+# ---------- built-in stdlib (sys, io, timers, regex, crypto) --------------
 add_bnl_test(native_sys           stdlib)
 add_bnl_test(native_io            stdlib)
 add_bnl_test(timers_basic         stdlib)
 add_bnl_test(timers_interval      stdlib)
 add_bnl_test(io_async             stdlib)
 add_bnl_test(native_regex         stdlib)
+add_bnl_test(native_crypto        stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

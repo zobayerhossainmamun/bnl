@@ -32,13 +32,14 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     runtime/globals.cpp
 
     # Built-in native modules. Intentionally minimal: process meta + local
-    # I/O + event-loop scheduling. Everything else (crypto, net, tls, http,
-    # json, sqlite, …) is delivered as a plugin or pure-bnl package by the
-    # separate package manager.
+    # I/O + event-loop scheduling + pattern matching + crypto primitives.
+    # Higher-level things (net, tls, http, json, sqlite, …) are delivered as
+    # plugins or pure-bnl packages by the separate package manager.
     stdlib/sys.cpp
     stdlib/io.cpp
     stdlib/timers.cpp
     stdlib/regex.cpp
+    stdlib/crypto.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -66,6 +67,7 @@ target_link_libraries(bnl_core
     PRIVATE
         fmt::fmt
         nlohmann_json::nlohmann_json    # module loader parses bnl.json
+        OpenSSL::Crypto                 # stdlib/crypto.cpp
 )
 
 if(BNL_ENABLE_FFI)
