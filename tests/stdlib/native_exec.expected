@@ -1,0 +1,4 @@
+--- spawn echo ---
+pid > 0: true
+stdout: spawn-hello
+code: 0

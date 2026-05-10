@@ -82,6 +82,7 @@ Interpreter::Interpreter()
     register_http  (*this);
     register_tls   (*this);
     register_json  (*this);
+    register_exec  (*this);
 }
 
 Interpreter::~Interpreter() {

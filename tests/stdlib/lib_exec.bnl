@@ -1,0 +1,25 @@
+// Embedded bnl stdlib — exec.run / exec.run_with_input. Exercises the
+// collect-on-completion helper built on top of the native exec.spawn.
+import "exec" as exec;
+
+print("--- run echo ---");
+exec.run("cmd.exe", ["/c", "echo", "lib-hello"], function (e1, r1) {
+    print("code:", r1.code);
+    print("stdout:", r1.stdout.trim());
+    print("stderr len:", r1.stderr.byte_length);
+
+    print("--- exit code 5 ---");
+    exec.run("cmd.exe", ["/c", "exit", "5"], function (e2, r2) {
+        print("code:", r2.code);
+
+        print("--- run_with_input sort ---");
+        exec.run_with_input(
+            "cmd.exe",
+            ["/c", "sort"],
+            "banana\r\napple\r\ncherry\r\n",
+            function (e3, r3) {
+                print("code:", r3.code);
+                print(r3.stdout.trim());
+            });
+    });
+});

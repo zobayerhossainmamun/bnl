@@ -17,6 +17,9 @@ class Interpreter;
 //   http    — request/response parsing (llhttp)
 //   tls     — TLS client + server over net (OpenSSL BIO-pair + libuv)
 //   json    — JSON parse / stringify (nlohmann_json)
+//   _exec   — child process spawn with stdin/stdout/stderr pipes (libuv).
+//             Registered with a leading underscore so the public "exec"
+//             import resolves to lib/exec.bnl (which adds run helpers).
 //
 // Anything else (sqlite, …) is delivered as a plugin by the separate
 // package manager.
@@ -29,5 +32,6 @@ void register_net   (Interpreter& interp);
 void register_http  (Interpreter& interp);
 void register_tls   (Interpreter& interp);
 void register_json  (Interpreter& interp);
+void register_exec  (Interpreter& interp);
 
 }  // namespace bnl

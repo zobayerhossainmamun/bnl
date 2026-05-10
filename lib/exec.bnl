@@ -1,0 +1,95 @@
+// Higher-level child-process helpers built on the native `exec.spawn`
+// primitive. Most callers want `run`; reach for `spawn` when you need
+// fine-grained control over stdin/stdout/stderr streaming.
+
+// "_exec" is the bare native primitive (spawn-only). The public "exec"
+// name resolves to THIS file via the embedded-stdlib lookup.
+import "_exec" as _exec;
+
+// Re-export the primitive — `exec.spawn(cmd, args, opts, on_exit)` returns
+// a process module with .pid, .stdin, .stdout, .stderr, .kill().
+function spawn(cmd, args, opts, on_exit) {
+    return _exec.spawn(cmd, args, opts, on_exit);
+}
+
+// run(cmd, args, cb) — fire-and-collect. cb(err, {code, signal, stdout, stderr})
+// fires once the process has exited AND both stdout + stderr have hit EOF, so
+// the buffers are guaranteed complete. Pass cmd/args; we set stdin to immediate
+// EOF (the child reads no input).
+function run(cmd, args, cb) {
+    var stdout_buf  = "";
+    var stderr_buf  = "";
+    var stdout_done = false;
+    var stderr_done = false;
+    var exit_info   = null;
+    var fired       = false;
+
+    function maybe_finish() {
+        if (fired) { return; }
+        if (stdout_done and stderr_done and exit_info != null) {
+            fired = true;
+            cb(null, {
+                code:   exit_info.code,
+                signal: exit_info.signal,
+                stdout: stdout_buf,
+                stderr: stderr_buf
+            });
+        }
+    }
+
+    var p = _exec.spawn(cmd, args, {}, function (code, sig) {
+        exit_info = { code: code, signal: sig };
+        maybe_finish();
+    });
+
+    p.stdout.on_data(function (d) { stdout_buf = stdout_buf + d; });
+    p.stdout.on_end (function ()  { stdout_done = true; maybe_finish(); });
+    p.stderr.on_data(function (d) { stderr_buf = stderr_buf + d; });
+    p.stderr.on_end (function ()  { stderr_done = true; maybe_finish(); });
+
+    // Close stdin immediately — most `run`-shaped invocations are
+    // input-less. Use `run_with_input` or raw `spawn` if the child needs data.
+    p.stdin.close();
+    return p;
+}
+
+// run_with_input(cmd, args, input, cb) — like run, but pipe `input` to stdin
+// before sending EOF. Useful for commands like `sort`, `grep`, `gzip` that
+// transform stdin to stdout.
+function run_with_input(cmd, args, input, cb) {
+    var stdout_buf  = "";
+    var stderr_buf  = "";
+    var stdout_done = false;
+    var stderr_done = false;
+    var exit_info   = null;
+    var fired       = false;
+
+    function maybe_finish() {
+        if (fired) { return; }
+        if (stdout_done and stderr_done and exit_info != null) {
+            fired = true;
+            cb(null, {
+                code:   exit_info.code,
+                signal: exit_info.signal,
+                stdout: stdout_buf,
+                stderr: stderr_buf
+            });
+        }
+    }
+
+    var p = _exec.spawn(cmd, args, {}, function (code, sig) {
+        exit_info = { code: code, signal: sig };
+        maybe_finish();
+    });
+
+    p.stdout.on_data(function (d) { stdout_buf = stdout_buf + d; });
+    p.stdout.on_end (function ()  { stdout_done = true; maybe_finish(); });
+    p.stderr.on_data(function (d) { stderr_buf = stderr_buf + d; });
+    p.stderr.on_end (function ()  { stderr_done = true; maybe_finish(); });
+
+    if (input != null and input.byte_length > 0) {
+        p.stdin.write(input);
+    }
+    p.stdin.close();
+    return p;
+}

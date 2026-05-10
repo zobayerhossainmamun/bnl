@@ -1,0 +1,27 @@
+// Native exec primitive — child process spawn with stdin/stdout/stderr
+// pipes. Imports "_exec" because the public "exec" name belongs to
+// lib/exec.bnl (which builds run / run_with_input on top of this).
+// Uses cmd.exe (Windows-only test, mirrors the pre-slim convention).
+import "_exec" as exec;
+
+print("--- spawn echo ---");
+var out      = "";
+var ec       = null;
+var stdout_d = false;
+var done     = false;
+
+function check() {
+    if (done) { return; }
+    if (stdout_d and ec != null) {
+        done = true;
+        print("stdout:", out.trim());
+        print("code:", ec);
+    }
+}
+
+var p = exec.spawn("cmd.exe", ["/c", "echo", "spawn-hello"], null,
+    function (code, sig) { ec = code; check(); });
+
+print("pid > 0:", p.pid > 0);
+p.stdout.on_data(function (d) { out = out + d; });
+p.stdout.on_end (function ()  { stdout_d = true; check(); });

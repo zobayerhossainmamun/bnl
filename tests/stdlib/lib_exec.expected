@@ -1,0 +1,11 @@
+--- run echo ---
+code: 0
+stdout: lib-hello
+stderr len: 0
+--- exit code 5 ---
+code: 5
+--- run_with_input sort ---
+code: 0
+apple
+banana
+cherry
