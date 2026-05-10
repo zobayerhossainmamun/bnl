@@ -6,7 +6,9 @@
 #include <fmt/core.h>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -257,6 +259,33 @@ void Interpreter::register_builtins() {
         });
     globals_->define("dump", Value{dump_fn});
     (void)utf8_codepoint_count;  // reserved for future use
+
+    // input(prompt?): write the optional prompt to stdout (no newline), then
+    // read one line from stdin. Returns the line WITHOUT its trailing newline.
+    // Returns null on EOF (Ctrl-Z + Enter on Windows, Ctrl-D on POSIX) so
+    // scripts can do `if (x == null) { ... }` to detect end-of-input.
+    auto input_fn = std::make_shared<NativeFunction>(
+        "input", -1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            if (args.size() > 1)
+                throw std::runtime_error("input(prompt?): too many arguments");
+            if (!args.empty()) {
+                if (!args[0].is_string())
+                    throw std::runtime_error("input(prompt?): prompt must be a string");
+                fmt::print("{}", args[0].as_string());
+                std::fflush(stdout);   // fmt::print doesn't auto-flush stdout
+            }
+            std::string line;
+            if (!std::getline(std::cin, line)) return Value{};
+            // Some shells / piped input leave a stray \r before \n. Strip it
+            // so users don't have to .trim() every result on Windows.
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            return Value{std::move(line)};
+        });
+    globals_->define("input", Value{input_fn});
+    // ইনপুট — Bangla transliteration; same callable.
+    globals_->define("\xe0\xa6\x87\xe0\xa6\xa8\xe0\xa6\xaa\xe0\xa7\x81\xe0\xa6\x9f",
+                     Value{input_fn});
 }
 
 }  // namespace bnl
