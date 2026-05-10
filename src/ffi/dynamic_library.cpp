@@ -17,7 +17,13 @@ namespace bnl {
 DynamicLibrary::DynamicLibrary(const std::filesystem::path& path)
     : path_(path) {
 #ifdef _WIN32
-    handle_ = LoadLibraryW(path.wstring().c_str());
+    // LOAD_WITH_ALTERED_SEARCH_PATH makes the plugin's own directory the
+    // first place Windows looks for its sibling dependencies (e.g. a
+    // plugin that links sqlite3.dll keeps sqlite3.dll next to itself).
+    // Without this, Windows uses bnl.exe's directory and reports
+    // "module not found" for any sibling DLL that's not staged there.
+    handle_ = LoadLibraryExW(path.wstring().c_str(), nullptr,
+                             LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!handle_) {
         DWORD err = GetLastError();
         throw std::runtime_error(fmt::format(

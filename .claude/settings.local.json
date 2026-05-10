@@ -49,7 +49,8 @@
       "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" publish *)",
       "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('size_bytes type:', type\\(d['assets'][0]['size_bytes']\\).__name__, 'value:', d['assets'][0]['size_bytes']\\)\")",
       "Bash(rm -rf deps bnl.lock)",
-      "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" install *)"
+      "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" install *)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" --quiet \"D:/bnlang/new-v/sqlite-lib/examples/demo.bnl\")"
     ]
   }
 }

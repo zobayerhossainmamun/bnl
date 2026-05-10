@@ -48,7 +48,11 @@ endif()
 
 target_include_directories(bnl_core
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include       # bnl/*.h — visible to hosts
+        ${PROJECT_SOURCE_DIR}/include     # bnl/*.h — visible to hosts.
+                                          # PROJECT_SOURCE_DIR (not
+                                          # CMAKE_SOURCE_DIR) so plugins
+                                          # that add_subdirectory(<bnl>)
+                                          # still resolve correctly.
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}       # src/*.h — internal headers
 )
