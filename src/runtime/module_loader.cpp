@@ -13,7 +13,6 @@
 #include "bnl/interpreter.h"
 #include "frontend/lexer.h"
 #include "frontend/parser.h"
-#include "stdlib_embedded.h"
 
 #ifdef BNL_FFI_ENABLED
 #  include "ffi/dynamic_library.h"
@@ -305,45 +304,24 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
 
     // ---- Bare-name resolution chain --------------------------------------
     //
-    // 1. Native modules (sys, io, json, ...)         <- src/native/*.cpp
-    // 2. Embedded bnl stdlib (prelude, path, http)   <- lib/*.bnl baked in
-    // 3. Walk up: <ancestor>/deps/<name>/            <- project-local deps
-    // 4. Global:  $BNL_HOME/deps/<name>/ or
+    // 1. Built-in native modules (sys, io, timers)   <- src/stdlib/*.cpp
+    // 2. Walk up: <ancestor>/deps/<name>/            <- project-local deps
+    //                                                   (entry: bnl.json main /
+    //                                                    native, else index.bnl)
+    // 3. Global:  $BNL_HOME/deps/<name>/ or
     //             ~/.bnl/deps/<name>/                <- only outside a project
-    // 5. Error.
+    // 4. Error.
+    //
+    // Anything else (crypto, net, tls, http, json, sqlite, …) is a plugin or
+    // package delivered by the separate package manager — installed under
+    // deps/<name>/ in your project, or under ~/.bnl/deps/<name>/ globally.
 
     // 1. Native modules.
     if (auto m = interp_.native_module(path_string); m) {
         return m;
     }
 
-    // 2. Embedded bnl stdlib.
-    {
-        const auto& stdlib = embedded_stdlib();
-        if (auto it = stdlib.find(path_string); it != stdlib.end()) {
-            std::string key          = "<stdlib:" + path_string + ">";
-            std::string display_path = "<stdlib:" + path_string + ">";
-
-            if (auto cached = cache_.find(key); cached != cache_.end()) return cached->second;
-            if (in_progress_.count(key)) {
-                throw ModuleError(import_token,
-                    fmt::format("circular import detected: {}", display_path));
-            }
-            in_progress_.insert(key);
-            ModulePtr m;
-            try {
-                m = evaluate_source(key, display_path, std::string(it->second), import_token);
-            } catch (...) {
-                in_progress_.erase(key);
-                throw;
-            }
-            in_progress_.erase(key);
-            cache_[key] = m;
-            return m;
-        }
-    }
-
-    // 3. Walk up looking for deps/<name>/.
+    // 2. Walk up looking for deps/<name>/.
     if (auto dep_dir = find_dep_in_walk(requesting_dir, path_string)) {
         if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
             return entry->is_native
@@ -356,7 +334,7 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
             path_string, dep_dir->string(), path_string));
     }
 
-    // 4. Global, gated on "are we outside a project?". Inside a project, deps
+    // 3. Global, gated on "are we outside a project?". Inside a project, deps
     //    must be declared in deps/ for reproducibility — global never silently
     //    fills the gap.
     bool in_project = find_project_root(requesting_dir).has_value();
@@ -373,10 +351,9 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
         }
     }
 
-    // 5. Error — exhausted every layer.
+    // 4. Error — exhausted every layer.
     throw ModuleError(import_token, fmt::format(
-        "no module named '{}' (not a native module, not in embedded stdlib, "
-        "not in any deps/ ancestor of {}{})",
+        "no module named '{}' (not a built-in, not in any deps/ ancestor of {}{})",
         path_string, requesting_dir.string(),
         in_project ? "" : ", not in global ~/.bnl/deps/"));
 }

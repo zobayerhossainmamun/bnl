@@ -10,10 +10,6 @@
             "version>=": "12.1.0"
         },
         "libuv",
-        "openssl",
-        "zlib",
-        "llhttp",
-        "nlohmann-json",
-        "sqlite3"
+        "nlohmann-json"
     ]
 }

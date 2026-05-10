@@ -1,9 +1,0 @@
-sync_code: 0
-sync_signal: 0
-sync_starts: true
-sync_err_empty: true
-nonzero_code: 7
-async_pid_ok: true
-async_code: 0
-has_alpha: true
-has_beta: true

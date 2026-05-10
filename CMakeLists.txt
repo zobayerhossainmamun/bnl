@@ -34,29 +34,13 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 endif()
 
-find_package(fmt                 CONFIG REQUIRED)
-find_package(libuv               CONFIG REQUIRED)
-find_package(OpenSSL             REQUIRED)
-find_package(ZLIB                REQUIRED)
-find_package(llhttp              CONFIG REQUIRED)
-find_package(nlohmann_json       CONFIG REQUIRED)
-find_package(unofficial-sqlite3  CONFIG REQUIRED)
-
-# ---- generate stdlib_embedded.h from lib/*.bnl ----
-set(STDLIB_HEADER ${CMAKE_BINARY_DIR}/generated/stdlib_embedded.h)
-file(GLOB STDLIB_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/lib/*.bnl)
-
-add_custom_command(
-    OUTPUT  ${STDLIB_HEADER}
-    COMMAND ${CMAKE_COMMAND}
-        -DOUT=${STDLIB_HEADER}
-        -DLIB=${CMAKE_SOURCE_DIR}/lib
-        -P ${CMAKE_SOURCE_DIR}/cmake/embed_stdlib.cmake
-    DEPENDS ${STDLIB_SOURCES} ${CMAKE_SOURCE_DIR}/cmake/embed_stdlib.cmake
-    COMMENT "Embedding bnl stdlib (${STDLIB_HEADER})"
-    VERBATIM
-)
-add_custom_target(stdlib_embedded DEPENDS ${STDLIB_HEADER})
+# Core ships only the language + the three intrinsic native modules
+# (sys, io, timers). Everything else (crypto, net, tls, http, json, sqlite,
+# etc.) is delivered by the separate package manager as plugins or pure-bnl
+# packages, dropped into deps/ and plugins/ at runtime.
+find_package(fmt           CONFIG REQUIRED)
+find_package(libuv         CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
 
 add_subdirectory(src)
 

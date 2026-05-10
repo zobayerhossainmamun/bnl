@@ -27,14 +27,6 @@ Interpreter::Interpreter()
     register_sys   (*this);
     register_io    (*this);
     register_timers(*this);
-    register_crypto(*this);
-    register_zlib  (*this);
-    register_httpp (*this);
-    register_net   (*this);
-    register_tls   (*this);
-    register_exec  (*this);
-    register_json  (*this);
-    register_sqlite(*this);
 }
 
 Interpreter::~Interpreter() {

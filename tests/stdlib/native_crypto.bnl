@@ -1,8 +1,0 @@
-// Known-answer tests for the crypto native module.
-import "crypto" as crypto;
-
-print(crypto.sha256("hello"));
-print(crypto.sha1("hello"));
-print(crypto.md5("hello"));
-print(crypto.sha256(""));
-print(crypto.sha256("hello").length);

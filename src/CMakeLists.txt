@@ -31,18 +31,13 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     runtime/stmts.cpp
     runtime/globals.cpp
 
-    # Native (C++) implementations of `import "x"` modules.
+    # Built-in native modules. Intentionally minimal: process meta + local
+    # I/O + event-loop scheduling. Everything else (crypto, net, tls, http,
+    # json, sqlite, …) is delivered as a plugin or pure-bnl package by the
+    # separate package manager.
     stdlib/sys.cpp
     stdlib/io.cpp
     stdlib/timers.cpp
-    stdlib/crypto.cpp
-    stdlib/zlib.cpp
-    stdlib/httpp.cpp
-    stdlib/net.cpp
-    stdlib/tls.cpp
-    stdlib/exec.cpp
-    stdlib/json.cpp
-    stdlib/sqlite.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -51,39 +46,25 @@ if(BNL_ENABLE_FFI)
     target_sources(bnl_core PRIVATE ffi/dynamic_library.cpp)
 endif()
 
-# Make sure the embedded-stdlib header is generated before any source compiles.
-add_dependencies(bnl_core stdlib_embedded)
-
 target_include_directories(bnl_core
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include       # bnl/*.h — visible to hosts
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}       # src/*.h — internal headers
-        ${CMAKE_BINARY_DIR}/generated     # stdlib_embedded.h
 )
 
 # libuv is in the public header surface (uv_loop_t* exposed via Interpreter).
-# Hosts that link bnl_core get libuv transitively. Other deps stay PRIVATE.
+# Hosts that link bnl_core get libuv transitively. fmt stays PRIVATE.
 target_link_libraries(bnl_core
     PUBLIC
         $<IF:$<TARGET_EXISTS:libuv::uv_a>,libuv::uv_a,libuv::uv>
     PRIVATE
         fmt::fmt
-        OpenSSL::SSL
-        OpenSSL::Crypto
-        ZLIB::ZLIB
-        $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
-        nlohmann_json::nlohmann_json
-        unofficial::sqlite3::sqlite3
+        nlohmann_json::nlohmann_json    # module loader parses bnl.json
 )
 
 if(BNL_ENABLE_FFI)
     target_link_libraries(bnl_core PRIVATE ${CMAKE_DL_LIBS})  # dl on Linux
-endif()
-
-# stdlib/tls.cpp pulls Windows root certs from the system store; needs crypt32.
-if(WIN32)
-    target_link_libraries(bnl_core PRIVATE crypt32)
 endif()
 
 # bnl: thin CLI driver around bnl_core.
