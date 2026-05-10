@@ -96,6 +96,23 @@ public:
     // into a non-zero exit and stops the loop so uv_run returns promptly.
     void mark_loop_failed();
 
+    // ---- recursion + interrupt hardening ----------------------------------
+
+    // Maximum bnl call-stack depth before the runtime preemptively unwinds
+    // with a RuntimeError. Tracked in visit(CallExpr); covers UserFunction +
+    // any callable invoked via a bnl call expression. Default 100 — sized
+    // to clear Windows' 1 MB default native stack with margin, since the
+    // tree-walker uses several C++ frames per bnl frame. Hosts on bigger
+    // stacks (Linux 8 MB) can safely raise this.
+    int  max_call_depth() const          { return max_call_depth_; }
+    void set_max_call_depth(int n)       { max_call_depth_ = n; }
+
+    // Process-wide install — call once at startup. Wires Ctrl-C / SIGTERM so
+    // a running script unwinds with a "interrupted" RuntimeError instead of
+    // tearing the process down mid-state. The handler also calls uv_stop on
+    // the active interpreter's loop so async waits return promptly.
+    static void install_signal_handlers();
+
     // ---- internal: visitor dispatch + module engine ------------------------
     // These are public only because the visitor base classes dispatch into
     // them and ModuleLoader calls back into them. Hosts should NOT call these
@@ -142,6 +159,11 @@ private:
     void  execute(Stmt& s);
     void  register_builtins();
 
+    // Throws a RuntimeError if the bnl call stack has hit max_call_depth_.
+    void  check_call_depth(const Token& site);
+    // Throws a RuntimeError if a Ctrl-C / SIGTERM has been delivered.
+    void  check_interrupt (const Token& site);
+
     std::shared_ptr<Environment> globals_;
     std::shared_ptr<Environment> environment_;
     Value                        result_;
@@ -157,6 +179,17 @@ private:
     std::vector<std::vector<StmtPtr>>              kept_programs_;
     uv_loop_t                                      loop_{};
     bool                                           loop_failed_ = false;
+
+    int                                            call_depth_     = 0;
+    // The tree-walker burns several KB of C++ stack per bnl frame. Debug
+    // builds use ~3-4× more stack than Release, so we ship a conservative
+    // default that's safe in Debug on Windows' 1 MB default stack and
+    // bump it up for Release. Hosts can override via set_max_call_depth.
+#if defined(_DEBUG) || !defined(NDEBUG)
+    int                                            max_call_depth_ = 40;
+#else
+    int                                            max_call_depth_ = 200;
+#endif
 };
 
 }  // namespace bnl

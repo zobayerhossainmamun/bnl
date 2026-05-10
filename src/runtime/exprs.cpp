@@ -210,6 +210,19 @@ void Interpreter::visit(CallExpr& e) {
             fmt::format("function '{}' expects {} arguments, got {}",
                         fn->name(), fn->arity(), args.size()));
     }
+
+    // Hardening: cooperative Ctrl-C and recursion-depth ceiling. Both unwind
+    // with a RuntimeError pointing at the call site, so the user sees a
+    // clean diagnostic instead of stack-overflowing or hanging.
+    check_interrupt (e.paren);
+    check_call_depth(e.paren);
+
+    struct DepthGuard {
+        int& d;
+        DepthGuard(int& d_) : d(d_) { ++d; }
+        ~DepthGuard() { --d; }
+    } _guard{call_depth_};
+
     // Native functions surface failures as std::runtime_error; attach the
     // call site's token so the user sees a useful line/column.
     try {

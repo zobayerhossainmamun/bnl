@@ -74,7 +74,11 @@
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/regex_smoke.bnl)",
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" \"D:/bnlang/new-v/bnl/build/windows/multiline.bnl\")",
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" \"D:/bnlang/new-v/bnl/build/windows/throw_test.bnl\")",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" \"D:/bnlang/new-v/bnl/build/windows/depth_test.bnl\")",
+      "Bash(echo \"EXIT=$?\")",
+      "PowerShell(& \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe\" \"D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\depth_test.bnl\"; Write-Host \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(Out-Null *)"
     ]
   }
 }

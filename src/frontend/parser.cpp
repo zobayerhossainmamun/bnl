@@ -115,11 +115,12 @@ StmtPtr Parser::if_statement() {
 }
 
 StmtPtr Parser::while_statement() {
+    Token keyword = previous();   // the 'while' token consumed by statement()
     consume(TokenType::LParen, "expected '(' after 'while'");
     ExprPtr cond = expression();
     consume(TokenType::RParen, "expected ')' after while condition");
     StmtPtr body = statement();
-    return std::make_unique<WhileStmt>(std::move(cond), std::move(body));
+    return std::make_unique<WhileStmt>(keyword, std::move(cond), std::move(body));
 }
 
 // for-loop is a tiny grammar fork:
@@ -130,6 +131,7 @@ StmtPtr Parser::while_statement() {
 // We disambiguate by lookahead: after `for (`, if we see `var IDENT of`, it's
 // the iterator form; otherwise C-style.
 StmtPtr Parser::for_statement() {
+    Token keyword = previous();   // the 'for' token consumed by statement()
     consume(TokenType::LParen, "expected '(' after 'for'");
 
     // ---- iterator form: for (var X of EXPR) body -----------------------
@@ -166,7 +168,7 @@ StmtPtr Parser::for_statement() {
     consume(TokenType::RParen, "expected ')' after for header");
 
     StmtPtr body = statement();
-    return std::make_unique<ForStmt>(std::move(init), std::move(cond),
+    return std::make_unique<ForStmt>(keyword, std::move(init), std::move(cond),
                                      std::move(update), std::move(body));
 }
 

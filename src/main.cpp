@@ -295,6 +295,7 @@ void print_usage() {
 
 int main(int argc, char** argv) {
     enable_utf8_console();
+    bnl::Interpreter::install_signal_handlers();
 
     bool        show_tokens     = false;
     bool        show_ast        = false;

@@ -2,7 +2,16 @@
 
 #include <fmt/core.h>
 
+#include <atomic>
+#include <mutex>
 #include <utility>
+
+#ifdef _WIN32
+#  define WIN32_LEAN_AND_MEAN
+#  include <windows.h>
+#else
+#  include <csignal>
+#endif
 
 #include "runtime/environment.h"
 #include "frontend/lexer.h"
@@ -11,6 +20,46 @@
 #include "stdlib/registry.h"
 
 namespace bnl {
+
+namespace {
+
+// Process-wide interrupt latch. Set by signal handlers (Ctrl-C / SIGTERM),
+// polled by Interpreter::check_interrupt at hot points (loops, calls). The
+// interpreter clears it when it raises the corresponding RuntimeError.
+std::atomic<bool> g_interrupted{false};
+
+// The interpreter currently driving uv_run, if any. The signal handler uses
+// it to call uv_stop so an idle uv_run wakes up promptly. Multiple nested
+// interpreters are not a thing here — we just track the latest active one.
+std::atomic<Interpreter*> g_active_interp{nullptr};
+
+class ActiveScope {
+public:
+    explicit ActiveScope(Interpreter* now)
+        : prev_(g_active_interp.exchange(now)) {}
+    ~ActiveScope() { g_active_interp.store(prev_); }
+private:
+    Interpreter* prev_;
+};
+
+#ifdef _WIN32
+BOOL WINAPI ctrl_handler(DWORD type) {
+    if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT) {
+        g_interrupted.store(true, std::memory_order_release);
+        if (auto* i = g_active_interp.load()) uv_stop(i->loop());
+        return TRUE;  // we handled it; don't terminate the process
+    }
+    return FALSE;
+}
+#else
+extern "C" void posix_signal_handler(int /*sig*/) {
+    // Async-signal-safe: only an atomic store and uv_stop (= one int write).
+    g_interrupted.store(true, std::memory_order_release);
+    if (auto* i = g_active_interp.load()) uv_stop(i->loop());
+}
+#endif
+
+}  // namespace
 
 // ============================================================================
 // Interpreter — lifecycle, control, and native module registry.
@@ -53,8 +102,47 @@ void Interpreter::mark_loop_failed() {
     uv_stop(&loop_);
 }
 
+void Interpreter::install_signal_handlers() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+#ifdef _WIN32
+        // Returning TRUE from ctrl_handler suppresses default termination.
+        SetConsoleCtrlHandler(ctrl_handler, TRUE);
+#else
+        struct sigaction sa{};
+        sa.sa_handler = posix_signal_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sigaction(SIGINT,  &sa, nullptr);
+        sigaction(SIGTERM, &sa, nullptr);
+#endif
+    });
+}
+
+void Interpreter::check_call_depth(const Token& site) {
+    if (call_depth_ >= max_call_depth_) {
+        throw RuntimeError(site,
+            fmt::format("max call depth ({}) exceeded — likely infinite recursion",
+                        max_call_depth_));
+    }
+}
+
+void Interpreter::check_interrupt(const Token& site) {
+    // Acquire pairs with the signal handler's release store.
+    if (g_interrupted.load(std::memory_order_acquire)) {
+        // Latch consumed: clear so subsequent runs don't auto-fail. Preserves
+        // the property that Ctrl-C interrupts ONE script run.
+        g_interrupted.store(false, std::memory_order_release);
+        throw RuntimeError(site, "interrupted (Ctrl-C / SIGTERM)");
+    }
+}
+
 bool Interpreter::run(std::vector<StmtPtr> program,
                       const std::filesystem::path& entry_path) {
+    // Mark this interpreter as the signal-handler target for the duration of
+    // the run. RAII so it is restored even if execute() / uv_run throws.
+    ActiveScope scope(this);
+
     current_file_ = entry_path;
     // Take ownership of the AST. UserFunctions (and any closures over them)
     // hold raw pointers into it; the AST must live at least as long as the

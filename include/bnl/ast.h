@@ -297,9 +297,11 @@ public:
 
 class WhileStmt : public Stmt {
 public:
+    Token   keyword;   // 'while' — kept for interrupt / error reporting
     ExprPtr cond;
     StmtPtr body;
-    WhileStmt(ExprPtr c, StmtPtr b) : cond(std::move(c)), body(std::move(b)) {}
+    WhileStmt(Token k, ExprPtr c, StmtPtr b)
+        : keyword(k), cond(std::move(c)), body(std::move(b)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 
@@ -309,12 +311,13 @@ public:
 //   update : an Expr (or null = no-op)
 class ForStmt : public Stmt {
 public:
+    Token   keyword;   // 'for' — kept for interrupt / error reporting
     StmtPtr init;
     ExprPtr cond;
     ExprPtr update;
     StmtPtr body;
-    ForStmt(StmtPtr i, ExprPtr c, ExprPtr u, StmtPtr b)
-        : init(std::move(i)), cond(std::move(c)),
+    ForStmt(Token k, StmtPtr i, ExprPtr c, ExprPtr u, StmtPtr b)
+        : keyword(k), init(std::move(i)), cond(std::move(c)),
           update(std::move(u)), body(std::move(b)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };

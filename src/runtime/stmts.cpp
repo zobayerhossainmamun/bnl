@@ -31,7 +31,10 @@ void Interpreter::visit(IfStmt& s) {
 }
 
 void Interpreter::visit(WhileStmt& s) {
-    while (evaluate(*s.cond).truthy()) execute(*s.body);
+    while (evaluate(*s.cond).truthy()) {
+        check_interrupt(s.keyword);
+        execute(*s.body);
+    }
 }
 
 void Interpreter::visit(ForStmt& s) {
@@ -43,6 +46,7 @@ void Interpreter::visit(ForStmt& s) {
 
     if (s.init) execute(*s.init);
     while (!s.cond || evaluate(*s.cond).truthy()) {
+        check_interrupt(s.keyword);
         execute(*s.body);
         if (s.update) evaluate(*s.update);
     }
@@ -58,6 +62,7 @@ void Interpreter::visit(ForOfStmt& s) {
     }
     const auto& items = *iter.as_list();
     for (const auto& v : items) {
+        check_interrupt(s.var);
         // Each iteration gets a fresh scope so the body's `var` decls don't
         // collide with the next iteration.
         auto env = std::make_shared<Environment>(environment_);
