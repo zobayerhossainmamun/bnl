@@ -1,0 +1,55 @@
+// Embedded bnl stdlib — sqlite module. transaction / migrate / insert
+// composition over the native primitive.
+import "sqlite" as sqlite;
+
+print("--- migrate + insert ---");
+var db = sqlite.open(":memory:");
+
+var n = sqlite.migrate(db, [
+    "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)",
+    "CREATE INDEX users_name_idx ON users(name)"
+]);
+print("migrated:", n);
+
+var id1 = sqlite.insert(db, "users", {name: "alice", age: 30});
+var id2 = sqlite.insert(db, "users", {name: "bob",   age: 25});
+print("ids:", id1, id2);
+
+print("--- transaction commits ---");
+sqlite.transaction(db, function (d) {
+    sqlite.insert(d, "users", {name: "carol", age: 35});
+    sqlite.insert(d, "users", {name: "dan",   age: 40});
+    return null;
+});
+var c1 = db.query_one("SELECT COUNT(*) AS c FROM users");
+print("after commit:", c1.c);
+
+print("--- transaction rolls back on throw ---");
+try {
+    sqlite.transaction(db, function (d) {
+        sqlite.insert(d, "users", {name: "eve", age: 50});
+        throw "force rollback";
+    });
+} catch (e) {
+    print("caught:", e);
+}
+var c2 = db.query_one("SELECT COUNT(*) AS c FROM users");
+print("after rollback:", c2.c);
+
+print("--- query the rows back ---");
+var rows = db.query("SELECT name FROM users ORDER BY id");
+print("count:", rows.length);
+for (var r of rows) { print(r.name); }
+
+print("--- empty row map rejected ---");
+try {
+    sqlite.insert(db, "users", {});
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}
+
+print("--- version is a string ---");
+print(type(sqlite.version()));
+
+db.close();

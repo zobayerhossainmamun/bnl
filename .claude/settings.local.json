@@ -85,7 +85,8 @@
       "Bash(vcpkg search *)",
       "Bash(findstr /R \"^openssl[ :]\")",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\lib_url.bnl 2>&1)",
-      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\native_exec.bnl 2>&1; \"---\"; .\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\lib_exec.bnl 2>&1)"
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\native_exec.bnl 2>&1; \"---\"; .\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\lib_exec.bnl 2>&1)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\native_sqlite.bnl 2>&1; \"---\"; .\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet tests\\\\stdlib\\\\lib_sqlite.bnl 2>&1)"
     ]
   }
 }

@@ -92,6 +92,7 @@ Interpreter::Interpreter()
     register_json  (*this);
     register_exec  (*this);
     register_dns   (*this);
+    register_sqlite(*this);
 }
 
 Interpreter::~Interpreter() {

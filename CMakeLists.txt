@@ -38,11 +38,12 @@ endif()
 # (sys, io, timers, regex, crypto). Higher-level things (net, tls, http,
 # json, sqlite, etc.) are delivered by the separate package manager as
 # plugins or pure-bnl packages, dropped into deps/<name>/ at runtime.
-find_package(fmt           CONFIG REQUIRED)
-find_package(libuv         CONFIG REQUIRED)
-find_package(llhttp        CONFIG REQUIRED)        # stdlib/http.cpp
-find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to read bnl.json
-find_package(OpenSSL       REQUIRED)               # stdlib/crypto.cpp + tls.cpp
+find_package(fmt                CONFIG REQUIRED)
+find_package(libuv              CONFIG REQUIRED)
+find_package(llhttp             CONFIG REQUIRED)   # stdlib/http.cpp
+find_package(nlohmann_json      CONFIG REQUIRED)   # used by module loader to read bnl.json
+find_package(OpenSSL            REQUIRED)          # stdlib/crypto.cpp + tls.cpp
+find_package(unofficial-sqlite3 CONFIG REQUIRED)   # stdlib/sqlite.cpp
 
 # Bake lib/*.bnl into a header that bnl_core's module loader can look up.
 # Re-runs whenever a lib file changes; empty table when lib/ is empty.

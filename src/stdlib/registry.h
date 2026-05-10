@@ -22,9 +22,11 @@ class Interpreter;
 //             import resolves to lib/exec.bnl (which adds run helpers).
 //   _dns    — DNS lookup / reverse via uv_getaddrinfo + uv_getnameinfo.
 //             Same convention: public "dns" name belongs to lib/dns.bnl.
+//   _sqlite — SQLite open / exec / query / etc (vcpkg sqlite3).
+//             Public "sqlite" name belongs to lib/sqlite.bnl
+//             (transaction / migrate / insert helpers).
 //
-// Anything else (sqlite, …) is delivered as a plugin by the separate
-// package manager.
+// Anything else is delivered as a plugin by the separate package manager.
 void register_sys   (Interpreter& interp);
 void register_io    (Interpreter& interp);
 void register_timers(Interpreter& interp);
@@ -36,5 +38,6 @@ void register_tls   (Interpreter& interp);
 void register_json  (Interpreter& interp);
 void register_exec  (Interpreter& interp);
 void register_dns   (Interpreter& interp);
+void register_sqlite(Interpreter& interp);
 
 }  // namespace bnl

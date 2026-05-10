@@ -1,0 +1,18 @@
+--- migrate + insert ---
+migrated: 2
+ids: 1 2
+--- transaction commits ---
+after commit: 4
+--- transaction rolls back on throw ---
+caught: force rollback
+after rollback: 4
+--- query the rows back ---
+count: 4
+alice
+bob
+carol
+dan
+--- empty row map rejected ---
+ok
+--- version is a string ---
+string

@@ -12,6 +12,7 @@
         "libuv",
         "llhttp",
         "nlohmann-json",
-        "openssl"
+        "openssl",
+        "sqlite3"
     ]
 }

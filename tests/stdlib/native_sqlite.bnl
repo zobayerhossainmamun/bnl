@@ -1,0 +1,60 @@
+// Native sqlite primitive — open / exec / query / query_one / changes /
+// last_insert_id / close. Imports "_sqlite" because the public "sqlite"
+// name belongs to lib/sqlite.bnl.
+import "_sqlite" as sqlite;
+
+print("--- open + create + insert + query ---");
+var db = sqlite.open(":memory:");
+
+db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, age INTEGER)");
+db.exec("INSERT INTO users (name, age) VALUES (?, ?)", ["alice", 30]);
+db.exec("INSERT INTO users (name, age) VALUES (?, ?)", ["bob",   25]);
+
+print("last id:", db.last_insert_id());
+print("changes:", db.changes());
+
+var rows = db.query("SELECT id, name, age FROM users ORDER BY id");
+print("count:", rows.length);
+for (var r of rows) {
+    print(r.id, r.name, r.age);
+}
+
+print("--- query_one ---");
+var one = db.query_one("SELECT name FROM users WHERE id = ?", [1]);
+print("name:", one.name);
+
+var none = db.query_one("SELECT name FROM users WHERE id = ?", [99]);
+print("none:", none);
+
+print("--- types ---");
+db.exec("CREATE TABLE x (i INTEGER, f REAL, t TEXT, n)");
+db.exec("INSERT INTO x VALUES (?, ?, ?, ?)", [42, 3.14, "hello", null]);
+var row = db.query_one("SELECT * FROM x");
+print(type(row.i), row.i);
+print(type(row.f), row.f);
+print(type(row.t), row.t);
+print(row.n);
+
+print("--- bool binds as int ---");
+db.exec("CREATE TABLE flags (b INTEGER)");
+db.exec("INSERT INTO flags VALUES (?)", [true]);
+db.exec("INSERT INTO flags VALUES (?)", [false]);
+var bs = db.query("SELECT b FROM flags ORDER BY rowid");
+print(bs[0].b, bs[1].b);
+
+print("--- error path ---");
+try {
+    db.exec("INSERT INTO nope_table VALUES (1)");
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}
+
+print("--- close + use after close ---");
+db.close();
+try {
+    db.exec("SELECT 1");
+    print("FAIL");
+} catch (e) {
+    print("closed ok");
+}

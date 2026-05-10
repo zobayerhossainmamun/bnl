@@ -46,6 +46,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/json.cpp
     stdlib/exec.cpp
     stdlib/dns.cpp
+    stdlib/sqlite.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -79,6 +80,7 @@ target_link_libraries(bnl_core
         nlohmann_json::nlohmann_json    # module loader parses bnl.json
         OpenSSL::Crypto                 # stdlib/crypto.cpp + stdlib/tls.cpp
         OpenSSL::SSL                    # stdlib/tls.cpp
+        unofficial::sqlite3::sqlite3    # stdlib/sqlite.cpp
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
 

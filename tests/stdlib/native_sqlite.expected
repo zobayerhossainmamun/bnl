@@ -1,0 +1,20 @@
+--- open + create + insert + query ---
+last id: 2
+changes: 1
+count: 2
+1 alice 30
+2 bob 25
+--- query_one ---
+name: alice
+none: null
+--- types ---
+number 42
+number 3.14
+string hello
+null
+--- bool binds as int ---
+1 0
+--- error path ---
+ok
+--- close + use after close ---
+closed ok
