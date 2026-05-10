@@ -30,7 +30,15 @@
       "Bash(mkdir -p \"D:/bnlang/new-v/bnl/tests/_fixtures/tls\")",
       "Bash(openssl req *)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_tls_server.bnl)",
-      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\examples\\\\_test_tls_server.bnl)"
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\examples\\\\_test_tls_server.bnl)",
+      "PowerShell(Get-ChildItem .\\\\build\\\\windows\\\\bin\\\\bnl.exe, .\\\\build\\\\windows\\\\bin\\\\bnl_core.dll | Select-Object Name, @{N='KB';E={[math]::Round\\($_.Length/1KB,1\\)}}, LastWriteTime)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\app.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\direct_dll.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\embed_demo.exe)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\direct_dll_abs.bnl)",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\bare_dll.bnl)"
     ]
   }
 }
