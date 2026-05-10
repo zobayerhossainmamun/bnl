@@ -345,21 +345,31 @@ public:
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 
-// try { ... } catch (e) { ... }
+// try { ... } catch (e) { ... } finally { ... }
 //
-// On a runtime error or `throw` inside try_block, control jumps to catch_block
-// with `e` (the catch_var lexeme) bound in a fresh scope. The bound value is:
-//   - the value passed to `throw <expr>;`           (any bnl value)
-//   - or the runtime-error message string           (for runtime-origin errors)
+// At least one of `catch` or `finally` must be present. The catch block runs
+// only when try_block raised; `e` is bound to the thrown value, or to the
+// error message string for runtime-origin errors.
+//
+// The finally block runs ALWAYS — after try succeeds, after catch handles a
+// throw, when an unhandled throw is propagating out, and when `return` is
+// unwinding. If finally itself throws or returns, that overrides any pending
+// exception/return.
 class TryStmt : public Stmt {
 public:
-    Token                keyword;     // 'try' / 'চেষ্টা' — for diagnostics
+    Token                keyword;       // 'try' / 'চেষ্টা' — for diagnostics
     std::vector<StmtPtr> try_block;
-    Token                catch_var;   // identifier bound inside catch_block
+    bool                 has_catch;     // false for `try { } finally { }`
+    Token                catch_var;     // identifier bound inside catch_block
     std::vector<StmtPtr> catch_block;
-    TryStmt(Token k, std::vector<StmtPtr> t, Token cv, std::vector<StmtPtr> c)
+    bool                 has_finally;
+    std::vector<StmtPtr> finally_block;
+    TryStmt(Token k, std::vector<StmtPtr> t,
+            bool hc, Token cv, std::vector<StmtPtr> c,
+            bool hf, std::vector<StmtPtr> f)
         : keyword(k), try_block(std::move(t)),
-          catch_var(cv), catch_block(std::move(c)) {}
+          has_catch(hc), catch_var(cv), catch_block(std::move(c)),
+          has_finally(hf), finally_block(std::move(f)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 

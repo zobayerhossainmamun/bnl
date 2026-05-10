@@ -56,9 +56,60 @@ try {
 }
 print("after");
 
-// 8. Bilingual form — চেষ্টা / ধরা / নিক্ষেপ.
+// 8. Bilingual form — চেষ্টা / ধরুন / নিক্ষেপ.
 চেষ্টা {
     নিক্ষেপ "বাংলা ত্রুটি";
-} ধরা (ভুল) {
+} ধরুন (ভুল) {
     print("বাংলা:", ভুল);
+}
+
+// 9. finally runs after try succeeds.
+try {
+    print("try-9");
+} catch (e) {
+    print("not reached");
+} finally {
+    print("finally-9");
+}
+
+// 10. finally runs after catch handles a throw.
+try {
+    throw "err-10";
+} catch (e) {
+    print("caught-10:", e);
+} finally {
+    print("finally-10");
+}
+
+// 11. try { ... } finally { ... }  (no catch). Throw propagates after finally.
+function with_finally() {
+    try {
+        throw "err-11";
+    } finally {
+        print("finally-11-inner");
+    }
+}
+try {
+    with_finally();
+} catch (e) {
+    print("outer-caught-11:", e);
+}
+
+// 12. finally runs even when `return` is unwinding.
+function returns_with_finally() {
+    try {
+        return "ret-value";
+    } finally {
+        print("finally-12-runs");
+    }
+}
+print("returned:", returns_with_finally());
+
+// 13. Bilingual finally — অবশেষে.
+চেষ্টা {
+    print("try-13");
+} ধরুন (e) {
+    print("not reached");
+} অবশেষে {
+    print("অবশেষে-13");
 }

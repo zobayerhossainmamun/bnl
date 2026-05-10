@@ -7,3 +7,13 @@ returns: via-try
 try ran
 after
 বাংলা: বাংলা ত্রুটি
+try-9
+finally-9
+caught-10: err-10
+finally-10
+finally-11-inner
+outer-caught-11: err-11
+finally-12-runs
+returned: ret-value
+try-13
+অবশেষে-13

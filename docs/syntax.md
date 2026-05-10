@@ -26,10 +26,11 @@ Reserved in both forms. `for` is reserved but the parser does not yet accept it.
 | `true` | `সত্য` | `or` | `অথবা` |
 | `false` | `মিথ্যা` | `not` | `না` |
 | `null` | `নাই` | `try` | `চেষ্টা` |
-| `catch` | `ধরা` | `throw` | `নিক্ষেপ` |
+| `catch` | `ধরুন` | `throw` | `নিক্ষেপ` |
+| `finally` | `অবশেষে` | | |
 
 `print`, `str`, `type`, `to_number`, `chr`, `try_call` are **global functions**, not
-keywords. Their Bangla aliases are `দেখাও`, `লেখ`, `ধরণ` (others are English-only
+keywords. Their Bangla aliases are `লিখুন`, `লেখ`, `ধরণ` (others are English-only
 for now).
 
 ## Identifiers
@@ -227,7 +228,7 @@ mod.exported           // module export
 
 | Name | Bangla | Signature | Notes |
 |---|---|---|---|
-| `print(...)` | `দেখাও` | varargs | Joins args with single space, then newline |
+| `print(...)` | `লিখুন` | varargs | Joins args with single space, then newline |
 | `str(v)` | `লেখ` | `(any) -> string` | Same as the display form `print` produces |
 | `type(v)` | `ধরণ` | `(any) -> string` | See [Types](#types) |
 | `to_number(s)` | — | `(string\|number) -> number\|null` | `null` on parse failure |
@@ -256,7 +257,7 @@ mod.exported           // module export
 | map | `.has(k)` | bool |
 | map | `.keys()` | list of keys |
 
-### Try / catch / throw
+### Try / catch / throw / finally
 
 ```bnl
 try {
@@ -264,12 +265,13 @@ try {
     throw "something went wrong";
 } catch (e) {
     print("caught:", e);
+} finally {
+    cleanup();
 }
 ```
 
-`throw <expr>;` unwinds the stack to the nearest enclosing `try { ... } catch
-(e) { ... }` and binds `e` to the thrown value. The thrown value can be any
-type — a string, number, map, instance, etc.:
+`throw <expr>;` unwinds the stack to the nearest enclosing `try` and binds the
+caught value (any bnl value) to the catch variable:
 
 ```bnl
 try {
@@ -280,22 +282,38 @@ try {
 ```
 
 For runtime-origin errors (calling a non-callable, divide-by-zero, accessing
-an undefined variable), `e` is bound to the **error message string**.
+an undefined variable), the catch variable is bound to the **error message
+string**.
 
-`return` is *not* swallowed by `try` — returning from inside a `try` block
-exits the enclosing function as usual.
+`finally` is optional. When present, the block runs on every exit path:
+- after the try block succeeds,
+- after the catch block runs,
+- after an unhandled throw, just before it propagates,
+- after `return` is unwinding the function.
+
+If finally itself throws or returns, that overrides any pending exception or
+return value.
+
+`catch` is also optional when `finally` is present, so all three of these are
+valid:
+
+```bnl
+try { ... } catch (e) { ... }
+try { ... } catch (e) { ... } finally { ... }
+try { ... } finally { ... }
+```
 
 Bilingual:
 
 ```bnl
 চেষ্টা {
     নিক্ষেপ "ভুল হয়েছে";
-} ধরা (ভুল) {
+} ধরুন (ভুল) {
     print(ভুল);
+} অবশেষে {
+    print("শেষ");
 }
 ```
-
-There is no `finally` clause yet.
 
 ### Other error handling
 
@@ -318,7 +336,6 @@ errors arrive as the first argument, not as a thrown value.
 
 - No `for` loop syntax (planned).
 - No string interpolation, no template strings, no multi-line strings.
-- No `finally` clause for `try` / `catch`.
 - Maps return `null` for missing keys (not an error). Use `.has(k)` to disambiguate
   null-valued keys from absent keys.
 - Identifier-start uses a permissive rule (any non-ASCII codepoint is allowed).

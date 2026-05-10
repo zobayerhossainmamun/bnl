@@ -9,7 +9,7 @@ var name = "bnl";
 যদি (1 < 2 এবং name != null) {
     print(shout(greeting + ", " + name));
 } নাহলে {
-    দেখাও("unreachable");
+    লিখুন("unreachable");
 }
 
 // Closures and recursion both work.

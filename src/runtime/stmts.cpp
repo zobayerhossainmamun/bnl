@@ -52,20 +52,51 @@ void Interpreter::visit(ThrowStmt& s) {
 }
 
 void Interpreter::visit(TryStmt& s) {
-    auto run_catch = [&](Value caught) {
+    auto run_finally = [&]() {
+        if (s.has_finally) {
+            execute_block(s.finally_block, std::make_shared<Environment>(environment_));
+        }
+    };
+    auto bind_catch = [&](Value caught) {
         auto env = std::make_shared<Environment>(environment_);
         env->define(std::string(s.catch_var.lexeme), std::move(caught));
         execute_block(s.catch_block, env);
     };
+
     try {
         execute_block(s.try_block, std::make_shared<Environment>(environment_));
     } catch (ThrowSignal& sig) {
-        run_catch(std::move(sig.value));
+        if (!s.has_catch) {
+            // No catch — finally runs (if present), then the throw propagates.
+            run_finally();
+            throw;
+        }
+        try {
+            bind_catch(std::move(sig.value));
+        } catch (...) {
+            run_finally();
+            throw;
+        }
     } catch (RuntimeError& e) {
-        run_catch(Value{std::string(e.what())});
+        if (!s.has_catch) {
+            run_finally();
+            throw;
+        }
+        try {
+            bind_catch(Value{std::string(e.what())});
+        } catch (...) {
+            run_finally();
+            throw;
+        }
+    } catch (...) {
+        // ReturnSignal (or any other propagating exception) — finally runs,
+        // then we re-throw so it continues to unwind.
+        run_finally();
+        throw;
     }
-    // ReturnSignal still propagates — return inside try should exit the
-    // enclosing function. Same for any std::exception we don't recognize.
+
+    // try succeeded, or catch handled successfully.
+    run_finally();
 }
 
 void Interpreter::visit(ClassStmt& s) {

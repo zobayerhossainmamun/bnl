@@ -38,7 +38,18 @@
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\embed_demo.exe)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\direct_dll_abs.bnl)",
       "PowerShell(Copy-Item *)",
-      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\bare_dll.bnl)"
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet .\\\\build\\\\_smoke\\\\bare_dll.bnl)",
+      "Read(//d/bnlang/new-v/bpm-api/**)",
+      "Read(//d/bnlang/new-v/bpm/**)",
+      "Bash(go version *)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bpm\\\\bpm.exe --help)",
+      "Bash(curl -sf http://localhost:3000/v1)",
+      "PowerShell($body = '{\"username\":\"dev\",\"email\":\"dev@example.com\",\"password\":\"devpass1234\"}'; curl.exe -s -X POST -H 'Content-Type: application/json' -d $body http://localhost:3000/v1/auth/signup)",
+      "Bash(curl *)",
+      "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" publish *)",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('size_bytes type:', type\\(d['assets'][0]['size_bytes']\\).__name__, 'value:', d['assets'][0]['size_bytes']\\)\")",
+      "Bash(rm -rf deps bnl.lock)",
+      "Bash(\"D:/bnlang/new-v/bpm/bpm.exe\" install *)"
     ]
   }
 }

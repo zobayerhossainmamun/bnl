@@ -38,7 +38,7 @@ ctest --test-dir build/windows --output-on-failure
 ```bnl
 // hello.bnl
 print("hi from bnl");
-print("দেখাও works too");
+লিখুন("লিখুন works too");
 ```
 
 ```sh
@@ -237,7 +237,7 @@ be in Bangla. Bilingual code in one file is fully supported:
 
 চলক c = Counter(10);
 c.inc();
-দেখাও(c.ধরা());               // 11
+লিখুন(c.ধরা());               // 11
 ```
 
 ## Where to go next

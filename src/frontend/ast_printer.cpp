@@ -270,13 +270,25 @@ public:
         depth_++;
         for (auto& st : s.try_block) { out_ += '\n'; st->accept(*this); }
         depth_--;
-        out_ += '\n';
-        indent();
-        out_ += fmt::format("(catch {}", s.catch_var.lexeme);
-        depth_++;
-        for (auto& st : s.catch_block) { out_ += '\n'; st->accept(*this); }
-        depth_--;
-        out_ += "))";
+        if (s.has_catch) {
+            out_ += '\n';
+            indent();
+            out_ += fmt::format("(catch {}", s.catch_var.lexeme);
+            depth_++;
+            for (auto& st : s.catch_block) { out_ += '\n'; st->accept(*this); }
+            depth_--;
+            out_ += ')';
+        }
+        if (s.has_finally) {
+            out_ += '\n';
+            indent();
+            out_ += "(finally";
+            depth_++;
+            for (auto& st : s.finally_block) { out_ += '\n'; st->accept(*this); }
+            depth_--;
+            out_ += ')';
+        }
+        out_ += ')';
     }
 
     void visit(ThrowStmt& s) override {

@@ -137,17 +137,36 @@ StmtPtr Parser::try_statement() {
     consume(TokenType::LBrace, "expected '{' after 'try'");
     std::vector<StmtPtr> try_block = block_body();
 
-    consume(TokenType::Catch, "expected 'catch' after try block");
-    consume(TokenType::LParen, "expected '(' after 'catch'");
-    Token catch_var = consume(TokenType::Identifier,
-                              "expected identifier for caught value");
-    consume(TokenType::RParen, "expected ')' after catch identifier");
+    bool                 has_catch = false;
+    Token                catch_var{};
+    std::vector<StmtPtr> catch_block;
 
-    consume(TokenType::LBrace, "expected '{' after catch declaration");
-    std::vector<StmtPtr> catch_block = block_body();
+    if (match({TokenType::Catch})) {
+        has_catch = true;
+        consume(TokenType::LParen, "expected '(' after 'catch'");
+        catch_var = consume(TokenType::Identifier,
+                            "expected identifier for caught value");
+        consume(TokenType::RParen, "expected ')' after catch identifier");
+        consume(TokenType::LBrace, "expected '{' after catch declaration");
+        catch_block = block_body();
+    }
 
-    return std::make_unique<TryStmt>(keyword, std::move(try_block),
-                                     catch_var, std::move(catch_block));
+    bool                 has_finally = false;
+    std::vector<StmtPtr> finally_block;
+    if (match({TokenType::Finally})) {
+        has_finally = true;
+        consume(TokenType::LBrace, "expected '{' after 'finally'");
+        finally_block = block_body();
+    }
+
+    if (!has_catch && !has_finally) {
+        throw_error(peek(), "expected 'catch' or 'finally' after try block");
+    }
+
+    return std::make_unique<TryStmt>(
+        keyword, std::move(try_block),
+        has_catch, catch_var, std::move(catch_block),
+        has_finally, std::move(finally_block));
 }
 
 StmtPtr Parser::throw_statement() {

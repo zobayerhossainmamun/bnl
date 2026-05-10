@@ -33,6 +33,7 @@ enum class TokenType {
     Try,
     Catch,
     Throw,
+    Finally,
 
     // Punctuation
     LParen,

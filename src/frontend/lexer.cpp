@@ -43,10 +43,11 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
 
         // Error handling
         {"try",       TokenType::Try},     {"\xe0\xa6\x9a\xe0\xa7\x87\xe0\xa6\xb7\xe0\xa7\x8d\xe0\xa6\x9f\xe0\xa6\xbe",                     TokenType::Try},       // চেষ্টা
-        {"catch",     TokenType::Catch},   {"\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xbe",                                                         TokenType::Catch},     // ধরা
+        {"catch",     TokenType::Catch},   {"\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa7\x81\xe0\xa6\xa8",                                             TokenType::Catch},     // ধরুন
         {"throw",     TokenType::Throw},   {"\xe0\xa6\xa8\xe0\xa6\xbf\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa7\x87\xe0\xa6\xaa",         TokenType::Throw},     // নিক্ষেপ
+        {"finally",   TokenType::Finally}, {"\xe0\xa6\x85\xe0\xa6\xac\xe0\xa6\xb6\xe0\xa7\x87\xe0\xa6\xb7\xe0\xa7\x87",                     TokenType::Finally},   // অবশেষে
 
-        // Note: `print` / `দেখাও` are deliberately NOT keywords. They are ordinary
+        // Note: `print` / `লিখুন` are deliberately NOT keywords. They are ordinary
         // identifiers that the runtime registers as builtin functions in the
         // global scope (with both Bangla and English names aliased to one impl).
     };
@@ -387,6 +388,7 @@ const char* token_type_name(TokenType type) {
         case TokenType::Try:        return "Try";
         case TokenType::Catch:      return "Catch";
         case TokenType::Throw:      return "Throw";
+        case TokenType::Finally:    return "Finally";
         case TokenType::LParen:     return "LParen";
         case TokenType::RParen:     return "RParen";
         case TokenType::LBrace:     return "LBrace";

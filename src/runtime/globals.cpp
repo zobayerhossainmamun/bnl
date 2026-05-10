@@ -31,7 +31,7 @@ void Interpreter::register_builtins() {
 
     // Both names point at the same Callable instance.
     globals_->define("print",  Value{print_fn});
-    globals_->define("\xe0\xa6\xa6\xe0\xa7\x87\xe0\xa6\x96\xe0\xa6\xbe\xe0\xa6\x93", Value{print_fn});  // দেখাও
+    globals_->define("\xe0\xa6\xb2\xe0\xa6\xbf\xe0\xa6\x96\xe0\xa7\x81\xe0\xa6\xa8", Value{print_fn});  // লিখুন
 
     // str(x): convert any value to its display string.
     auto str_fn = std::make_shared<NativeFunction>(
