@@ -404,6 +404,29 @@ void Interpreter::visit(MemberExpr& e) {
                 })};
             return;
         }
+        if (name == "byte_slice") {
+            // Codepoint-free slicing — needed for binary data (download chunks,
+            // file contents) that may not be valid UTF-8 and would confuse
+            // .slice's codepoint walker.
+            result_ = Value{make_bound_native("byte_slice", -1,
+                [captured](Interpreter&, std::vector<Value> args) -> Value {
+                    if (args.empty() || args.size() > 2)
+                        throw std::runtime_error("string.byte_slice expects 1 or 2 arguments");
+                    long long len = static_cast<long long>(captured.size());
+                    auto clamp = [&](long long n) {
+                        if (n < 0) n = 0;
+                        if (n > len) n = len;
+                        return n;
+                    };
+                    long long start = clamp(static_cast<long long>(args[0].as_number()));
+                    long long end   = clamp(args.size() == 2
+                        ? static_cast<long long>(args[1].as_number()) : len);
+                    if (end < start) end = start;
+                    return Value{captured.substr(static_cast<std::size_t>(start),
+                                                 static_cast<std::size_t>(end - start))};
+                })};
+            return;
+        }
 
         throw RuntimeError(e.name, fmt::format("string has no property '{}'", name));
     }

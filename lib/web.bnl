@@ -280,10 +280,12 @@ function html(s) {
 // The request module already covers both http:// and https:// — surface its
 // API here so users only need `import "web"` for both sides.
 
-var get    = _request.get;
-var post   = _request.post;
-var send   = _request.send;
-var upload = _request.upload;
+var get       = _request.get;
+var post      = _request.post;
+var send      = _request.send;
+var upload    = _request.upload;
+var download  = _request.download;
+var send_form = _request.send_form;
 
 // Bilingual aliases.
 var চালাও  = serve;        // "run"

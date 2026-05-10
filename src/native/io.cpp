@@ -304,6 +304,95 @@ void on_read_chunk_done(uv_work_t* req, int /*status*/) {
     invoke_callback(*w->interp, w->callback, std::move(args));
 }
 
+// ---------- pull-based file write stream (mirror of ReadStream) -----------
+
+struct WriteStream {
+    uv_loop_t*            loop = nullptr;
+    Interpreter*          interp = nullptr;
+    uv_file               fd = -1;
+    int64_t               offset = 0;
+    std::shared_ptr<bool> alive = std::make_shared<bool>(true);
+};
+
+struct AsyncWriteChunk {
+    WriteStream* stream = nullptr;
+    std::string  data;
+    std::string  error;
+    CallablePtr  callback;
+    Interpreter* interp = nullptr;
+    std::shared_ptr<bool> stream_alive;
+};
+
+void on_write_chunk_work(uv_work_t* req) {
+    auto* w = static_cast<AsyncWriteChunk*>(req->data);
+    if (!*w->stream_alive) { w->error = "stream is closed"; return; }
+    std::size_t written = 0;
+    while (written < w->data.size()) {
+        uv_buf_t b = uv_buf_init(const_cast<char*>(w->data.data() + written),
+                                 static_cast<unsigned int>(w->data.size() - written));
+        uv_fs_t  write_req;
+        int n = uv_fs_write(w->stream->loop, &write_req, w->stream->fd,
+                            &b, 1, w->stream->offset, nullptr);
+        uv_fs_req_cleanup(&write_req);
+        if (n < 0) { w->error = uv_strerror(n); return; }
+        if (n == 0) break;
+        written += static_cast<std::size_t>(n);
+        w->stream->offset += n;
+    }
+}
+
+void on_write_chunk_done(uv_work_t* req, int /*status*/) {
+    std::unique_ptr<AsyncWriteChunk> w (static_cast<AsyncWriteChunk*>(req->data));
+    std::unique_ptr<uv_work_t>       rq(req);
+    std::vector<Value> args;
+    args.push_back(w->error.empty() ? Value{} : Value{w->error});
+    invoke_callback(*w->interp, w->callback, std::move(args));
+}
+
+ModulePtr build_write_stream_module(WriteStream* s) {
+    auto alive = s->alive;
+    auto loop  = s->loop;
+
+    auto write_fn = [s, alive](Interpreter& interp, std::vector<Value> args) -> Value {
+        if (!*alive) throw std::runtime_error("write_stream.write: stream is closed");
+        if (args.size() != 2)
+            throw std::runtime_error("write_stream.write(data, cb): expects 2 arguments");
+        if (!args[0].is_string())
+            throw std::runtime_error("write_stream.write: data must be a string");
+        auto cb = to_callback(args[1], "write_stream.write");
+
+        auto* w = new AsyncWriteChunk{};
+        w->stream       = s;
+        w->data         = args[0].as_string();
+        w->callback     = std::move(cb);
+        w->interp       = &interp;
+        w->stream_alive = s->alive;
+
+        auto* req = new uv_work_t{};
+        req->data = w;
+        uv_queue_work(s->loop, req, on_write_chunk_work, on_write_chunk_done);
+        return Value{};
+    };
+
+    auto close_fn = [s, alive, loop](Interpreter&, std::vector<Value>) -> Value {
+        if (!*alive) return Value{};
+        *alive = false;
+        if (s->fd >= 0) {
+            uv_fs_t req;
+            uv_fs_close(loop, &req, s->fd, nullptr);
+            uv_fs_req_cleanup(&req);
+            s->fd = -1;
+        }
+        delete s;
+        return Value{};
+    };
+
+    return NativeModule("write_stream")
+        .add_function("write", 2, write_fn)
+        .add_function("close", 0, close_fn)
+        .build();
+}
+
 ModulePtr build_read_stream_module(ReadStream* s) {
     auto alive = s->alive;
     auto loop  = s->loop;
@@ -560,6 +649,27 @@ void register_io(Interpreter& interp) {
                 s->interp = &interp;
                 s->fd     = fd;
                 return Value{build_read_stream_module(s)};
+            })
+
+        // io.open_write(path) -> stream module {write(data, cb), close()}.
+        // Truncates if the file exists. Each .write(data, cb) appends the
+        // data and fires cb(err) when bytes are durable in the kernel page
+        // cache. Pair with read-stream-based downloads for streaming receive.
+        .add_function("open_write", 1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string path = to_path_string(args[0]);
+                uv_fs_t open_req;
+                int fd = uv_fs_open(interp.loop(), &open_req, path.c_str(),
+                                    UV_FS_O_WRONLY | UV_FS_O_CREAT | UV_FS_O_TRUNC,
+                                    0644, nullptr);
+                uv_fs_req_cleanup(&open_req);
+                if (fd < 0) throw_uv(fd, "open_write", path);
+
+                auto* s = new WriteStream{};
+                s->loop   = interp.loop();
+                s->interp = &interp;
+                s->fd     = fd;
+                return Value{build_write_stream_module(s)};
             })
 
         .build();

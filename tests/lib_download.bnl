@@ -1,0 +1,85 @@
+// In-process roundtrips for the new request flows:
+//   1. send_form  — application/x-www-form-urlencoded shortcut
+//   2. send with body_stream — streaming raw upload (PUT semantics)
+//   3. download   — streaming response straight to disk via io.open_write
+import "web"        as web;
+import "request"    as request;
+import "fileSystem" as fs;
+import "io"         as io;
+import "url"        as url;
+import "json"       as json;
+
+// Fixture: a payload big enough to exercise the chunked path.
+var payload = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "0123456789" + "abcdef\n";
+var src     = "_bnl_dl_src.tmp";
+var dst     = "_bnl_dl_dst.tmp";
+var raw_in  = "_bnl_dl_raw.tmp";
+fs.write_text(src, payload);
+fs.write_text(raw_in, payload + payload);   // 2x payload for the streaming-upload path
+
+var server = web.serve({port: 0}, function(req) {
+    if (req.path == "/echo_form") {
+        return web.json(web.parse_form(req));
+    }
+    if (req.path == "/raw_put") {
+        // Echo back the body byte length so we can verify the raw streaming
+        // upload arrived intact.
+        return web.json({method: req.method, bytes: req.body.byte_length});
+    }
+    if (req.path == "/file") {
+        // Streaming download path: respond with body_stream from disk.
+        var st = io.stat(src);
+        return {
+            status:      200,
+            headers:     {"Content-Type": "application/octet-stream"},
+            body_length: st.bytes,
+            body_stream: io.open_read(src)
+        };
+    }
+    return {status: 404, body: "nope"};
+});
+
+print("port_ok:", server.port > 0);
+var base = "http://127.0.0.1:" + str(server.port);
+
+function step3_download() {
+    request.download({url: base + "/file", dest: dst}, function(err, info) {
+        if (err != null) { print("dl err:", err); server.close(); return null; }
+        print("dl_status:", info.status);
+        print("dl_bytes:",  info.bytes);
+        print("match:",     fs.read_text(dst) == payload);
+        fs.remove(src); fs.remove(dst); fs.remove(raw_in);
+        server.close();
+    });
+}
+
+function step2_raw_streaming_upload() {
+    // Stream raw_in (2x payload) up as application/octet-stream — no multipart.
+    var st = io.stat(raw_in);
+    request.send({
+        url:         base + "/raw_put",
+        method:      "PUT",
+        headers:     {"Content-Type": "application/octet-stream"},
+        body_length: st.bytes,
+        body_stream: io.open_read(raw_in)
+    }, function(err, resp) {
+        if (err != null) { print("raw err:", err); server.close(); return null; }
+        var d = json.parse(resp.body);
+        print("raw_method:", d.method);
+        print("raw_bytes:",  d.bytes);
+        print("raw_match:",  d.bytes == st.bytes);
+        step3_download();
+    });
+}
+
+function step1_send_form() {
+    request.send_form(base + "/echo_form", {a: "1", b: "x y"}, function(err, resp) {
+        if (err != null) { print("form err:", err); server.close(); return null; }
+        var d = json.parse(resp.body);
+        print("form_a:", d.a);
+        print("form_b:", d.b);
+        step2_raw_streaming_upload();
+    });
+}
+
+step1_send_form();

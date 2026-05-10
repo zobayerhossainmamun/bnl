@@ -23,9 +23,25 @@ string(APPEND content "    static const std::unordered_map<std::string_view, std
 foreach(f ${STDLIB_FILES})
     get_filename_component(name "${f}" NAME_WE)
     file(READ "${f}" src)
-    # Use a long custom raw-string delimiter so we won't collide with anything
-    # a developer might write inside a .bnl file.
-    string(APPEND content "        {\"${name}\", R\"BNLSTDLIB29F8(${src})BNLSTDLIB29F8\"},\n")
+    # MSVC caps a single string literal at ~16KB. Slice the source into
+    # multiple adjacent raw-string literals — the C++ standard concatenates
+    # adjacent literals at translation time, so the runtime sees one string.
+    string(APPEND content "        {\"${name}\",\n")
+    string(LENGTH "${src}" src_len)
+    set(chunk_size 8000)
+    set(chunk_start 0)
+    while(chunk_start LESS src_len)
+        math(EXPR remaining "${src_len} - ${chunk_start}")
+        if(remaining LESS chunk_size)
+            set(this_chunk ${remaining})
+        else()
+            set(this_chunk ${chunk_size})
+        endif()
+        string(SUBSTRING "${src}" ${chunk_start} ${this_chunk} piece)
+        string(APPEND content "            R\"BNLSTDLIB29F8(${piece})BNLSTDLIB29F8\"\n")
+        math(EXPR chunk_start "${chunk_start} + ${this_chunk}")
+    endwhile()
+    string(APPEND content "        },\n")
 endforeach()
 
 string(APPEND content "    };\n")

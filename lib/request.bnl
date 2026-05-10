@@ -2,28 +2,45 @@
 //
 //   import "request" as request;
 //
+//   // GET an API.
 //   request.get("https://example.com/", function(err, resp) {
 //       if (err != null) { print("error:", err); return null; }
-//       print(resp.status, resp.status_text);
-//       print(resp.body);
+//       print(resp.status, resp.status_text, resp.body);
 //   });
 //
+//   // POST JSON.
 //   request.send({
-//       method:  "POST",
-//       url:     "http://api.local:3000/items",
+//       method:  "POST", url: "http://api.local/items",
 //       headers: {"Content-Type": "application/json"},
 //       body:    "{\"name\":\"x\"}"
-//   }, function(err, resp) { ... });
+//   }, cb);
 //
-//   // Streaming file upload — the file is read in 64KB chunks and written
-//   // with backpressure (next read waits for the previous write to flush).
-//   // Content-Length is set up-front from io.stat, so no chunked encoding.
+//   // POST form-urlencoded — convenience over send.
+//   request.send_form("http://api/login", {user: "alice", pass: "x"}, cb);
+//
+//   // Streaming raw upload — body comes from any stream {read(n, cb), close()}.
+//   // Used for PUTting large blobs without multipart wrapping.
+//   request.send({
+//       method: "PUT", url: "https://api/raw",
+//       headers: {"Content-Type": "application/octet-stream"},
+//       body_length: file_size,
+//       body_stream: io.open_read("huge.bin")
+//   }, cb);
+//
+//   // Streaming multipart upload (form-data + a file).
 //   request.upload({
 //       url:    "https://api/upload",
 //       fields: {user: "alice"},
 //       file:   {path: "big.bin", name: "file", filename: "big.bin",
 //                content_type: "application/octet-stream"}
-//   }, function(err, resp) { ... });
+//   }, cb);
+//
+//   // Streaming download to disk — never buffers the whole body.
+//   request.download({url: "https://example.com/big.zip", dest: "out.zip",
+//                     on_progress: function(rx, total) {...}},
+//                    function(err, info) {
+//       // info = {status, status_text, headers, bytes}
+//   });
 
 import "net"       as net;
 import "tls"       as tls;
@@ -33,7 +50,7 @@ import "io"        as io;
 import "path"      as path;
 import "multipart" as mp;
 
-// ---------- header builder shared by send + upload ------------------------
+// ---------- header builder shared across send/upload/download -------------
 
 function _apply_default_headers(headers, parsed) {
     var lower_keys = {};
@@ -70,7 +87,6 @@ function _format_request_head(method, parsed, headers) {
 }
 
 // ---------- shared connect helper -----------------------------------------
-// Resolves DNS, opens net or tls connection, hands back the conn (or err).
 
 function _connect(parsed, tls_opts, on_done) {
     net.resolve(parsed.host, function(rerr, ip) {
@@ -94,10 +110,7 @@ function _connect(parsed, tls_opts, on_done) {
     });
 }
 
-// ---------- shared response sink ------------------------------------------
-// Wires conn.on_data + conn.on_end to accumulate + parse the response, then
-// fires cb(err, resp) once. Set this up BEFORE writing the request body so
-// no bytes are missed.
+// ---------- shared response sink (buffered) -------------------------------
 
 function _install_response_sink(conn, cb) {
     var state = {buf: "", done: false};
@@ -122,7 +135,28 @@ function _install_response_sink(conn, cb) {
     });
 }
 
-// ---------- send (buffered body) ------------------------------------------
+// ---------- shared body pump (read stream → conn.write with backpressure) -
+
+function _pump_stream(conn, stream, on_eof, on_err) {
+    function loop() {
+        stream.read(65536, function(rerr, chunk) {
+            if (rerr != null) {
+                stream.close();
+                on_err(rerr);
+                return null;
+            }
+            if (chunk == null) {
+                stream.close();
+                on_eof();
+                return null;
+            }
+            conn.write(chunk, function() { loop(); });
+        });
+    }
+    loop();
+}
+
+// ---------- send (buffered OR streaming raw body) -------------------------
 
 function send(opts, cb) {
     if (not opts.has("url")) { cb("request: missing 'url'", null); return null; }
@@ -131,8 +165,6 @@ function send(opts, cb) {
     if (opts.has("method")) { method = opts.method; }
     var headers = {};
     if (opts.has("headers")) { headers = opts.headers; }
-    var body = "";
-    if (opts.has("body")) { body = opts.body; }
 
     var parsed = url.parse(opts.url);
     if (parsed.scheme != "" and parsed.scheme != "http" and parsed.scheme != "https") {
@@ -141,8 +173,21 @@ function send(opts, cb) {
     }
     if (parsed.host.length == 0) { cb("request: missing host in url", null); return null; }
 
+    var streaming = opts.has("body_stream");
+    if (streaming and not opts.has("body_length")) {
+        cb("request: body_stream requires body_length", null);
+        return null;
+    }
+
+    var body = "";
+    if (not streaming and opts.has("body")) { body = opts.body; }
+
     var lower = _apply_default_headers(headers, parsed);
-    if (body.byte_length > 0 and not lower.has("content-length")) {
+    if (streaming) {
+        if (not lower.has("content-length")) {
+            headers["Content-Length"] = str(opts.body_length);
+        }
+    } else if (body.byte_length > 0 and not lower.has("content-length")) {
         headers["Content-Length"] = str(body.byte_length);
     }
 
@@ -152,12 +197,27 @@ function send(opts, cb) {
     _connect(parsed, tls_opts, function(err, conn) {
         if (err != null) { cb(err, null); return null; }
         _install_response_sink(conn, cb);
-        conn.write(_format_request_head(method, parsed, headers) + body);
+
+        var head = _format_request_head(method, parsed, headers);
+        if (not streaming) {
+            conn.write(head + body);
+            return null;
+        }
+
+        // Streaming body: write headers, then pump the stream.
+        conn.write(head, function() {
+            _pump_stream(conn, opts.body_stream,
+                function() { /* eof — sink is already waiting for response */ },
+                function(perr) {
+                    conn.close();
+                    cb("send body_stream: " + perr, null);
+                });
+        });
     });
     return null;
 }
 
-// ---------- upload (streaming file body) ----------------------------------
+// ---------- upload (multipart/form-data, streaming) -----------------------
 
 function upload(opts, cb) {
     if (not opts.has("url"))  { cb("upload: missing 'url'", null);  return null; }
@@ -187,8 +247,6 @@ function upload(opts, cb) {
         return null;
     }
 
-    // Stat the file up front so Content-Length is known before we write the
-    // request line.
     var st = io.stat(file_path);
     var file_bytes = st.bytes;
 
@@ -217,39 +275,175 @@ function upload(opts, cb) {
         if (err != null) { cb(err, null); return null; }
         _install_response_sink(conn, cb);
 
-        // Headers + multipart preamble (text fields + file part headers) all go
-        // out as one prefix write, so we only stream the file body itself.
         var prefix = _format_request_head(method, parsed, headers)
                    + text_prefix + file_preamble;
 
         conn.write(prefix, function() {
             var stream = io.open_read(file_path);
-            // Backpressure: each conn.write only completes after the kernel
-            // has accepted the bytes. We wait for that before reading the
-            // next chunk, so memory usage stays bounded regardless of file
-            // size or network speed.
-            function pump() {
-                stream.read(65536, function(rerr, chunk) {
-                    if (rerr != null) {
-                        stream.close();
-                        conn.close();
-                        cb("upload read '" + file_path + "': " + rerr, null);
-                        return null;
-                    }
-                    if (chunk == null) {
-                        // EOF — flush epilogue, then wait for response.
-                        stream.close();
-                        conn.write(epilogue);
-                        return null;
-                    }
-                    conn.write(chunk, function() { pump(); });
+            _pump_stream(conn, stream,
+                function() { conn.write(epilogue); },     // eof — write trailing boundary
+                function(perr) {
+                    conn.close();
+                    cb("upload read '" + file_path + "': " + perr, null);
                 });
-            }
-            pump();
         });
     });
     return null;
 }
+
+// ---------- download (streaming response straight to disk) ----------------
+//
+// The buffered path (request.send + parse_response) holds the whole response
+// body in memory. download instead parses the head inline (pure bnl) and
+// routes every body byte directly to a write stream — memory stays bounded
+// regardless of response size.
+
+// Pull the status line + headers off the front of buf. Returns null until
+// "\r\n\r\n" is seen, otherwise:
+//   {status, status_text, headers (lowercased keys), body_offset (bytes)}
+function _parse_response_head(buf) {
+    var sep = buf.index_of("\r\n\r\n");
+    if (sep < 0) { return null; }
+
+    var head = buf.byte_slice(0, sep);
+    var lines = head.split("\r\n");
+    if (lines.length == 0) { return null; }
+
+    var first = lines[0];
+    var sp1 = first.index_of(" ");
+    var sp2 = first.index_of(" ", sp1 + 1);
+    if (sp1 < 0 or sp2 < 0) { return null; }
+    var status      = to_number(first.slice(sp1 + 1, sp2));
+    var status_text = first.slice(sp2 + 1);
+
+    var headers = {};
+    var i = 1;
+    while (i < lines.length) {
+        var ln = lines[i];
+        var c  = ln.index_of(":");
+        if (c > 0) {
+            headers[ln.slice(0, c).to_lower().trim()] = ln.slice(c + 1).trim();
+        }
+        i = i + 1;
+    }
+    return {
+        status:      status,
+        status_text: status_text,
+        headers:     headers,
+        body_offset: sep + 4
+    };
+}
+
+function download(opts, cb) {
+    if (not opts.has("url"))  { cb("download: missing 'url'", null);  return null; }
+    if (not opts.has("dest")) { cb("download: missing 'dest'", null); return null; }
+
+    var dest_path = opts.dest;
+    var on_progress = null;
+    if (opts.has("on_progress")) { on_progress = opts.on_progress; }
+
+    var headers = {};
+    if (opts.has("headers")) { headers = opts.headers; }
+    var method = "GET";
+    if (opts.has("method")) { method = opts.method; }
+
+    var parsed = url.parse(opts.url);
+    if (parsed.scheme != "http" and parsed.scheme != "https") {
+        cb("download: unsupported scheme '" + parsed.scheme + "'", null);
+        return null;
+    }
+    _apply_default_headers(headers, parsed);
+
+    var tls_opts = null;
+    if (opts.has("tls")) { tls_opts = opts.tls; }
+
+    _connect(parsed, tls_opts, function(err, conn) {
+        if (err != null) { cb(err, null); return null; }
+
+        var state = {
+            head_buf:       "",
+            head_parsed:    false,
+            head:           null,
+            sink:           null,
+            content_length: null,
+            written:        0,
+            done:           false
+        };
+
+        function finish(error) {
+            if (state.done) { return null; }
+            state.done = true;
+            if (state.sink != null) { state.sink.close(); }
+            conn.close();
+            if (error != null) {
+                cb(error, null);
+            } else {
+                cb(null, {
+                    status:      state.head.status,
+                    status_text: state.head.status_text,
+                    headers:     state.head.headers,
+                    bytes:       state.written
+                });
+            }
+        }
+
+        function consume_body_chunk(chunk) {
+            if (state.done or chunk.byte_length == 0) { return null; }
+            state.written = state.written + chunk.byte_length;
+            if (on_progress != null) {
+                on_progress(state.written, state.content_length);
+            }
+            state.sink.write(chunk, function(werr) {
+                if (werr != null) { finish("download write: " + werr); return null; }
+                if (state.content_length != null and state.written >= state.content_length) {
+                    finish(null);
+                }
+            });
+        }
+
+        conn.on_data(function(chunk) {
+            if (state.done) { return null; }
+            if (not state.head_parsed) {
+                state.head_buf = state.head_buf + chunk;
+                var h = _parse_response_head(state.head_buf);
+                if (h == null) { return null; }
+                state.head        = h;
+                state.head_parsed = true;
+                if (h.headers.has("content-length")) {
+                    state.content_length = to_number(h.headers["content-length"]);
+                }
+                state.sink = io.open_write(dest_path);
+                // Anything past the head is body — route it through.
+                var leftover = state.head_buf.byte_slice(h.body_offset);
+                state.head_buf = "";   // release the buffered head
+                consume_body_chunk(leftover);
+            } else {
+                consume_body_chunk(chunk);
+            }
+        });
+
+        conn.on_end(function() {
+            if (state.done) { return null; }
+            if (not state.head_parsed) {
+                finish("download: connection closed before response head");
+                return null;
+            }
+            // No Content-Length means body ends at EOF (HTTP/1.0 / "Connection: close").
+            if (state.content_length == null) {
+                finish(null);
+            } else if (state.written >= state.content_length) {
+                finish(null);
+            } else {
+                finish("download: connection closed before complete body");
+            }
+        });
+
+        conn.write(_format_request_head(method, parsed, headers));
+    });
+    return null;
+}
+
+// ---------- convenience wrappers ------------------------------------------
 
 function get(target, cb) {
     send({url: target, method: "GET"}, cb);
@@ -259,7 +453,17 @@ function post(target, body, cb) {
     send({url: target, method: "POST", body: body}, cb);
 }
 
+function send_form(target, fields, cb) {
+    send({
+        url:     target,
+        method:  "POST",
+        headers: {"Content-Type": "application/x-www-form-urlencoded"},
+        body:    url.build_query(fields)
+    }, cb);
+}
+
 // Bilingual aliases.
 var পাঠাও     = send;       // "send"
 var আনো       = get;        // "fetch"
 var আপলোড     = upload;     // "upload"
+var ডাউনলোড   = download;   // "download"
