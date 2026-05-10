@@ -114,7 +114,8 @@
       "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x86 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 15)",
       "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x64 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 8; & \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x86 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 8)",
       "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"README.md\"\\); $bytes[0..15] | ForEach-Object { '{0:X2}' -f $_ })",
-      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"README.md\", [System.Text.Encoding]::Unicode\\); $utf8NoBom = New-Object System.Text.UTF8Encoding $false; [System.IO.File]::WriteAllText\\(\"README.md\", $content, $utf8NoBom\\); $bytes = [System.IO.File]::ReadAllBytes\\(\"README.md\"\\); $bytes[0..15] | ForEach-Object { '{0:X2}' -f $_ })"
+      "PowerShell($content = [System.IO.File]::ReadAllText\\(\"README.md\", [System.Text.Encoding]::Unicode\\); $utf8NoBom = New-Object System.Text.UTF8Encoding $false; [System.IO.File]::WriteAllText\\(\"README.md\", $content, $utf8NoBom\\); $bytes = [System.IO.File]::ReadAllBytes\\(\"README.md\"\\); $bytes[0..15] | ForEach-Object { '{0:X2}' -f $_ })",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"BUILDING.md\"\\); $bytes[0..7] | ForEach-Object { '{0:X2}' -f $_ })"
     ]
   }
 }

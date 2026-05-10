@@ -98,9 +98,9 @@ void register_regex(Interpreter& interp) {
                 auto re = compile_regex(require_string(args[0], "regex.match: pattern"),
                                         optional_flags(args, 2));
                 const auto& s = require_string(args[1], "regex.match: str");
-                std::smatch m;
-                if (!std::regex_search(s, m, re)) return Value{};
-                return make_match_value(m);
+                std::smatch result;
+                if (!std::regex_search(s, result, re)) return Value{};
+                return make_match_value(result);
             })
 
         // regex.match_all(pattern, str, flags?) — list of every match (each shaped
