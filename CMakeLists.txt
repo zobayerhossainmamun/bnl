@@ -44,13 +44,15 @@ find_package(nlohmann_json CONFIG REQUIRED)        # used by module loader to re
 
 add_subdirectory(src)
 
-enable_testing()
-add_subdirectory(tests)
-
 # Embedding examples (host C++ apps that link bnl_core).
 add_subdirectory(examples/embed)
 
 # FFI plugin example — only meaningful when bnl_core is a shared library.
+# Added before the tests/ subdir so the integration test can stage the
+# built plugin into a fixture directory.
 if(BNL_ENABLE_FFI)
     add_subdirectory(examples/plugin_native)
 endif()
+
+enable_testing()
+add_subdirectory(tests)

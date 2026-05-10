@@ -1,0 +1,7 @@
+// Imported from a deeper directory — proves bare-name deps resolve via
+// walk-up. mathlib lives at ../deps/mathlib/.
+import "mathlib" as m;
+
+function compute() {
+    return m.add(10, 20);
+}

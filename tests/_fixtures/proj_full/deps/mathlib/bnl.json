@@ -1,0 +1,6 @@
+{
+    "name": "mathlib",
+    "version": "1.0.0",
+    "description": "Extra fields are tolerated by the lenient reader.",
+    "main": "src/index.bnl"
+}
