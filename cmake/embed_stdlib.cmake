@@ -1,12 +1,3 @@
-# Bake every lib/*.bnl into a single C++ header (`stdlib_embedded.h`) that
-# bnl_core includes. The module loader looks up bare-name imports against
-# this table after the built-in native modules — so `import "web"` resolves
-# to the embedded source of lib/web.bnl with no install step required.
-#
-# Inputs (set via -D when invoked under `cmake -P`):
-#   LIB_DIR  — absolute path to the lib/ directory containing the .bnl files
-#   OUT_FILE — absolute path to the header file to (re)write
-
 if(NOT LIB_DIR OR NOT OUT_FILE)
     message(FATAL_ERROR "embed_stdlib.cmake: LIB_DIR and OUT_FILE must be set")
 endif()
@@ -28,7 +19,6 @@ string(APPEND content
 foreach(file ${lib_files})
     get_filename_component(name "${file}" NAME_WE)
     file(READ "${file}" src)
-    # Raw string literal with a delimiter unlikely to appear in user source.
     string(APPEND content "        { \"${name}\", R\"BNL_EMBED(${src})BNL_EMBED\" },\n")
 endforeach()
 

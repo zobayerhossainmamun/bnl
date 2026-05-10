@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.21)
 
 project(bnl
     VERSION 0.1.0
-    DESCRIPTION "Bangla programming language interpreter"
-    HOMEPAGE_URL ""
+    DESCRIPTION "Bangla programming language (Bnlang)"
+    HOMEPAGE_URL "https://bnlang.dev"
     LANGUAGES CXX
 )
 
@@ -16,15 +16,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
 endif()
 
-# Build with runtime FFI plugin support?
-#   ON  (default) — bnl_core is a SHARED library so plugins (.dll/.so/.dylib)
-#                   reference the same loaded runtime that bnl.exe does.
-#                   `import "name"` of a native plugin loads it at runtime.
-#                   Distribution: bnl.exe + bnl_core.dll.
-#   OFF           — bnl_core is STATIC and links into bnl.exe directly.
-#                   Combined with a static vcpkg triplet, produces a single
-#                   self-contained binary. `import "name"` of a native plugin
-#                   throws a clear runtime error directing the user to rebuild.
 option(BNL_ENABLE_FFI "Build with runtime FFI plugin support (forces bnl_core to be shared)" ON)
 
 if(MSVC)
@@ -34,10 +25,6 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)
 endif()
 
-# Core ships the language + a small set of intrinsic native modules
-# (sys, io, timers, regex, crypto). Higher-level things (net, tls, http,
-# json, sqlite, etc.) are delivered by the separate package manager as
-# plugins or pure-bnl packages, dropped into deps/<name>/ at runtime.
 find_package(fmt                CONFIG REQUIRED)
 find_package(libuv              CONFIG REQUIRED)
 find_package(llhttp             CONFIG REQUIRED)   # stdlib/http.cpp
@@ -45,8 +32,6 @@ find_package(nlohmann_json      CONFIG REQUIRED)   # used by module loader to re
 find_package(OpenSSL            REQUIRED)          # stdlib/crypto.cpp + tls.cpp
 find_package(unofficial-sqlite3 CONFIG REQUIRED)   # stdlib/sqlite.cpp
 
-# Bake lib/*.bnl into a header that bnl_core's module loader can look up.
-# Re-runs whenever a lib file changes; empty table when lib/ is empty.
 set(BNL_STDLIB_EMBEDDED_HEADER ${CMAKE_BINARY_DIR}/generated/stdlib_embedded.h)
 file(GLOB BNL_LIB_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/lib/*.bnl)
 add_custom_command(
@@ -63,12 +48,8 @@ add_custom_target(bnl_stdlib_embedded ALL DEPENDS ${BNL_STDLIB_EMBEDDED_HEADER})
 
 add_subdirectory(src)
 
-# Embedding examples (host C++ apps that link bnl_core).
 add_subdirectory(examples/embed)
 
-# FFI plugin example — only meaningful when bnl_core is a shared library.
-# Added before the tests/ subdir so the integration test can stage the
-# built plugin into a fixture directory.
 if(BNL_ENABLE_FFI)
     add_subdirectory(examples/plugin_native)
 endif()

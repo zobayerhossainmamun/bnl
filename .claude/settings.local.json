@@ -105,7 +105,14 @@
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x86 >NUL && dumpbin /headers build\\\\windows-x86-release\\\\bin\\\\bnl.exe | findstr /C:\\\\\"machine\\\\\" /C:\\\\\"magic\\\\\" && echo --- && dumpbin /dependents build\\\\windows-x86-release\\\\bin\\\\bnl.exe && echo --- && dumpbin /dependents build\\\\windows-x86-release\\\\bin\\\\bnl_core.dll\")",
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x86 >NUL && dumpbin /headers build\\\\windows-x86-release\\\\bin\\\\bnl.exe | findstr machine\")",
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x86 >NUL && dumpbin /dependents build\\\\windows-x86-release\\\\bin\\\\bnl.exe && echo === bnl_core.dll === && dumpbin /dependents build\\\\windows-x86-release\\\\bin\\\\bnl_core.dll\")",
-      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x86 >NUL && ctest --test-dir build\\\\windows-x86-release --output-on-failure -C Release\")"
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvarsall.bat\"; cmd /c \"`\"$vcvars`\" x86 >NUL && ctest --test-dir build\\\\windows-x86-release --output-on-failure -C Release\")",
+      "Bash(where makensis *)",
+      "Read(//c/Program Files \\(x86\\)/NSIS/**)",
+      "Read(//c/Program Files/NSIS/**)",
+      "Bash(\"C:/Program Files \\(x86\\)/NSIS/makensis.exe\" /DARCH=x64 installer/windows/bnl_installer.nsi)",
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x64 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 40)",
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x86 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 15)",
+      "PowerShell(& \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x64 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 8; & \"C:\\\\Program Files \\(x86\\)\\\\NSIS\\\\makensis.exe\" /DARCH=x86 installer\\\\windows\\\\bnl_installer.nsi 2>&1 | Select-Object -Last 8)"
     ]
   }
 }

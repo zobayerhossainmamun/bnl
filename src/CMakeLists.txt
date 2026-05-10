@@ -1,12 +1,3 @@
-# bnl_core: the runtime library that hosts, the bnl CLI, and FFI plugins all
-# link against. Built SHARED when BNL_ENABLE_FFI=ON (the default) — otherwise
-# each FFI plugin DLL would end up with its own static copy of Environment /
-# Module / Value, and types crossing the plugin <-> exe boundary land at
-# different vtables → crash. With FFI off, bnl_core is STATIC and links right
-# into bnl.exe, yielding a single-binary distribution.
-#
-# Public headers live in <repo>/include/bnl/. Internal headers stay here in
-# src/ and are PRIVATE to the library.
 if(BNL_ENABLE_FFI)
     set(_BNL_CORE_TYPE SHARED)
 else()
