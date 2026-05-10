@@ -96,6 +96,12 @@ public:
     // into a non-zero exit and stops the loop so uv_run returns promptly.
     void mark_loop_failed();
 
+    // Signal-handler-safe wake. Sets the loop's stop flag AND triggers a
+    // uv_async_send so the loop wakes from any IOCP / epoll / kqueue wait.
+    // Called from the Ctrl-C handler — without the async wake, an idle
+    // server (no I/O activity) sleeps through the stop request indefinitely.
+    void notify_stop();
+
     // ---- recursion + interrupt hardening ----------------------------------
 
     // Maximum bnl call-stack depth before the runtime preemptively unwinds
@@ -178,6 +184,7 @@ private:
     // closures, ...) keep valid pointers to their params/body.
     std::vector<std::vector<StmtPtr>>              kept_programs_;
     uv_loop_t                                      loop_{};
+    uv_async_t                                     stop_async_{};   // wakes the loop on Ctrl-C
     bool                                           loop_failed_ = false;
 
     int                                            call_depth_     = 0;

@@ -46,16 +46,17 @@ private:
 BOOL WINAPI ctrl_handler(DWORD type) {
     if (type == CTRL_C_EVENT || type == CTRL_BREAK_EVENT) {
         g_interrupted.store(true, std::memory_order_release);
-        if (auto* i = g_active_interp.load()) uv_stop(i->loop());
+        if (auto* i = g_active_interp.load()) i->notify_stop();
         return TRUE;  // we handled it; don't terminate the process
     }
     return FALSE;
 }
 #else
 extern "C" void posix_signal_handler(int /*sig*/) {
-    // Async-signal-safe: only an atomic store and uv_stop (= one int write).
+    // Async-signal-safe: only an atomic store and notify_stop (which is
+    // itself just an atomic store + a single write to an eventfd).
     g_interrupted.store(true, std::memory_order_release);
-    if (auto* i = g_active_interp.load()) uv_stop(i->loop());
+    if (auto* i = g_active_interp.load()) i->notify_stop();
 }
 #endif
 
@@ -72,6 +73,13 @@ Interpreter::Interpreter()
       environment_(globals_),
       modules_(std::make_unique<ModuleLoader>(*this)) {
     uv_loop_init(&loop_);
+    // Async handle whose only job is to wake the loop when notify_stop() is
+    // called (typically from a Ctrl-C signal handler on another thread). The
+    // callback is a no-op; the wake itself is what matters. uv_unref so this
+    // handle never holds the loop alive on its own — natural termination
+    // (script finishes, no other handles) still works.
+    uv_async_init(&loop_, &stop_async_, [](uv_async_t*) {});
+    uv_unref(reinterpret_cast<uv_handle_t*>(&stop_async_));
     register_builtins();
     register_sys   (*this);
     register_io    (*this);
@@ -106,6 +114,16 @@ ModulePtr Interpreter::native_module(const std::string& name) const {
 void Interpreter::mark_loop_failed() {
     loop_failed_ = true;
     uv_stop(&loop_);
+}
+
+void Interpreter::notify_stop() {
+    // Both calls are documented thread-safe by libuv. uv_stop alone only sets
+    // a flag — the loop won't see it until it wakes from its current I/O
+    // wait. uv_async_send is the cross-thread wake primitive that triggers
+    // the wake immediately (PostQueuedCompletionStatus on Windows IOCP /
+    // an eventfd write on Linux).
+    uv_stop(&loop_);
+    uv_async_send(&stop_async_);
 }
 
 void Interpreter::install_signal_handlers() {
