@@ -1,0 +1,163 @@
+// HTTP/HTTPS client in pure bnl, on top of net (TCP), tls, httpp (parser), and url.
+//
+//   import "request" as request;
+//
+//   request.get("https://example.com/", function(err, resp) {
+//       if (err != null) { print("error:", err); return null; }
+//       print(resp.status, resp.status_text);
+//       print(resp.body);
+//   });
+//
+//   request.send({
+//       method:  "POST",
+//       url:     "http://api.local:3000/items",
+//       headers: {"Content-Type": "application/json"},
+//       body:    "{\"name\":\"x\"}"
+//   }, function(err, resp) { ... });
+
+import "net" as net;
+import "tls" as tls;
+import "httpp" as httpp;
+import "url" as url;
+
+function _build_request(method, parsed, headers, body) {
+    // Note which headers the caller already supplied (case-insensitive),
+    // so defaults below don't overwrite them.
+    var lower_keys = {};
+    var k = headers.keys();
+    var i = 0;
+    while (i < k.length) {
+        lower_keys[k[i].to_lower()] = true;
+        i = i + 1;
+    }
+
+    if (not lower_keys.has("host")) {
+        var hostline = parsed.host;
+        if (parsed.port != 80 and parsed.port != 443) {
+            hostline = hostline + ":" + str(parsed.port);
+        }
+        headers["Host"] = hostline;
+    }
+    if (not lower_keys.has("user-agent")) {
+        headers["User-Agent"] = "bnl-request/0.1";
+    }
+    if (not lower_keys.has("connection")) {
+        // Force "close" so the server signals end-of-body via EOF; keeps the
+        // client logic simple (no keep-alive parsing needed yet).
+        headers["Connection"] = "close";
+    }
+    if (not lower_keys.has("accept")) {
+        headers["Accept"] = "*/*";
+    }
+    if (body.byte_length > 0 and not lower_keys.has("content-length")) {
+        headers["Content-Length"] = str(body.byte_length);
+    }
+
+    var path_q = parsed.path;
+    if (parsed.query.length > 0) { path_q = path_q + "?" + parsed.query; }
+
+    var out = method + " " + path_q + " HTTP/1.1\r\n";
+    var keys = headers.keys();
+    i = 0;
+    while (i < keys.length) {
+        out = out + keys[i] + ": " + str(headers[keys[i]]) + "\r\n";
+        i = i + 1;
+    }
+    return out + "\r\n" + body;
+}
+
+function send(opts, cb) {
+    if (not opts.has("url")) {
+        cb("request: missing 'url'", null);
+        return null;
+    }
+
+    var method = "GET";
+    if (opts.has("method")) { method = opts.method; }
+
+    var headers = {};
+    if (opts.has("headers")) { headers = opts.headers; }
+
+    var body = "";
+    if (opts.has("body")) { body = opts.body; }
+
+    var parsed = url.parse(opts.url);
+    if (parsed.scheme != "" and parsed.scheme != "http" and parsed.scheme != "https") {
+        cb("request: unsupported scheme '" + parsed.scheme + "'", null);
+        return null;
+    }
+    if (parsed.host.length == 0) {
+        cb("request: missing host in url", null);
+        return null;
+    }
+
+    var is_tls   = parsed.scheme == "https";
+    var tls_opts = null;
+    if (opts.has("tls")) { tls_opts = opts.tls; }
+
+    // Once a connection (plain or TLS) is in hand, the request flow is identical.
+    function _drive(conn) {
+        var state = {buf: "", done: false};
+
+        conn.on_data(function(chunk) {
+            if (state.done) { return null; }
+            state.buf = state.buf + chunk;
+            var resp = httpp.parse_response(state.buf);
+            if (resp == null) { return null; }
+            state.done = true;
+            conn.close();
+            cb(null, resp);
+        });
+
+        conn.on_end(function() {
+            if (state.done) { return null; }
+            // Connection closed — finalize parse so HTTP/1.0-style
+            // bodies (no Content-Length) can complete.
+            var resp = httpp.parse_response(state.buf, true);
+            state.done = true;
+            if (resp == null) {
+                cb("request: connection closed before complete response", null);
+            } else {
+                cb(null, resp);
+            }
+        });
+
+        conn.write(_build_request(method, parsed, headers, body));
+    }
+
+    // Both transports need an IPv4 dotted-quad; resolve hostnames first.
+    // (Works for IP literals too — uv_getaddrinfo just echoes them back.)
+    net.resolve(parsed.host, function(rerr, ip) {
+        if (rerr != null) { cb("resolve '" + parsed.host + "': " + rerr, null); return null; }
+
+        if (is_tls) {
+            var done = function(cerr, conn) {
+                if (cerr != null) { cb("tls " + parsed.host + ":" + str(parsed.port) + ": " + cerr, null); return null; }
+                _drive(conn);
+            };
+            if (tls_opts == null) {
+                tls.connect(parsed.host, ip, parsed.port, done);
+            } else {
+                tls.connect(parsed.host, ip, parsed.port, done, tls_opts);
+            }
+        } else {
+            net.tcp_connect(ip, parsed.port, function(cerr, conn) {
+                if (cerr != null) { cb("connect " + ip + ":" + str(parsed.port) + ": " + cerr, null); return null; }
+                _drive(conn);
+            });
+        }
+    });
+    return null;
+}
+
+function get(target, cb) {
+    send({url: target, method: "GET"}, cb);
+}
+
+function post(target, body, cb) {
+    send({url: target, method: "POST", body: body}, cb);
+}
+
+// Bilingual aliases.
+var পাঠাও  = send;     // "send"
+var আনো    = get;      // "fetch"

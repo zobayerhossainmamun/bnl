@@ -31,6 +31,7 @@ Interpreter::Interpreter()
     register_zlib  (*this);
     register_httpp (*this);
     register_net   (*this);
+    register_tls   (*this);
     register_json  (*this);
 }
 

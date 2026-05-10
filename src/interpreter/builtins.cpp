@@ -70,6 +70,19 @@ void Interpreter::register_builtins() {
             }
         });
     globals_->define("to_number", Value{to_number_fn});
+
+    // chr(n): single-byte string from byte value 0..255.
+    auto chr_fn = std::make_shared<NativeFunction>(
+        "chr", 1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            if (!args[0].is_number())
+                throw std::runtime_error("chr(n): n must be a number");
+            int n = static_cast<int>(args[0].as_number());
+            if (n < 0 || n > 255)
+                throw std::runtime_error("chr(n): n must be in 0..255");
+            return Value{std::string(1, static_cast<char>(n))};
+        });
+    globals_->define("chr", Value{chr_fn});
 }
 
 }  // namespace bnl

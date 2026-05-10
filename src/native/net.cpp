@@ -211,6 +211,52 @@ ModulePtr build_server_module(Server* s, int actual_port) {
         .build();
 }
 
+// ---------- DNS resolve -----------------------------------------------------
+
+struct ResolveReq {
+    uv_getaddrinfo_t  req{};
+    Interpreter*      interp = nullptr;
+    CallablePtr       on_done;     // fn(err, ip_string)
+};
+
+void on_resolved(uv_getaddrinfo_t* req, int status, addrinfo* res) {
+    std::unique_ptr<ResolveReq> rr(static_cast<ResolveReq*>(req->data));
+
+    if (status < 0) {
+        std::string err = uv_strerror(status);
+        if (res) uv_freeaddrinfo(res);
+        invoke_callback(*rr->interp, rr->on_done, { Value{err}, Value{} });
+        return;
+    }
+
+    // Walk the addrinfo list and pick the first IPv4 address. Falls back to the
+    // first result of any family if no v4 entry exists.
+    char ip[INET6_ADDRSTRLEN] = {0};
+    bool got = false;
+    for (addrinfo* a = res; a != nullptr; a = a->ai_next) {
+        if (a->ai_family == AF_INET) {
+            uv_ip4_name(reinterpret_cast<sockaddr_in*>(a->ai_addr), ip, sizeof(ip));
+            got = true;
+            break;
+        }
+    }
+    if (!got && res) {
+        if (res->ai_family == AF_INET6)
+            uv_ip6_name(reinterpret_cast<sockaddr_in6*>(res->ai_addr), ip, sizeof(ip));
+        else if (res->ai_family == AF_INET)
+            uv_ip4_name(reinterpret_cast<sockaddr_in*>(res->ai_addr), ip, sizeof(ip));
+        got = ip[0] != 0;
+    }
+    if (res) uv_freeaddrinfo(res);
+
+    if (!got) {
+        invoke_callback(*rr->interp, rr->on_done,
+                        { Value{std::string("net.resolve: no usable address")}, Value{} });
+        return;
+    }
+    invoke_callback(*rr->interp, rr->on_done, { Value{}, Value{std::string(ip)} });
+}
+
 // ---------- connect (client) ------------------------------------------------
 
 struct ConnectReq {
@@ -313,6 +359,32 @@ void register_net(Interpreter& interp) {
                     delete cr;
                     close_conn_once(c);
                     throw std::runtime_error(fmt::format("net.tcp_connect: {}", uv_strerror(rc)));
+                }
+                return Value{};
+            })
+
+        // net.resolve(host, on_done) where on_done(err, ip_string).
+        // Resolves a hostname to an IP address using libuv's threadpool.
+        .add_function("resolve", 2,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                if (!args[0].is_string())
+                    throw std::runtime_error("net.resolve: host must be a string");
+                auto cb = to_callback(args[1], "net.resolve");
+
+                auto* rr = new ResolveReq{};
+                rr->interp  = &interp;
+                rr->on_done = cb;
+                rr->req.data = rr;
+
+                addrinfo hints{};
+                hints.ai_family   = AF_UNSPEC;
+                hints.ai_socktype = SOCK_STREAM;
+
+                int rc = uv_getaddrinfo(interp.loop(), &rr->req, on_resolved,
+                                        args[0].as_string().c_str(), nullptr, &hints);
+                if (rc < 0) {
+                    delete rr;
+                    throw std::runtime_error(fmt::format("net.resolve: {}", uv_strerror(rc)));
                 }
                 return Value{};
             })

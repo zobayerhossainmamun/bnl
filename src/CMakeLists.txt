@@ -33,6 +33,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     native/zlib_mod.cpp
     native/httpp.cpp
     native/net.cpp
+    native/tls.cpp
     native/json.cpp
 )
 
@@ -69,6 +70,11 @@ target_link_libraries(bnl_core
 
 if(BNL_ENABLE_FFI)
     target_link_libraries(bnl_core PRIVATE ${CMAKE_DL_LIBS})  # dl on Linux
+endif()
+
+# tls.cpp pulls Windows root certs from the system store; needs crypt32.
+if(WIN32)
+    target_link_libraries(bnl_core PRIVATE crypt32)
 endif()
 
 # bnl: thin CLI driver around bnl_core.

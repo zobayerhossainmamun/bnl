@@ -3,12 +3,14 @@
 #include <fmt/core.h>
 #include <uv.h>
 
-#include <filesystem>
-#include <fstream>
+#include <sys/stat.h>      // S_IFMT, S_IFREG, S_IFDIR
+
+#include <cstdint>
+#include <cstdlib>
 #include <memory>
-#include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -19,10 +21,12 @@ namespace bnl {
 
 namespace {
 
-std::filesystem::path to_path(const Value& v) {
+// ---------- helpers --------------------------------------------------------
+
+const std::string& to_path_string(const Value& v) {
     if (!v.is_string())
         throw std::runtime_error(fmt::format("io: path must be a string, got {}", v.type_name()));
-    return std::filesystem::path(v.as_string());
+    return v.as_string();
 }
 
 CallablePtr to_callback(const Value& v, const char* where) {
@@ -32,24 +36,171 @@ CallablePtr to_callback(const Value& v, const char* where) {
     return v.as_callable();
 }
 
-// ---------- async file I/O via uv_queue_work --------------------------------
+[[noreturn]] void throw_uv(int rc, const char* op, const std::string& path) {
+    throw std::runtime_error(fmt::format("io.{}('{}'): {}", op, path, uv_strerror(rc)));
+}
+
+// RAII close so partial reads/writes don't leak fds when an exception fires.
+struct UvFile {
+    uv_loop_t* loop;
+    uv_file    fd;
+    UvFile(uv_loop_t* l, uv_file f) : loop(l), fd(f) {}
+    ~UvFile() {
+        if (fd >= 0) {
+            uv_fs_t req;
+            uv_fs_close(loop, &req, fd, nullptr);
+            uv_fs_req_cleanup(&req);
+        }
+    }
+    UvFile(const UvFile&) = delete;
+    UvFile& operator=(const UvFile&) = delete;
+};
+
+void invoke_callback(Interpreter& interp, CallablePtr cb, std::vector<Value> args) {
+    try {
+        cb->call(interp, std::move(args));
+    } catch (const RuntimeError& e) {
+        fmt::print(stderr, "uncaught error in async io callback at {}:{} (near '{}'): {}\n",
+                   e.token.line, e.token.column, e.token.lexeme, e.what());
+        interp.mark_loop_failed();
+    } catch (const std::exception& e) {
+        fmt::print(stderr, "uncaught error in async io callback: {}\n", e.what());
+        interp.mark_loop_failed();
+    }
+}
+
+// ---------- sync ops over uv_fs_* ------------------------------------------
+
+std::string sync_read_file(uv_loop_t* loop, const std::string& path) {
+    uv_fs_t open_req;
+    int fd = uv_fs_open(loop, &open_req, path.c_str(), UV_FS_O_RDONLY, 0, nullptr);
+    uv_fs_req_cleanup(&open_req);
+    if (fd < 0) throw_uv(fd, "read_file", path);
+    UvFile keep(loop, fd);
+
+    uv_fs_t stat_req;
+    int rc = uv_fs_fstat(loop, &stat_req, fd, nullptr);
+    auto size = static_cast<std::size_t>(stat_req.statbuf.st_size);
+    uv_fs_req_cleanup(&stat_req);
+    if (rc < 0) throw_uv(rc, "read_file", path);
+
+    std::string out(size, '\0');
+    std::size_t total = 0;
+    while (total < size) {
+        uv_buf_t b = uv_buf_init(out.data() + total,
+                                 static_cast<unsigned int>(size - total));
+        uv_fs_t read_req;
+        int n = uv_fs_read(loop, &read_req, fd, &b, 1,
+                           static_cast<int64_t>(total), nullptr);
+        uv_fs_req_cleanup(&read_req);
+        if (n < 0) throw_uv(n, "read_file", path);
+        if (n == 0) break;       // truncated mid-read — return what we got
+        total += static_cast<std::size_t>(n);
+    }
+    out.resize(total);
+    return out;
+}
+
+void sync_write_file(uv_loop_t* loop, const std::string& path,
+                     const std::string& content, bool append) {
+    int flags = UV_FS_O_WRONLY | UV_FS_O_CREAT;
+    flags    |= append ? UV_FS_O_APPEND : UV_FS_O_TRUNC;
+
+    uv_fs_t open_req;
+    int fd = uv_fs_open(loop, &open_req, path.c_str(), flags, 0644, nullptr);
+    uv_fs_req_cleanup(&open_req);
+    const char* op = append ? "append_file" : "write_file";
+    if (fd < 0) throw_uv(fd, op, path);
+    UvFile keep(loop, fd);
+
+    std::size_t written = 0;
+    while (written < content.size()) {
+        uv_buf_t b = uv_buf_init(const_cast<char*>(content.data() + written),
+                                 static_cast<unsigned int>(content.size() - written));
+        uv_fs_t write_req;
+        int n = uv_fs_write(loop, &write_req, fd, &b, 1, -1, nullptr);
+        uv_fs_req_cleanup(&write_req);
+        if (n < 0) throw_uv(n, op, path);
+        if (n == 0) break;
+        written += static_cast<std::size_t>(n);
+    }
+}
+
+// Recursive mkdir. uv_fs_mkdir only does one level; if parent is missing
+// (UV_ENOENT) we recurse on the parent and retry.
+void sync_mkdir_p(uv_loop_t* loop, std::string path) {
+    if (path.empty()) return;
+    while (path.size() > 1 && (path.back() == '/' || path.back() == '\\'))
+        path.pop_back();
+
+    uv_fs_t req;
+    int rc = uv_fs_mkdir(loop, &req, path.c_str(), 0755, nullptr);
+    uv_fs_req_cleanup(&req);
+    if (rc == 0 || rc == UV_EEXIST) return;
+    if (rc != UV_ENOENT) throw_uv(rc, "mkdir", path);
+
+    auto pos = path.find_last_of("/\\");
+    if (pos == std::string::npos || pos == 0) throw_uv(rc, "mkdir", path);
+    sync_mkdir_p(loop, path.substr(0, pos));
+
+    uv_fs_t retry;
+    int rc2 = uv_fs_mkdir(loop, &retry, path.c_str(), 0755, nullptr);
+    uv_fs_req_cleanup(&retry);
+    if (rc2 != 0 && rc2 != UV_EEXIST) throw_uv(rc2, "mkdir", path);
+}
+
+// Recursive remove. uv has no rm -rf, so we drive it with stat + scandir.
+void sync_remove(uv_loop_t* loop, const std::string& path) {
+    uv_fs_t stat_req;
+    int rc = uv_fs_lstat(loop, &stat_req, path.c_str(), nullptr);
+    if (rc == UV_ENOENT) {
+        uv_fs_req_cleanup(&stat_req);
+        return;       // idempotent: removing what isn't there is a no-op
+    }
+    bool is_dir = (rc == 0) && (stat_req.statbuf.st_mode & S_IFMT) == S_IFDIR;
+    uv_fs_req_cleanup(&stat_req);
+    if (rc < 0) throw_uv(rc, "remove", path);
+
+    if (!is_dir) {
+        uv_fs_t unlink_req;
+        int urc = uv_fs_unlink(loop, &unlink_req, path.c_str(), nullptr);
+        uv_fs_req_cleanup(&unlink_req);
+        if (urc < 0) throw_uv(urc, "remove", path);
+        return;
+    }
+
+    // Directory — recurse into children first.
+    uv_fs_t scan_req;
+    int srn = uv_fs_scandir(loop, &scan_req, path.c_str(), 0, nullptr);
+    if (srn < 0) {
+        uv_fs_req_cleanup(&scan_req);
+        throw_uv(srn, "remove", path);
+    }
+    uv_dirent_t ent;
+    while (uv_fs_scandir_next(&scan_req, &ent) != UV_EOF) {
+        std::string child = path;
+        if (!child.empty() && child.back() != '/' && child.back() != '\\')
+            child.push_back('/');
+        child += ent.name;
+        sync_remove(loop, child);
+    }
+    uv_fs_req_cleanup(&scan_req);
+
+    uv_fs_t rmdir_req;
+    int rrc = uv_fs_rmdir(loop, &rmdir_req, path.c_str(), nullptr);
+    uv_fs_req_cleanup(&rmdir_req);
+    if (rrc < 0) throw_uv(rrc, "remove", path);
+}
+
+// ---------- async wrappers via threadpool ----------------------------------
 //
-// Each async op carries a heap-allocated work struct. The worker callback runs
-// on libuv's thread pool and does the blocking syscall; the after_work
-// callback runs on the main loop thread and invokes the bnl callback with
-// Node-style (err, data) arguments.
+// uv_fs_* sync calls (callback=NULL) block the calling thread but are safe to
+// invoke off the loop thread. Wrapping them in uv_queue_work moves the block
+// to a worker, then dispatches the result back via the after_work callback.
 
 struct AsyncRead {
     std::string  path;
     std::string  result;
-    std::string  error;     // empty == ok
-    CallablePtr  callback;
-    Interpreter* interp;
-};
-
-struct AsyncWrite {
-    std::string  path;
-    std::string  content;
     std::string  error;
     CallablePtr  callback;
     Interpreter* interp;
@@ -58,31 +209,15 @@ struct AsyncWrite {
 void on_read_work(uv_work_t* req) {
     auto* w = static_cast<AsyncRead*>(req->data);
     try {
-        std::ifstream in(std::filesystem::path(w->path), std::ios::binary);
-        if (!in) { w->error = "cannot open " + w->path; return; }
-        std::ostringstream buf; buf << in.rdbuf();
-        w->result = buf.str();
+        w->result = sync_read_file(w->interp->loop(), w->path);
     } catch (const std::exception& e) {
         w->error = e.what();
     }
 }
 
-void invoke_callback(Interpreter& interp, CallablePtr cb, std::vector<Value> args) {
-    try {
-        cb->call(interp, std::move(args));
-    } catch (const RuntimeError& e) {
-        fmt::print(stderr, "uncaught error in async callback at {}:{} (near '{}'): {}\n",
-                   e.token.line, e.token.column, e.token.lexeme, e.what());
-        interp.mark_loop_failed();
-    } catch (const std::exception& e) {
-        fmt::print(stderr, "uncaught error in async callback: {}\n", e.what());
-        interp.mark_loop_failed();
-    }
-}
-
 void on_read_done(uv_work_t* req, int /*status*/) {
-    std::unique_ptr<AsyncRead>  w  (static_cast<AsyncRead*>(req->data));
-    std::unique_ptr<uv_work_t>  rq (req);
+    std::unique_ptr<AsyncRead> w (static_cast<AsyncRead*>(req->data));
+    std::unique_ptr<uv_work_t> rq(req);
     std::vector<Value> args;
     if (!w->error.empty()) {
         args.push_back(Value{w->error});
@@ -94,21 +229,27 @@ void on_read_done(uv_work_t* req, int /*status*/) {
     invoke_callback(*w->interp, w->callback, std::move(args));
 }
 
+struct AsyncWrite {
+    std::string  path;
+    std::string  content;
+    bool         append = false;
+    std::string  error;
+    CallablePtr  callback;
+    Interpreter* interp;
+};
+
 void on_write_work(uv_work_t* req) {
     auto* w = static_cast<AsyncWrite*>(req->data);
     try {
-        std::ofstream out(std::filesystem::path(w->path), std::ios::binary | std::ios::trunc);
-        if (!out) { w->error = "cannot open " + w->path; return; }
-        out << w->content;
-        if (!out) w->error = "write failed for " + w->path;
+        sync_write_file(w->interp->loop(), w->path, w->content, w->append);
     } catch (const std::exception& e) {
         w->error = e.what();
     }
 }
 
 void on_write_done(uv_work_t* req, int /*status*/) {
-    std::unique_ptr<AsyncWrite> w  (static_cast<AsyncWrite*>(req->data));
-    std::unique_ptr<uv_work_t>  rq (req);
+    std::unique_ptr<AsyncWrite> w (static_cast<AsyncWrite*>(req->data));
+    std::unique_ptr<uv_work_t>  rq(req);
     std::vector<Value> args;
     args.push_back(w->error.empty() ? Value{} : Value{w->error});
     invoke_callback(*w->interp, w->callback, std::move(args));
@@ -118,80 +259,161 @@ void on_write_done(uv_work_t* req, int /*status*/) {
 
 void register_io(Interpreter& interp) {
     auto m = NativeModule("io")
+        // ---------- read / write -------------------------------------------
+
         // io.read_file(path) -> string (entire contents as bytes)
         .add_function("read_file", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                auto p = to_path(args[0]);
-                std::ifstream in(p, std::ios::binary);
-                if (!in)
-                    throw std::runtime_error(fmt::format("io.read_file: cannot open '{}'", p.string()));
-                std::ostringstream buf; buf << in.rdbuf();
-                return Value{buf.str()};
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                return Value{sync_read_file(interp.loop(), to_path_string(args[0]))};
             })
 
         // io.write_file(path, content) -> null  (overwrites)
         .add_function("write_file", 2,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                auto p = to_path(args[0]);
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
                 if (!args[1].is_string())
                     throw std::runtime_error("io.write_file: content must be a string");
-                std::ofstream out(p, std::ios::binary | std::ios::trunc);
-                if (!out)
-                    throw std::runtime_error(fmt::format("io.write_file: cannot open '{}'", p.string()));
-                out << args[1].as_string();
+                sync_write_file(interp.loop(), to_path_string(args[0]),
+                                args[1].as_string(), false);
                 return Value{};
             })
 
-        // io.exists(path) -> bool
+        // io.append_file(path, content) -> null  (creates if missing)
+        .add_function("append_file", 2,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                if (!args[1].is_string())
+                    throw std::runtime_error("io.append_file: content must be a string");
+                sync_write_file(interp.loop(), to_path_string(args[0]),
+                                args[1].as_string(), true);
+                return Value{};
+            })
+
+        // ---------- existence / type ---------------------------------------
+
         .add_function("exists", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                std::error_code ec;
-                return Value{std::filesystem::exists(to_path(args[0]), ec)};
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                uv_fs_t req;
+                int rc = uv_fs_stat(interp.loop(), &req,
+                                    to_path_string(args[0]).c_str(), nullptr);
+                uv_fs_req_cleanup(&req);
+                return Value{rc == 0};
             })
 
-        // io.is_file(path) -> bool
         .add_function("is_file", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                std::error_code ec;
-                return Value{std::filesystem::is_regular_file(to_path(args[0]), ec)};
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                uv_fs_t req;
+                int rc = uv_fs_stat(interp.loop(), &req,
+                                    to_path_string(args[0]).c_str(), nullptr);
+                bool ok = (rc == 0) && ((req.statbuf.st_mode & S_IFMT) == S_IFREG);
+                uv_fs_req_cleanup(&req);
+                return Value{ok};
             })
 
-        // io.is_dir(path) -> bool
         .add_function("is_dir", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                std::error_code ec;
-                return Value{std::filesystem::is_directory(to_path(args[0]), ec)};
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                uv_fs_t req;
+                int rc = uv_fs_stat(interp.loop(), &req,
+                                    to_path_string(args[0]).c_str(), nullptr);
+                bool ok = (rc == 0) && ((req.statbuf.st_mode & S_IFMT) == S_IFDIR);
+                uv_fs_req_cleanup(&req);
+                return Value{ok};
             })
+
+        // io.stat(path) -> {bytes, mtime, is_dir, is_file}. mtime is epoch
+        // seconds. The byte count is named "bytes" rather than "size" because
+        // the map's intrinsic .size accessor returns the entry count and would
+        // shadow a "size" key here.
+        .add_function("stat", 1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string path = to_path_string(args[0]);
+                uv_fs_t req;
+                int rc = uv_fs_stat(interp.loop(), &req, path.c_str(), nullptr);
+                if (rc < 0) {
+                    uv_fs_req_cleanup(&req);
+                    throw_uv(rc, "stat", path);
+                }
+                auto out = std::make_shared<std::unordered_map<std::string, Value>>();
+                (*out)["bytes"]   = Value{static_cast<double>(req.statbuf.st_size)};
+                (*out)["mtime"]   = Value{static_cast<double>(req.statbuf.st_mtim.tv_sec)};
+                (*out)["is_dir"]  = Value{(req.statbuf.st_mode & S_IFMT) == S_IFDIR};
+                (*out)["is_file"] = Value{(req.statbuf.st_mode & S_IFMT) == S_IFREG};
+                uv_fs_req_cleanup(&req);
+                return Value{out};
+            })
+
+        // ---------- directories --------------------------------------------
 
         // io.mkdir(path) -> null  (creates intermediate dirs as needed)
         .add_function("mkdir", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                auto p = to_path(args[0]);
-                std::error_code ec;
-                std::filesystem::create_directories(p, ec);
-                if (ec)
-                    throw std::runtime_error(fmt::format("io.mkdir('{}'): {}", p.string(), ec.message()));
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                sync_mkdir_p(interp.loop(), to_path_string(args[0]));
                 return Value{};
             })
 
-        // io.remove(path) -> null  (removes file or directory tree)
+        // io.list_dir(path) -> [string, ...]  (entry names, no '.' / '..')
+        .add_function("list_dir", 1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string path = to_path_string(args[0]);
+                uv_fs_t req;
+                int rc = uv_fs_scandir(interp.loop(), &req, path.c_str(), 0, nullptr);
+                if (rc < 0) {
+                    uv_fs_req_cleanup(&req);
+                    throw_uv(rc, "list_dir", path);
+                }
+                auto out = std::make_shared<std::vector<Value>>();
+                uv_dirent_t ent;
+                while (uv_fs_scandir_next(&req, &ent) != UV_EOF) {
+                    out->emplace_back(std::string(ent.name));
+                }
+                uv_fs_req_cleanup(&req);
+                return Value{out};
+            })
+
+        // io.remove(path) -> null  (file or directory tree; idempotent)
         .add_function("remove", 1,
-            [](Interpreter&, std::vector<Value> args) -> Value {
-                auto p = to_path(args[0]);
-                std::error_code ec;
-                std::filesystem::remove_all(p, ec);
-                if (ec)
-                    throw std::runtime_error(fmt::format("io.remove('{}'): {}", p.string(), ec.message()));
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                sync_remove(interp.loop(), to_path_string(args[0]));
                 return Value{};
             })
+
+        // ---------- rename / copy ------------------------------------------
+
+        .add_function("rename", 2,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string from = to_path_string(args[0]);
+                const std::string to   = to_path_string(args[1]);
+                uv_fs_t req;
+                int rc = uv_fs_rename(interp.loop(), &req,
+                                      from.c_str(), to.c_str(), nullptr);
+                uv_fs_req_cleanup(&req);
+                if (rc < 0)
+                    throw std::runtime_error(fmt::format(
+                        "io.rename('{}' -> '{}'): {}", from, to, uv_strerror(rc)));
+                return Value{};
+            })
+
+        .add_function("copy_file", 2,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                const std::string from = to_path_string(args[0]);
+                const std::string to   = to_path_string(args[1]);
+                uv_fs_t req;
+                int rc = uv_fs_copyfile(interp.loop(), &req,
+                                        from.c_str(), to.c_str(), 0, nullptr);
+                uv_fs_req_cleanup(&req);
+                if (rc < 0)
+                    throw std::runtime_error(fmt::format(
+                        "io.copy_file('{}' -> '{}'): {}", from, to, uv_strerror(rc)));
+                return Value{};
+            })
+
+        // ---------- async --------------------------------------------------
 
         // io.read_file_async(path, fn) -> null. fn(err, data).
         .add_function("read_file_async", 2,
             [&interp](Interpreter&, std::vector<Value> args) -> Value {
-                auto path = to_path(args[0]).string();
-                auto cb   = to_callback(args[1], "io.read_file_async");
+                auto cb = to_callback(args[1], "io.read_file_async");
                 auto* req = new uv_work_t{};
-                req->data = new AsyncRead{std::move(path), {}, {}, std::move(cb), &interp};
+                req->data = new AsyncRead{
+                    to_path_string(args[0]), {}, {}, std::move(cb), &interp};
                 uv_queue_work(interp.loop(), req, on_read_work, on_read_done);
                 return Value{};
             })
@@ -199,13 +421,13 @@ void register_io(Interpreter& interp) {
         // io.write_file_async(path, content, fn) -> null. fn(err).
         .add_function("write_file_async", 3,
             [&interp](Interpreter&, std::vector<Value> args) -> Value {
-                auto path = to_path(args[0]).string();
                 if (!args[1].is_string())
                     throw std::runtime_error("io.write_file_async: content must be a string");
-                auto cb   = to_callback(args[2], "io.write_file_async");
+                auto cb = to_callback(args[2], "io.write_file_async");
                 auto* req = new uv_work_t{};
                 req->data = new AsyncWrite{
-                    std::move(path), args[1].as_string(), {}, std::move(cb), &interp};
+                    to_path_string(args[0]), args[1].as_string(), false, {},
+                    std::move(cb), &interp};
                 uv_queue_work(interp.loop(), req, on_write_work, on_write_done);
                 return Value{};
             })

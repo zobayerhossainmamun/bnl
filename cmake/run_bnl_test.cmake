@@ -12,8 +12,14 @@ if(NOT BNL OR NOT SCRIPT OR NOT EXPECTED)
     message(FATAL_ERROR "run_bnl_test.cmake requires -DBNL=, -DSCRIPT=, -DEXPECTED=")
 endif()
 
+# Run from the script's directory so tests can refer to fixtures with paths
+# relative to the script (e.g. "_fixtures/tls/cert.pem" instead of an absolute
+# build-tree path).
+get_filename_component(SCRIPT_DIR "${SCRIPT}" DIRECTORY)
+
 execute_process(
     COMMAND "${BNL}" --quiet "${SCRIPT}"
+    WORKING_DIRECTORY "${SCRIPT_DIR}"
     OUTPUT_VARIABLE actual
     ERROR_VARIABLE  err
     RESULT_VARIABLE rc

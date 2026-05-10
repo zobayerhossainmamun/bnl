@@ -22,6 +22,7 @@ namespace {
 struct Parsed {
     std::string                                       method;
     std::string                                       url;
+    std::string                                       status_text;   // response only
     std::string                                       body;
     std::vector<std::pair<std::string, std::string>>  headers;
     std::string                                       current_header_name;
@@ -30,6 +31,11 @@ struct Parsed {
 
 int on_url(llhttp_t* p, const char* at, std::size_t len) {
     static_cast<Parsed*>(p->data)->url.append(at, len);
+    return 0;
+}
+
+int on_status(llhttp_t* p, const char* at, std::size_t len) {
+    static_cast<Parsed*>(p->data)->status_text.append(at, len);
     return 0;
 }
 
@@ -77,6 +83,40 @@ std::string ascii_lower(std::string s) {
     return s;
 }
 
+void init_common_settings(llhttp_settings_t& settings) {
+    llhttp_settings_init(&settings);
+    settings.on_url                   = on_url;
+    settings.on_status                = on_status;
+    settings.on_header_field          = on_header_field;
+    settings.on_header_value          = on_header_value;
+    settings.on_header_value_complete = on_header_value_complete;
+    settings.on_body                  = on_body;
+    settings.on_message_complete      = on_message_complete;
+}
+
+ModulePtr build_response_module(Parsed&& parsed, int status_code) {
+    auto headers = std::make_shared<std::vector<std::pair<std::string, std::string>>>(
+        std::move(parsed.headers));
+
+    return NativeModule("http_response")
+        .add_value("status",       Value{static_cast<double>(status_code)})
+        .add_value("status_text",  Value{std::move(parsed.status_text)})
+        .add_value("body",         Value{std::move(parsed.body)})
+        .add_value("header_count", Value{static_cast<double>(headers->size())})
+        .add_value("complete",     Value{parsed.complete})
+        .add_function("header", 1,
+            [headers](Interpreter&, std::vector<Value> args) -> Value {
+                if (!args[0].is_string())
+                    throw std::runtime_error("response.header(name): name must be a string");
+                auto needle = ascii_lower(args[0].as_string());
+                for (const auto& [k, v] : *headers) {
+                    if (ascii_lower(k) == needle) return Value{v};
+                }
+                return Value{};
+            })
+        .build();
+}
+
 ModulePtr build_request_module(Parsed&& parsed) {
     // Capture headers by shared_ptr so the .header() closure outlives this call.
     auto headers = std::make_shared<std::vector<std::pair<std::string, std::string>>>(
@@ -116,13 +156,7 @@ void register_httpp(Interpreter& interp) {
                 const std::string& buf = args[0].as_string();
 
                 llhttp_settings_t settings;
-                llhttp_settings_init(&settings);
-                settings.on_url                   = on_url;
-                settings.on_header_field          = on_header_field;
-                settings.on_header_value          = on_header_value;
-                settings.on_header_value_complete = on_header_value_complete;
-                settings.on_body                  = on_body;
-                settings.on_message_complete      = on_message_complete;
+                init_common_settings(settings);
 
                 llhttp_t parser;
                 llhttp_init(&parser, HTTP_REQUEST, &settings);
@@ -141,6 +175,53 @@ void register_httpp(Interpreter& interp) {
 
                 parsed.method = llhttp_method_name(static_cast<llhttp_method_t>(parser.method));
                 return Value{build_request_module(std::move(parsed))};
+            })
+
+        // httpp.parse_response(buf [, is_final]) -> Module | null
+        // Returns null if the buffer doesn't yet contain a complete response,
+        // throws on parse error. Pass is_final=true when the connection has
+        // closed — required for HTTP/1.0-style responses without
+        // Content-Length, where the body ends at EOF.
+        .add_function("parse_response", -1,
+            [](Interpreter&, std::vector<Value> args) -> Value {
+                if (args.empty() || args.size() > 2)
+                    throw std::runtime_error("httpp.parse_response: expects 1 or 2 arguments");
+                if (!args[0].is_string())
+                    throw std::runtime_error("httpp.parse_response: input must be a string");
+                bool is_final = args.size() == 2 && args[1].is_bool() && args[1].as_bool();
+
+                const std::string& buf = args[0].as_string();
+
+                llhttp_settings_t settings;
+                init_common_settings(settings);
+
+                llhttp_t parser;
+                llhttp_init(&parser, HTTP_RESPONSE, &settings);
+                Parsed parsed;
+                parser.data = &parsed;
+
+                auto err = llhttp_execute(&parser, buf.data(), buf.size());
+                if (err != HPE_OK && err != HPE_PAUSED_UPGRADE) {
+                    throw std::runtime_error(fmt::format(
+                        "httpp.parse_response: {}: {}",
+                        llhttp_errno_name(err),
+                        llhttp_get_error_reason(&parser)));
+                }
+
+                if (is_final && !parsed.complete) {
+                    err = llhttp_finish(&parser);
+                    if (err != HPE_OK && err != HPE_PAUSED_UPGRADE) {
+                        throw std::runtime_error(fmt::format(
+                            "httpp.parse_response: finish: {}: {}",
+                            llhttp_errno_name(err),
+                            llhttp_get_error_reason(&parser)));
+                    }
+                }
+
+                if (!parsed.complete) return Value{};
+
+                return Value{build_response_module(std::move(parsed),
+                                                   static_cast<int>(parser.status_code))};
             })
         .build();
 

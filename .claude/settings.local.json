@@ -22,7 +22,15 @@
       "Bash(grep -n \"load_native_library\\\\|process_libraries\\\\|DynamicLibrary\\\\|^}.*  // namespace$\" d:/bnlang/new-v/bnl/src/module_loader.cpp)",
       "PowerShell(& d:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet d:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\classes_basic.bnl)",
       "PowerShell(& d:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --quiet d:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\classes_bilingual.bnl)",
-      "PowerShell(Set-Content *)"
+      "PowerShell(Set-Content *)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_resolve.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_url.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_tls.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_https.bnl)",
+      "Bash(mkdir -p \"D:/bnlang/new-v/bnl/tests/_fixtures/tls\")",
+      "Bash(openssl req *)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe .\\\\examples\\\\_test_tls_server.bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\examples\\\\_test_tls_server.bnl)"
     ]
   }
 }

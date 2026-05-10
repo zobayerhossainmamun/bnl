@@ -1,0 +1,117 @@
+// Higher-level filesystem ergonomics on top of the native `io` module.
+// The native module exposes thin uv_fs_* primitives (read/write/list_dir/
+// stat/rename/copy_file/...). This file composes them into the day-to-day
+// helpers most users actually want.
+//
+//   import "fileSystem" as fs;
+//
+//   var text = fs.read_text("notes.md");
+//   var cfg  = fs.read_json("config.json");
+//   fs.write_json("out.json", {ok: true});
+//   fs.walk("src", function(path, info) {
+//       if (info.is_file and path.ends_with(".bnl")) { print(path); }
+//   });
+
+import "io"   as io;
+import "json" as json;
+import "path" as path;
+
+// Re-expose the most useful primitives so users only need this one import.
+var read_file   = io.read_file;
+var write_file  = io.write_file;
+var append_file = io.append_file;
+var exists      = io.exists;
+var is_file     = io.is_file;
+var is_dir      = io.is_dir;
+var stat        = io.stat;
+var mkdir       = io.mkdir;
+var remove      = io.remove;
+var list_dir    = io.list_dir;
+var rename      = io.rename;
+var copy_file   = io.copy_file;
+
+// ---------- text helpers --------------------------------------------------
+
+function read_text(p)        { return io.read_file(p); }
+function write_text(p, s)    { io.write_file(p, s); }
+
+function read_lines(p) {
+    var s = io.read_file(p);
+    // Tolerate CRLF: strip trailing \r on each line.
+    var raw = s.split("\n");
+    var out = [];
+    var i = 0;
+    while (i < raw.length) {
+        var line = raw[i];
+        if (line.ends_with("\r")) { line = line.slice(0, line.length - 1); }
+        out.push(line);
+        i = i + 1;
+    }
+    // If the file ended with a newline, split() leaves an empty trailing
+    // element — drop it so callers don't get a phantom blank line.
+    if (out.length > 0 and out[out.length - 1] == "") { out.pop(); }
+    return out;
+}
+
+function write_lines(p, lines) {
+    var out = "";
+    var i = 0;
+    while (i < lines.length) {
+        out = out + lines[i] + "\n";
+        i = i + 1;
+    }
+    io.write_file(p, out);
+}
+
+// ---------- json helpers --------------------------------------------------
+
+function read_json(p)        { return json.parse(io.read_file(p)); }
+function write_json(p, v)    { io.write_file(p, json.stringify(v)); }
+
+// ---------- directory walking ---------------------------------------------
+
+// walk(dir, fn) — depth-first recursive walk. fn is called once per entry as
+// fn(full_path, stat_info), where stat_info has {size, mtime, is_dir, is_file}.
+// Returning false from fn skips descending into a directory (pruning).
+function walk(dir, fn) {
+    var entries = io.list_dir(dir);
+    var i = 0;
+    while (i < entries.length) {
+        var name = entries[i];
+        var p    = path.join([dir, name]);
+        var info = io.stat(p);
+        var keep = fn(p, info);
+        if (info.is_dir and keep != false) {
+            walk(p, fn);
+        }
+        i = i + 1;
+    }
+}
+
+// ---------- copy_tree -----------------------------------------------------
+
+function copy_tree(src, dst) {
+    var info = io.stat(src);
+    if (info.is_file) {
+        io.copy_file(src, dst);
+        return null;
+    }
+    if (not info.is_dir) {
+        // Symlinks, sockets, etc. — out of scope; caller can handle if needed.
+        return null;
+    }
+    if (not io.exists(dst)) { io.mkdir(dst); }
+    var entries = io.list_dir(src);
+    var i = 0;
+    while (i < entries.length) {
+        var name = entries[i];
+        copy_tree(path.join([src, name]), path.join([dst, name]));
+        i = i + 1;
+    }
+}
+
+// Bilingual aliases.
+var পড়       = read_text;
+var লেখো     = write_text;
+var হাঁটো    = walk;       // "walk"
+var অনুলিপি  = copy_tree;  // "copy"

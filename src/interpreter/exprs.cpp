@@ -392,6 +392,18 @@ void Interpreter::visit(MemberExpr& e) {
                 })};
             return;
         }
+        if (name == "byte_at") {
+            result_ = Value{make_bound_native("byte_at", 1,
+                [captured](Interpreter&, std::vector<Value> args) -> Value {
+                    if (!args[0].is_number())
+                        throw std::runtime_error("string.byte_at: index must be a number");
+                    long long i = static_cast<long long>(args[0].as_number());
+                    if (i < 0 || static_cast<std::size_t>(i) >= captured.size())
+                        return Value{static_cast<double>(-1)};
+                    return Value{static_cast<double>(static_cast<unsigned char>(captured[i]))};
+                })};
+            return;
+        }
 
         throw RuntimeError(e.name, fmt::format("string has no property '{}'", name));
     }
