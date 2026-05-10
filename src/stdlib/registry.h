@@ -20,6 +20,8 @@ class Interpreter;
 //   _exec   — child process spawn with stdin/stdout/stderr pipes (libuv).
 //             Registered with a leading underscore so the public "exec"
 //             import resolves to lib/exec.bnl (which adds run helpers).
+//   _dns    — DNS lookup / reverse via uv_getaddrinfo + uv_getnameinfo.
+//             Same convention: public "dns" name belongs to lib/dns.bnl.
 //
 // Anything else (sqlite, …) is delivered as a plugin by the separate
 // package manager.
@@ -33,5 +35,6 @@ void register_http  (Interpreter& interp);
 void register_tls   (Interpreter& interp);
 void register_json  (Interpreter& interp);
 void register_exec  (Interpreter& interp);
+void register_dns   (Interpreter& interp);
 
 }  // namespace bnl

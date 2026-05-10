@@ -1,0 +1,73 @@
+// DNS — forward + reverse lookup with sync IP-shape checks.
+//
+//   import "dns" as dns;
+//   dns.lookup("example.com", function (err, ip, family) { ... });
+//   dns.lookup_all("example.com", 4, function (err, addrs) { ... });
+//   dns.reverse("8.8.8.8", function (err, host) { ... });
+//   dns.lookup_or_self("127.0.0.1", function (err, ip, family) { ... });
+
+import "_dns" as _dns;
+
+// Re-export the async primitives so callers only need one import.
+function lookup    (host, family, cb) { return _dns.lookup    (host, family, cb); }
+function lookup_all(host, family, cb) { return _dns.lookup_all(host, family, cb); }
+function reverse   (ip, cb)           { return _dns.reverse   (ip, cb); }
+
+// ---------- sync shape checks (no DNS, no allocation) ----------------------
+
+// True when `s` is a dotted-quad IPv4 literal: four numeric octets in 0..255.
+function is_ipv4(s) {
+    var parts = s.split(".");
+    if (parts.length != 4) { return false; }
+    for (var p of parts) {
+        if (p.byte_length == 0 or p.byte_length > 3) { return false; }
+        var n = to_number(p);
+        if (n == null) { return false; }
+        if (n < 0 or n > 255) { return false; }
+        // Reject non-digit chars that to_number tolerates (e.g. "1e2").
+        var i = 0;
+        while (i < p.byte_length) {
+            var b = p.byte_at(i);
+            if (b < 48 or b > 57) { return false; }
+            i = i + 1;
+        }
+    }
+    return true;
+}
+
+// Loose IPv6 check — anything containing a `:` and at most 7 of them, with
+// only hex digits / `:`. Good enough to distinguish IPv6 literals from
+// hostnames; for strict validation, call dns.lookup which uses the OS parser.
+function is_ipv6(s) {
+    if (s.byte_length == 0) { return false; }
+    var colons = 0;
+    var i = 0;
+    while (i < s.byte_length) {
+        var b = s.byte_at(i);
+        if (b == 58) {                       // ':'
+            colons = colons + 1;
+        } else {
+            var hex = (b >= 48 and b <= 57)  // 0-9
+                   or (b >= 65 and b <= 70)  // A-F
+                   or (b >= 97 and b <= 102);// a-f
+            if (not hex) { return false; }
+        }
+        i = i + 1;
+    }
+    return colons >= 1 and colons <= 7;
+}
+
+function is_ip(s) {
+    return is_ipv4(s) or is_ipv6(s);
+}
+
+// lookup_or_self(host, cb) — short-circuit when `host` is already a literal
+// IP. Saves a DNS round-trip and works offline. cb fires with the SAME
+// (err, ip, family) shape as `lookup`. Note that the short-circuit calls
+// cb synchronously — wrap with timers.set if your caller depends on
+// always-async invocation.
+function lookup_or_self(host, cb) {
+    if (is_ipv4(host)) { cb(null, host, 4); return; }
+    if (is_ipv6(host)) { cb(null, host, 6); return; }
+    _dns.lookup(host, 0, cb);
+}

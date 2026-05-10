@@ -1,0 +1,40 @@
+// Embedded bnl stdlib — dns module. Sync IP-shape checks + lookup helpers.
+import "dns" as dns;
+
+print("--- is_ipv4 ---");
+print(dns.is_ipv4("127.0.0.1"));            // true
+print(dns.is_ipv4("0.0.0.0"));              // true
+print(dns.is_ipv4("255.255.255.255"));      // true
+print(dns.is_ipv4("256.0.0.1"));            // false: out of range
+print(dns.is_ipv4("1.2.3"));                // false: too few parts
+print(dns.is_ipv4("1.2.3.4.5"));            // false: too many parts
+print(dns.is_ipv4("1.2.3.x"));              // false: non-numeric
+print(dns.is_ipv4("a.b.c.d"));              // false
+print(dns.is_ipv4("example.com"));          // false
+
+print("--- is_ipv6 ---");
+print(dns.is_ipv6("::1"));                  // true
+print(dns.is_ipv6("fe80::1"));              // true
+print(dns.is_ipv6("2001:db8::1"));          // true
+print(dns.is_ipv6("127.0.0.1"));            // false
+print(dns.is_ipv6("example.com"));          // false
+
+print("--- is_ip ---");
+print(dns.is_ip("127.0.0.1"));              // true
+print(dns.is_ip("::1"));                    // true
+print(dns.is_ip("example.com"));            // false
+
+print("--- lookup_or_self (literal IP fast-path) ---");
+dns.lookup_or_self("127.0.0.1", function (err, ip, family) {
+    print("v4 self:", err, ip, family);
+
+    dns.lookup_or_self("::1", function (e2, ip2, fam2) {
+        print("v6 self:", e2, ip2, fam2);
+
+        // Real lookup path through net layer — IP literal still works because
+        // getaddrinfo passes it through unchanged.
+        dns.lookup("127.0.0.1", 4, function (e3, ip3, fam3) {
+            print("real lookup:", e3, ip3, fam3);
+        });
+    });
+});

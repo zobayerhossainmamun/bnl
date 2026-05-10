@@ -45,6 +45,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/tls.cpp
     stdlib/json.cpp
     stdlib/exec.cpp
+    stdlib/dns.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the

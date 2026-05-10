@@ -1,0 +1,11 @@
+--- lookup ---
+--- bad ip for reverse ---
+ok
+ip: 127.0.0.1
+family: 4
+--- lookup_all (v4) ---
+count: 1
+first ip: 127.0.0.1
+first family: 4
+--- reverse ---
+reverse fired: true

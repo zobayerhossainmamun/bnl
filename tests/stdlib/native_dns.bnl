@@ -1,0 +1,33 @@
+// Native dns primitive — uv_getaddrinfo + uv_getnameinfo. Imports "_dns"
+// directly because the public "dns" name belongs to lib/dns.bnl.
+//
+// IP-literal-only roundtrips so the test is offline / deterministic across
+// machines. (Reverse on 127.0.0.1 varies per host, so we only assert that
+// the callback fires with a string result.)
+import "_dns" as dns;
+
+print("--- lookup ---");
+dns.lookup("127.0.0.1", 0, function (err, ip, family) {
+    print("ip:",     ip);
+    print("family:", family);
+
+    print("--- lookup_all (v4) ---");
+    dns.lookup_all("127.0.0.1", 4, function (e2, addrs) {
+        print("count:",        addrs.length);
+        print("first ip:",     addrs[0].address);
+        print("first family:", addrs[0].family);
+
+        print("--- reverse ---");
+        dns.reverse("127.0.0.1", function (e3, host) {
+            print("reverse fired:", type(host) == "string");
+        });
+    });
+});
+
+print("--- bad ip for reverse ---");
+try {
+    dns.reverse("not-an-ip", function (e, h) { print("FAIL"); });
+    print("FAIL");
+} catch (e) {
+    print("ok");
+}

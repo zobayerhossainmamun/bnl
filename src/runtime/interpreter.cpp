@@ -91,6 +91,7 @@ Interpreter::Interpreter()
     register_tls   (*this);
     register_json  (*this);
     register_exec  (*this);
+    register_dns   (*this);
 }
 
 Interpreter::~Interpreter() {

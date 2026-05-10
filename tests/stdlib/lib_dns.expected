@@ -1,0 +1,24 @@
+--- is_ipv4 ---
+true
+true
+true
+false
+false
+false
+false
+false
+false
+--- is_ipv6 ---
+true
+true
+true
+false
+false
+--- is_ip ---
+true
+true
+false
+--- lookup_or_self (literal IP fast-path) ---
+v4 self: null 127.0.0.1 4
+v6 self: null ::1 6
+real lookup: null 127.0.0.1 4
