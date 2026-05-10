@@ -1,0 +1,3 @@
+// Drives the fixture project at ../_fixtures/proj_a/.
+// app.bnl is the entry; its bare-name imports must resolve via deps/.
+import "../_fixtures/proj_a/app.bnl" as app;

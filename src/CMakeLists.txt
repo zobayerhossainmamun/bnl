@@ -14,34 +14,40 @@ else()
 endif()
 
 add_library(bnl_core ${_BNL_CORE_TYPE}
-    lexer.cpp
-    parser.cpp
-    ast_printer.cpp
-    value.cpp
-    environment.cpp
-    interpreter/runtime.cpp
-    interpreter/exprs.cpp
-    interpreter/stmts.cpp
-    interpreter/builtins.cpp
-    module_loader.cpp
-    native_module.cpp
-    class_type.cpp
-    native/sys.cpp
-    native/io.cpp
-    native/timers.cpp
-    native/crypto.cpp
-    native/zlib_mod.cpp
-    native/httpp.cpp
-    native/net.cpp
-    native/tls.cpp
-    native/exec.cpp
-    native/json.cpp
+    # Lex / parse / AST printing.
+    frontend/lexer.cpp
+    frontend/parser.cpp
+    frontend/ast_printer.cpp
+
+    # Runtime: evaluator, value model, classes, environment, native module
+    # builder, module loader.
+    runtime/value.cpp
+    runtime/environment.cpp
+    runtime/class_type.cpp
+    runtime/native_module.cpp
+    runtime/module_loader.cpp
+    runtime/interpreter.cpp
+    runtime/exprs.cpp
+    runtime/stmts.cpp
+    runtime/globals.cpp
+
+    # Native (C++) implementations of `import "x"` modules.
+    stdlib/sys.cpp
+    stdlib/io.cpp
+    stdlib/timers.cpp
+    stdlib/crypto.cpp
+    stdlib/zlib.cpp
+    stdlib/httpp.cpp
+    stdlib/net.cpp
+    stdlib/tls.cpp
+    stdlib/exec.cpp
+    stdlib/json.cpp
 )
 
-# dynamic_library.cpp is only needed when FFI is enabled — and on Linux the
-# `dl` link is only needed in that mode too.
+# FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
+# `dl` link is gated the same way.
 if(BNL_ENABLE_FFI)
-    target_sources(bnl_core PRIVATE dynamic_library.cpp)
+    target_sources(bnl_core PRIVATE ffi/dynamic_library.cpp)
 endif()
 
 # Make sure the embedded-stdlib header is generated before any source compiles.
@@ -73,7 +79,7 @@ if(BNL_ENABLE_FFI)
     target_link_libraries(bnl_core PRIVATE ${CMAKE_DL_LIBS})  # dl on Linux
 endif()
 
-# tls.cpp pulls Windows root certs from the system store; needs crypt32.
+# stdlib/tls.cpp pulls Windows root certs from the system store; needs crypt32.
 if(WIN32)
     target_link_libraries(bnl_core PRIVATE crypt32)
 endif()
@@ -89,7 +95,7 @@ target_link_libraries(bnl
 
 target_include_directories(bnl
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}       # main.cpp uses internal lexer.h/parser.h/ast_printer.h
+        ${CMAKE_CURRENT_SOURCE_DIR}       # main.cpp pulls frontend/*.h via "frontend/lexer.h" etc.
 )
 
 set_target_properties(bnl PROPERTIES

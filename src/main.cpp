@@ -10,9 +10,9 @@
 #include "bnl/interpreter.h"
 #include "bnl/token.h"
 #include "bnl/version.h"
-#include "ast_printer.h"
-#include "lexer.h"
-#include "parser.h"
+#include "frontend/ast_printer.h"
+#include "frontend/lexer.h"
+#include "frontend/parser.h"
 
 #ifdef _WIN32
 #  define WIN32_LEAN_AND_MEAN
