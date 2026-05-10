@@ -1,13 +1,13 @@
 // Imports work identically with Bangla keywords (আমদানি = import, যেমন = as).
 
-আমদানি "prelude" যেমন প্র;
+আমদানি "path" যেমন প;
 আমদানি "../_imports/math.bnl" যেমন গণিত;
 
-দেখাও(প্র.greet("জগৎ"));
-দেখাও(প্র.অভিবাদন("পৃথিবী"));
+দেখাও(প.basename("/a/b/c.txt"));
+দেখাও(প.ফাইলের_নাম("/a/b/c.txt"));
 দেখাও(গণিত.add(2, 3));
 দেখাও(গণিত.যোগ(4, 5));
 
 // English keywords on the same modules — they're the same modules, same exports.
-import "prelude" as p;
-print(p.greet == প্র.greet);
+import "path" as p;
+print(p.basename == প.basename);

@@ -34,6 +34,7 @@ Interpreter::Interpreter()
     register_tls   (*this);
     register_exec  (*this);
     register_json  (*this);
+    register_sqlite(*this);
 }
 
 Interpreter::~Interpreter() {

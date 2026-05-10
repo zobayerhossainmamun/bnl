@@ -1,12 +1,13 @@
-// Bare name resolves to embedded stdlib (lib/prelude.bnl).
-import "prelude" as p;
+// Bare name resolves to embedded stdlib (lib/path.bnl).
+import "path" as p;
 
-print(p.greet("world"));
-print(p.repeat("ab", 3));
+print(p.basename("/a/b/c.txt"));
+print(p.dirname("/a/b/c.txt"));
+print(p.extname("/a/b/c.txt"));
 
-// Bilingual alias inside the stdlib module.
-print(p.অভিবাদন("বন্ধু"));
+// Bilingual alias inside the stdlib module — same function, second name.
+print(p.ফাইলের_নাম("/a/b/c.txt"));
 
 // Cache: importing under a different alias returns the same module instance.
-import "prelude" as q;
-print(q.greet == p.greet);
+import "path" as q;
+print(q.basename == p.basename);

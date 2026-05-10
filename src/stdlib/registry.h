@@ -16,5 +16,6 @@ void register_net   (Interpreter& interp);
 void register_tls   (Interpreter& interp);
 void register_exec  (Interpreter& interp);
 void register_json  (Interpreter& interp);
+void register_sqlite(Interpreter& interp);
 
 }  // namespace bnl

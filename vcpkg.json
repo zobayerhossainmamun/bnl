@@ -13,6 +13,7 @@
         "openssl",
         "zlib",
         "llhttp",
-        "nlohmann-json"
+        "nlohmann-json",
+        "sqlite3"
     ]
 }
