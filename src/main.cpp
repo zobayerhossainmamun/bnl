@@ -167,9 +167,10 @@ bool is_complete_input(const std::string& buf) {
     int depth = 0;
     for (std::size_t i = 0; i < buf.size(); ++i) {
         char c = buf[i];
-        if (c == '"') {
+        if (c == '"' || c == '\'') {
+            char quote = c;
             ++i;
-            while (i < buf.size() && buf[i] != '"') {
+            while (i < buf.size() && buf[i] != quote) {
                 if (buf[i] == '\\' && i + 1 < buf.size()) ++i;
                 ++i;
             }

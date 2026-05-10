@@ -19,11 +19,13 @@
 namespace bnl::interp_detail {
 
 // Decode a string-literal token's lexeme (strips the surrounding quotes and
-// resolves \n \t \r \\ \" \0 escapes). Used by LiteralExpr's String branch
-// and by ImportStmt for the import path.
+// resolves \n \t \r \\ \" \' \0 escapes). Used by LiteralExpr's String branch
+// and by ImportStmt for the import path. Accepts either "..." or '...' — the
+// pair must match.
 inline std::string decode_string_literal(const Token& tok) {
     auto sv = tok.lexeme;
-    if (sv.size() < 2 || sv.front() != '"' || sv.back() != '"') {
+    char quote = sv.size() >= 2 ? sv.front() : '\0';
+    if (sv.size() < 2 || (quote != '"' && quote != '\'') || sv.back() != quote) {
         throw RuntimeError(tok, "internal: malformed string literal");
     }
     std::string out;
@@ -41,6 +43,7 @@ inline std::string decode_string_literal(const Token& tok) {
             case 'r':  out += '\r'; break;
             case '\\': out += '\\'; break;
             case '"':  out += '"';  break;
+            case '\'': out += '\''; break;
             case '0':  out += '\0'; break;
             default:
                 throw RuntimeError(tok, "unknown escape '\\" + std::string(1, esc) + "'");

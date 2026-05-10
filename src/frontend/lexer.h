@@ -26,7 +26,7 @@ private:
 
     void scan_identifier_or_keyword();
     void scan_number();
-    void scan_string();
+    void scan_string(char quote);
 
     bool at_end() const { return cursor_ >= source_.size(); }
 

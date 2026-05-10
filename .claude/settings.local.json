@@ -65,7 +65,12 @@
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/add.bnl)",
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt1.bnl)",
       "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt2.bnl)",
-      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt3.bnl)"
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/rt3.bnl)",
+      "Bash(pwsh *)",
+      "Bash(ctest --output-on-failure)",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/squote.bnl)",
+      "Bash(echo \"print\\('oops\\);\")",
+      "Bash(\"D:/bnlang/new-v/bnl/build/windows/bin/bnl.exe\" /tmp/bad.bnl)"
     ]
   }
 }

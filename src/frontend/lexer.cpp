@@ -197,7 +197,8 @@ void Lexer::scan_token() {
                 return;
 
             case '"':
-                scan_string();
+            case '\'':
+                scan_string(c);
                 return;
 
             default:
@@ -270,9 +271,11 @@ void Lexer::scan_number() {
     emit(TokenType::Number);
 }
 
-void Lexer::scan_string() {
-    // The opening quote was already consumed by scan_token().
-    while (!at_end() && peek() != '"') {
+void Lexer::scan_string(char quote) {
+    // The opening quote was already consumed by scan_token(). The token's
+    // lexeme keeps that quote so decode_string_literal can verify the pair
+    // and pick the matching escape ('\'' inside '...' vs. '\"' inside "...").
+    while (!at_end() && peek() != quote) {
         char c = peek();
         if (c == '\n') {
             line_++;

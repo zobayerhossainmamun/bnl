@@ -14,6 +14,133 @@
 
 namespace bnl {
 
+namespace {
+
+// ---------- pretty-printer for `pretty()` and `dump()` ----------------------
+
+// Count UTF-8 codepoints. Used so truncation never splits a multi-byte char.
+std::size_t utf8_codepoint_count(const std::string& s) {
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < s.size(); ) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        if      (c < 0x80)             i += 1;
+        else if ((c & 0xE0) == 0xC0)   i += 2;
+        else if ((c & 0xF0) == 0xE0)   i += 3;
+        else if ((c & 0xF8) == 0xF0)   i += 4;
+        else                            i += 1;
+        ++n;
+    }
+    return n;
+}
+
+constexpr int kPrettyWrapAt = 60;   // inline up to this many chars; multi-line beyond
+
+// Format a Value pretty. Lists/maps are inline if they fit in kPrettyWrapAt
+// chars (single line), else multi-line with 4-space indent. All scalars use
+// to_repr() so strings show their quotes, distinguishing them from
+// identifiers when nested inside a collection.
+std::string format_pretty(const Value& v, int indent) {
+    if (v.is_list()) {
+        const auto& list = *v.as_list();
+        if (list.empty()) return "[]";
+
+        std::string single = "[";
+        for (std::size_t i = 0; i < list.size(); ++i) {
+            if (i) single += ", ";
+            single += format_pretty(list[i], 0);
+        }
+        single += ']';
+        if (single.size() <= static_cast<std::size_t>(kPrettyWrapAt)
+            && single.find('\n') == std::string::npos) {
+            return single;
+        }
+
+        std::string in (indent + 4, ' ');
+        std::string close(indent, ' ');
+        std::string out  = "[\n";
+        for (std::size_t i = 0; i < list.size(); ++i) {
+            out += in;
+            out += format_pretty(list[i], indent + 4);
+            if (i + 1 < list.size()) out += ',';
+            out += '\n';
+        }
+        out += close;
+        out += ']';
+        return out;
+    }
+
+    if (v.is_map()) {
+        const auto& m = *v.as_map();
+        if (m.empty()) return "{}";
+
+        std::string single = "{";
+        bool first = true;
+        for (const auto& [k, val] : m) {
+            if (!first) single += ", ";
+            single += k;
+            single += ": ";
+            single += format_pretty(val, 0);
+            first = false;
+        }
+        single += '}';
+        if (single.size() <= static_cast<std::size_t>(kPrettyWrapAt)
+            && single.find('\n') == std::string::npos) {
+            return single;
+        }
+
+        std::string in (indent + 4, ' ');
+        std::string close(indent, ' ');
+        std::string out  = "{\n";
+        std::size_t i = 0;
+        for (const auto& [k, val] : m) {
+            out += in;
+            out += k;
+            out += ": ";
+            out += format_pretty(val, indent + 4);
+            if (i + 1 < m.size()) out += ',';
+            out += '\n';
+            ++i;
+        }
+        out += close;
+        out += '}';
+        return out;
+    }
+
+    return v.to_repr();
+}
+
+// Truncate to `max` codepoints, appending "..." if anything was cut.
+// max == 0 means no limit.
+std::string truncate_codepoints(std::string s, std::size_t max) {
+    if (max == 0) return s;
+    std::size_t count = 0;
+    std::size_t i     = 0;
+    while (i < s.size() && count < max) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        std::size_t step = 1;
+        if      ((c & 0xE0) == 0xC0) step = 2;
+        else if ((c & 0xF0) == 0xE0) step = 3;
+        else if ((c & 0xF8) == 0xF0) step = 4;
+        i += step;
+        ++count;
+    }
+    if (i >= s.size()) return s;
+    return s.substr(0, i) + "...";
+}
+
+// Read BNL_PRINT_LIMIT once at startup. Default 100 codepoints; "0" disables.
+std::size_t default_print_limit() {
+    const char* env = std::getenv("BNL_PRINT_LIMIT");
+    if (!env || !*env) return 100;
+    char* end = nullptr;
+    long  n   = std::strtol(env, &end, 10);
+    if (end == env || n < 0) return 100;
+    return static_cast<std::size_t>(n);
+}
+
+}  // namespace
+
+
 void Interpreter::register_builtins() {
     using interp_detail::is_ascii_space;
 
@@ -107,6 +234,29 @@ void Interpreter::register_builtins() {
             }
         });
     globals_->define("try_call", Value{try_call_fn});
+
+    // pretty(x): pretty-formatted display string. Lists/maps are inline if
+    // short, multi-line indented otherwise. Strings show their quotes
+    // (distinguishing "x" from x as an identifier when nested). Truncates
+    // at BNL_PRINT_LIMIT codepoints (default 100) and appends "..." if cut.
+    // Use as `print(pretty(big));`. For full no-truncate output, use dump.
+    auto pretty_fn = std::make_shared<NativeFunction>(
+        "pretty", 1,
+        [limit = default_print_limit()](Interpreter&, std::vector<Value> args) -> Value {
+            std::string s = format_pretty(args[0], 0);
+            return Value{truncate_codepoints(std::move(s), limit)};
+        });
+    globals_->define("pretty", Value{pretty_fn});
+
+    // dump(x): same pretty format as `pretty()` but no truncation. Useful
+    // when you need to see ALL of a deep value during debugging.
+    auto dump_fn = std::make_shared<NativeFunction>(
+        "dump", 1,
+        [](Interpreter&, std::vector<Value> args) -> Value {
+            return Value{format_pretty(args[0], 0)};
+        });
+    globals_->define("dump", Value{dump_fn});
+    (void)utf8_codepoint_count;  // reserved for future use
 }
 
 }  // namespace bnl
