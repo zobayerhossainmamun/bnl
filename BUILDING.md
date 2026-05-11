@@ -328,7 +328,7 @@ cmake --build --preset windows-release
 
 # Then compile the installer
 & "C:\Program Files (x86)\NSIS\makensis.exe" /DARCH=x64 installer\windows\bnl_installer.nsi
-# Output: installer\windows\bnlang-windows-x64-v0.1.0-installer.exe
+# Output: installer\windows\bnlang-windows-x64-v1.0.0-installer.exe
 ```
 
 For the x86 installer, substitute the `windows-x86-release` preset and `/DARCH=x86`. The installer:

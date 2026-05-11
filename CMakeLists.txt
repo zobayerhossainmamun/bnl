@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(bnl
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Bangla programming language (Bnlang)"
     HOMEPAGE_URL "https://bnlang.dev"
     LANGUAGES CXX

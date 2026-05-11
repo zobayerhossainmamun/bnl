@@ -2,7 +2,7 @@
 Bnlang Runtime
 ===============================================================
 
-Version:   0.1.0
+Version:   1.0.0
 Publisher: Bnlang | Mamun
 Website:   https://bnlang.dev
 
@@ -41,7 +41,7 @@ Windows:
        bnl --version
 
 Linux:
-  1. Extract the archive (e.g., tar -xzf bnlang-v0.1.0-linux-x64.tar.gz).
+  1. Extract the archive (e.g., tar -xzf bnlang-v1.0.0-linux-x64.tar.gz).
   2. Move the 'bnl' binary somewhere on your PATH (e.g., /usr/local/bin).
      If FFI is enabled, place the accompanying libbnl_core.so next to it.
   3. Make it executable if necessary:

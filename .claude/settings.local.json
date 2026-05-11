@@ -122,7 +122,8 @@
       "Bash(C:/vcpkg/vcpkg search *)",
       "PowerShell(Get-Process *)",
       "Bash(cmake --build \"D:/bnlang/new-v/bnl/build/windows\" --target bnl)",
-      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\stdlib\\\\lib_async.bnl)"
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\stdlib\\\\lib_async.bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --version)"
     ]
   }
 }

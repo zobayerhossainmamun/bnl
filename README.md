@@ -6,7 +6,7 @@ A bilingual programming language and runtime — write the same program in **Ban
 - **Extensible**: drop `.dll` / `.so` / `.dylib` plugins into `deps/<name>/` and `import` them like any other module (`examples/plugin_native/mathx.cpp`).
 - **Self-contained binaries**: Release builds statically link all third-party deps and (on Linux) libstdc++/libgcc — users don't need to install a runtime.
 
-Status: **0.1.0**, pre-1.0. Source is currently private; binary distribution is free.
+Status: **1.0.0**. Source is currently private; binary distribution is free.
 
 ---
 
