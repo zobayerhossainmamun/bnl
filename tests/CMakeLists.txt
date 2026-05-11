@@ -56,7 +56,9 @@ add_bnl_test(native_zlib          stdlib)
 # ---------- embedded bnl stdlib (lib/*.bnl) -------------------------------
 add_bnl_test(lib_url              stdlib)
 add_bnl_test(lib_web              stdlib)
+add_bnl_test(lib_web_app          stdlib)
 add_bnl_test(lib_request          stdlib)
+add_bnl_test(lib_request_axios    stdlib)
 add_bnl_test(lib_web_https        stdlib)
 add_bnl_test(lib_exec             stdlib)
 add_bnl_test(lib_dns              stdlib)
@@ -74,6 +76,7 @@ add_bnl_test(lib_cli              stdlib)
 add_bnl_test(lib_uuid             stdlib)
 add_bnl_test(lib_csv              stdlib)
 add_bnl_test(lib_zlib             stdlib)
+add_bnl_test(lib_multipart        stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

@@ -1,7 +1,48 @@
-import "net"   as _net;
-import "tls"   as _tls;
-import "http"  as _http;
-import "url"   as _url;
+import "net"       as _net;
+import "tls"       as _tls;
+import "http"      as _http;
+import "url"       as _url;
+import "json"      as _json;
+import "io"        as _io;
+import "multipart" as _mp;
+
+// ============================================================================
+// HTTP client with an axios-style surface.
+//
+// Top-level convenience uses a shared default instance:
+//     request.get(url, cb)
+//     request.post(url, data, cb)    -- data auto-encoded (JSON for maps/lists,
+//                                       text/plain for strings)
+//     request.put(url, data, cb)
+//     request.patch(url, data, cb)
+//     request.delete(url, cb)
+//     request.head(url, cb)
+//     request.request(opts, cb)      -- universal escape hatch
+//     request.send(opts, cb)         -- legacy alias for request()
+//     request.post_form(url, fields, cb)
+//     request.upload(url, file_path, cb)
+//     request.upload_with(opts, cb)
+//     request.download(url, dest_path, cb)
+//
+// For per-app defaults / shared headers / interceptors:
+//     var api = request.create({base_url, headers, timeout?});
+//     api.before(function (config) { config.headers["X-..."] = "..."; });
+//     api.after (function (resp)   { ... });
+//     api.get("/users", cb);
+//
+// `opts` accepts (any subset of):
+//     url, method, base_url, params, headers, timeout,
+//     json | form | body | data,             -- pick one body shape
+//     tls                                    -- forwarded to tls.connect
+//
+// Callback shape:
+//     cb(err, resp)
+//   resp.status, resp.headers (lowercase keys), resp.body, resp.ok (2xx),
+//   resp.data (lazy auto-parse — JSON parsed when content-type matches).
+// ============================================================================
+
+
+// ---------------- private helpers ------------------------------------------
 
 function _has_header(h, name_lower) {
     for (var k of h.keys()) {
@@ -10,13 +51,85 @@ function _has_header(h, name_lower) {
     return false;
 }
 
-function _build_request_bytes(method, u, headers, body) {
-    if (not _has_header(headers, "host")) {
-        if ((u.scheme == "http"  and u.port == 80)
-         or (u.scheme == "https" and u.port == 443)) {
-            headers["Host"] = u.host;
+function _copy_map(src) {
+    var out = {};
+    if (src == null) { return out; }
+    for (var k of src.keys()) { out[k] = src[k]; }
+    return out;
+}
+
+// Merge defaults into opts (opts wins). Headers and params get a shallow merge.
+function _merge_config(defaults, opts) {
+    var cfg = _copy_map(defaults);
+    for (var k of opts.keys()) {
+        if (k == "headers" and cfg.headers != null) {
+            var merged_h = _copy_map(cfg.headers);
+            for (var hk of opts.headers.keys()) { merged_h[hk] = opts.headers[hk]; }
+            cfg.headers = merged_h;
+        } else if (k == "params" and cfg.params != null) {
+            var merged_p = _copy_map(cfg.params);
+            for (var pk of opts.params.keys()) { merged_p[pk] = opts.params[pk]; }
+            cfg.params = merged_p;
         } else {
-            headers["Host"] = u.host + ":" + str(u.port);
+            cfg[k] = opts[k];
+        }
+    }
+    if (cfg.headers == null) { cfg.headers = {}; }
+    return cfg;
+}
+
+// Resolve relative URL against base_url, append params as query string.
+function _resolve_url(config) {
+    var u = config.url;
+    if (config.base_url != null and u.byte_length > 0
+        and not (u.starts_with("http://") or u.starts_with("https://"))) {
+        var b = config.base_url;
+        if (b.ends_with("/") and u.starts_with("/")) { u = u.byte_slice(1); }
+        else if (not b.ends_with("/") and not u.starts_with("/")) { b = b + "/"; }
+        u = b + u;
+    }
+    if (config.params != null) {
+        var qs = _url.build_query(config.params);
+        if (qs.byte_length > 0) {
+            if (u.index_of("?") < 0) { u = u + "?" + qs; }
+            else                     { u = u + "&" + qs; }
+        }
+    }
+    return u;
+}
+
+// Encode the body based on which "shape" key is set in config.
+// Returns {body, content_type?}. Sets content_type only when we know it.
+function _encode_body(config) {
+    if (config.json != null) {
+        return { body: _json.stringify(config.json),
+                 content_type: "application/json; charset=utf-8" };
+    }
+    if (config.form != null) {
+        return { body: _url.build_query(config.form),
+                 content_type: "application/x-www-form-urlencoded" };
+    }
+    if (config.body != null) {
+        return { body: str(config.body), content_type: null };
+    }
+    if (config.data != null) {
+        if (type(config.data) == "string") {
+            return { body: config.data,
+                     content_type: "text/plain; charset=utf-8" };
+        }
+        return { body: _json.stringify(config.data),
+                 content_type: "application/json; charset=utf-8" };
+    }
+    return { body: "", content_type: null };
+}
+
+function _build_request_bytes(method, parsed_url, headers, body) {
+    if (not _has_header(headers, "host")) {
+        if ((parsed_url.scheme == "http"  and parsed_url.port == 80)
+         or (parsed_url.scheme == "https" and parsed_url.port == 443)) {
+            headers["Host"] = parsed_url.host;
+        } else {
+            headers["Host"] = parsed_url.host + ":" + str(parsed_url.port);
         }
     }
     if (body.byte_length > 0 and not _has_header(headers, "content-length")) {
@@ -25,9 +138,12 @@ function _build_request_bytes(method, u, headers, body) {
     if (not _has_header(headers, "connection")) {
         headers["Connection"] = "close";
     }
+    if (not _has_header(headers, "user-agent")) {
+        headers["User-Agent"] = "bnl-request";
+    }
 
-    var path = u.path;
-    if (u.query.byte_length > 0) { path = path + "?" + u.query; }
+    var path = parsed_url.path;
+    if (parsed_url.query.byte_length > 0) { path = path + "?" + parsed_url.query; }
 
     var out = method + " " + path + " HTTP/1.1\r\n";
     for (var k of headers.keys()) {
@@ -37,54 +153,362 @@ function _build_request_bytes(method, u, headers, body) {
     return out;
 }
 
-function _send_and_collect(conn, req_bytes, cb) {
-    var buf = "";
-    var done = false;
-    conn.on_data(function (d) { buf = buf + d; });
-    conn.on_end(function () {
-        if (done) { return; }
-        done = true;
-        cb(null, _http.parse_response(buf, true));
-    });
-    conn.write(req_bytes);
-}
-
-function send(opts, cb) {
-    var u = _url.parse(opts.url);
-
-    var method = opts.method;
-    if (method == null) { method = "GET"; }
-    var headers = opts.headers;
-    if (headers == null) { headers = {}; }
-    var body = opts.body;
-    if (body == null) { body = ""; }
-
-    var req_bytes = _build_request_bytes(method, u, headers, body);
-
-    _net.resolve(u.host, function (rerr, ip) {
-        if (rerr != null) { cb("resolve: " + rerr, null); return; }
-
-        if (u.scheme == "https") {
-            var topts = opts.tls;
+// Connect (TCP or TLS) — calls done(err, conn).
+function _connect(parsed_url, tls_opts, done) {
+    _net.resolve(parsed_url.host, function (rerr, ip) {
+        if (rerr != null) { done("resolve: " + rerr, null); return; }
+        if (parsed_url.scheme == "https") {
+            var topts = tls_opts;
             if (topts == null) { topts = {}; }
-            _tls.connect(u.host, ip, u.port, function (cerr, conn) {
-                if (cerr != null) { cb("tls.connect: " + cerr, null); return; }
-                _send_and_collect(conn, req_bytes, cb);
-            }, topts);
+            _tls.connect(parsed_url.host, ip, parsed_url.port,
+                function (cerr, conn) {
+                    if (cerr != null) { done("tls.connect: " + cerr, null); return; }
+                    done(null, conn);
+                }, topts);
         } else {
-            _net.tcp_connect(ip, u.port, function (cerr, conn) {
-                if (cerr != null) { cb("tcp_connect: " + cerr, null); return; }
-                _send_and_collect(conn, req_bytes, cb);
+            _net.tcp_connect(ip, parsed_url.port, function (cerr, conn) {
+                if (cerr != null) { done("tcp_connect: " + cerr, null); return; }
+                done(null, conn);
             });
         }
     });
 }
 
-function get(url, cb) {
-    send({ url: url, method: "GET" }, cb);
+// Enrich a raw http.parse_response result with axios-ish conveniences.
+function _enrich_response(parsed) {
+    parsed.ok = parsed.status >= 200 and parsed.status < 300;
+    var ct = parsed.headers["content-type"];
+    if (ct != null and ct.index_of("application/json") >= 0
+        and parsed.body.byte_length > 0) {
+        parsed.data = _json.parse(parsed.body);
+    } else {
+        parsed.data = parsed.body;
+    }
+    parsed.json = function () { return _json.parse(parsed.body); };
+    return parsed;
 }
 
-function post(url, body, cb) {
-    send({ url: url, method: "POST", body: body,
-           headers: { "Content-Type": "application/octet-stream" } }, cb);
+// Send the request bytes, collect the response into memory, then enrich + cb.
+function _send_buffered(conn, req_bytes, cb) {
+    var buf  = "";
+    var done = false;
+    conn.on_data(function (d) { buf = buf + d; });
+    conn.on_end(function () {
+        if (done) { return; }
+        done = true;
+        var parsed = _http.parse_response(buf, true);
+        cb(null, _enrich_response(parsed));
+    });
+    conn.write(req_bytes);
+}
+
+// Drive one request through the full pipeline.
+function _do_request(config, before_fns, after_fns, cb) {
+    // before interceptors
+    var i = 0;
+    while (i < before_fns.length) {
+        var maybe = before_fns[i](config);
+        if (maybe != null) { config = maybe; }
+        i = i + 1;
+    }
+
+    var method = config.method;
+    if (method == null) { method = "GET"; }
+    if (config.headers == null) { config.headers = {}; }
+
+    var encoded = _encode_body(config);
+    if (encoded.content_type != null
+        and not _has_header(config.headers, "content-type")) {
+        config.headers["Content-Type"] = encoded.content_type;
+    }
+
+    var final_url = _resolve_url(config);
+    var parsed_u  = _url.parse(final_url);
+    var req_bytes = _build_request_bytes(method, parsed_u,
+                                         config.headers, encoded.body);
+
+    _connect(parsed_u, config.tls, function (cerr, conn) {
+        if (cerr != null) { cb(cerr, null); return; }
+        _send_buffered(conn, req_bytes, function (err, resp) {
+            if (err == null and resp != null) {
+                var j = 0;
+                while (j < after_fns.length) {
+                    var maybe2 = after_fns[j](resp);
+                    if (maybe2 != null) { resp = maybe2; }
+                    j = j + 1;
+                }
+            }
+            cb(err, resp);
+        });
+    });
+}
+
+// ---------------- create() — instance factory ------------------------------
+
+function create(defaults) {
+    if (defaults == null) { defaults = {}; }
+    var inst = {};
+    var before_fns = [];
+    var after_fns  = [];
+
+    inst.defaults = defaults;
+    inst.before   = function (fn) { before_fns.push(fn); return inst; };
+    inst.after    = function (fn) { after_fns.push(fn);  return inst; };
+
+    inst.request = function (opts, cb) {
+        var cfg = _merge_config(defaults, opts);
+        _do_request(cfg, before_fns, after_fns, cb);
+    };
+
+    inst.get   = function (url, cb)        { inst.request({url: url, method: "GET"},    cb); };
+    inst.head  = function (url, cb)        { inst.request({url: url, method: "HEAD"},   cb); };
+    inst.delete = function (url, cb)       { inst.request({url: url, method: "DELETE"}, cb); };
+    inst.post  = function (url, data, cb)  { inst.request({url: url, method: "POST",  data: data}, cb); };
+    inst.put   = function (url, data, cb)  { inst.request({url: url, method: "PUT",   data: data}, cb); };
+    inst.patch = function (url, data, cb)  { inst.request({url: url, method: "PATCH", data: data}, cb); };
+
+    inst.post_form = function (url, fields, cb) {
+        inst.request({url: url, method: "POST", form: fields}, cb);
+    };
+
+    return inst;
+}
+
+// ---------------- shared default instance + top-level helpers --------------
+
+var _default = create({});
+
+function get(url, cb)         { _default.get(url, cb); }
+function head(url, cb)        { _default.head(url, cb); }
+function delete(url, cb)      { _default.delete(url, cb); }
+function post(url, data, cb)  { _default.post(url, data, cb); }
+function put(url, data, cb)   { _default.put(url, data, cb); }
+function patch(url, data, cb) { _default.patch(url, data, cb); }
+function request(opts, cb)    { _default.request(opts, cb); }
+function send(opts, cb)       { _default.request(opts, cb); }   // legacy alias
+
+function post_form(url, fields, cb) { _default.post_form(url, fields, cb); }
+
+// Top-level interceptor registration on the default instance.
+function before(fn) { _default.before(fn); }
+function after(fn)  { _default.after(fn); }
+
+// ---------------- download — stream response body to a file ----------------
+
+function download(url, dest, cb) {
+    download_with({ url: url, dest: dest }, cb);
+}
+
+// download_with(opts, cb) — opts: {url, dest, headers?, on_progress?, tls?}
+// on_progress(received_bytes) fires after each chunk.
+function download_with(opts, cb) {
+    var cfg = _merge_config(_default.defaults, opts);
+    if (cfg.headers == null) { cfg.headers = {}; }
+    if (not _has_header(cfg.headers, "user-agent")) {
+        cfg.headers["User-Agent"] = "bnl-request";
+    }
+    if (not _has_header(cfg.headers, "connection")) {
+        cfg.headers["Connection"] = "close";
+    }
+    var method   = "GET";
+    var final_u  = _resolve_url(cfg);
+    var parsed_u = _url.parse(final_u);
+    if (not _has_header(cfg.headers, "host")) {
+        cfg.headers["Host"] = parsed_u.host;
+    }
+
+    var path = parsed_u.path;
+    if (parsed_u.query.byte_length > 0) { path = path + "?" + parsed_u.query; }
+    var req_bytes = method + " " + path + " HTTP/1.1\r\n";
+    for (var k of cfg.headers.keys()) {
+        req_bytes = req_bytes + k + ": " + str(cfg.headers[k]) + "\r\n";
+    }
+    req_bytes = req_bytes + "\r\n";
+
+    _connect(parsed_u, cfg.tls, function (cerr, conn) {
+        if (cerr != null) { cb(cerr, null); return; }
+
+        var headers_buf = "";
+        var headers_done = false;
+        var sink = null;
+        var bytes_in_body = 0;
+        var resp_meta = null;
+
+        conn.on_data(function (chunk) {
+            if (not headers_done) {
+                headers_buf = headers_buf + chunk;
+                var sep = headers_buf.index_of("\r\n\r\n");
+                if (sep < 0) { return; }
+
+                var head_only = headers_buf.byte_slice(0, sep + 4);
+                resp_meta = _http.parse_response(head_only, false);
+                headers_done = true;
+                sink = _io.open_write(opts.dest);
+                var leftover = headers_buf.byte_slice(sep + 4);
+                if (leftover.byte_length > 0) {
+                    bytes_in_body = bytes_in_body + leftover.byte_length;
+                    sink.write(leftover, function (err) {
+                        if (opts.on_progress != null) { opts.on_progress(bytes_in_body); }
+                    });
+                }
+            } else {
+                bytes_in_body = bytes_in_body + chunk.byte_length;
+                sink.write(chunk, function (err) {
+                    if (opts.on_progress != null) { opts.on_progress(bytes_in_body); }
+                });
+            }
+        });
+
+        conn.on_end(function () {
+            if (sink != null) { sink.close(); }
+            if (resp_meta == null) {
+                cb("download: response headers never arrived", null);
+                return;
+            }
+            resp_meta.dest          = opts.dest;
+            resp_meta.bytes_written = bytes_in_body;
+            resp_meta.ok            = resp_meta.status >= 200 and resp_meta.status < 300;
+            cb(null, resp_meta);
+        });
+
+        conn.write(req_bytes);
+    });
+}
+
+// ---------------- upload — streaming multipart from a file -----------------
+
+// upload(url, file_path, cb) — single-file upload under field name "file".
+function upload(url, file_path, cb) {
+    upload_with({ url: url, file: file_path }, cb);
+}
+
+// upload_with(opts, cb)
+// opts:
+//   url, method? (default POST), headers?, tls?
+//   file:     path string OR {path, name?, filename?, content_type?}
+//   fields:   {k: v, ...} extra form fields
+function upload_with(opts, cb) {
+    var spec = _normalize_file_spec(opts.file);
+    var fields = opts.fields;
+    if (fields == null) { fields = {}; }
+
+    var boundary = _mp.generate_boundary();
+    var preamble = "";
+    for (var fk of fields.keys()) {
+        preamble = preamble + _mp.build_field_part(boundary, fk, fields[fk]);
+    }
+    preamble = preamble + _mp.build_file_preamble(boundary,
+                                                  spec.name, spec.filename,
+                                                  spec.content_type);
+    var epilogue = _mp.build_epilogue(boundary);
+
+    var st = _io.stat(spec.path);
+    var content_length = preamble.byte_length + st.bytes + epilogue.byte_length;
+
+    var cfg = _merge_config(_default.defaults, opts);
+    if (cfg.headers == null) { cfg.headers = {}; }
+    cfg.headers["Content-Type"]   = "multipart/form-data; boundary=" + boundary;
+    cfg.headers["Content-Length"] = str(content_length);
+    if (not _has_header(cfg.headers, "user-agent")) {
+        cfg.headers["User-Agent"] = "bnl-request";
+    }
+    if (not _has_header(cfg.headers, "connection")) {
+        cfg.headers["Connection"] = "close";
+    }
+
+    var method   = opts.method;
+    if (method == null) { method = "POST"; }
+    var final_u  = _resolve_url(cfg);
+    var parsed_u = _url.parse(final_u);
+    if (not _has_header(cfg.headers, "host")) {
+        cfg.headers["Host"] = parsed_u.host;
+    }
+
+    var path = parsed_u.path;
+    if (parsed_u.query.byte_length > 0) { path = path + "?" + parsed_u.query; }
+    var head = method + " " + path + " HTTP/1.1\r\n";
+    for (var k of cfg.headers.keys()) {
+        head = head + k + ": " + str(cfg.headers[k]) + "\r\n";
+    }
+    head = head + "\r\n";
+
+    _connect(parsed_u, cfg.tls, function (cerr, conn) {
+        if (cerr != null) { cb(cerr, null); return; }
+
+        // Collect response body in parallel — server may start responding
+        // before we finish uploading, so we install handlers up front.
+        var resp_buf = "";
+        var ended = false;
+        var fired = false;
+        conn.on_data(function (d) { resp_buf = resp_buf + d; });
+        conn.on_end(function () {
+            ended = true;
+            if (fired) { return; }
+            fired = true;
+            cb(null, _enrich_response(_http.parse_response(resp_buf, true)));
+        });
+
+        conn.write(head, function (e1) {
+            if (e1 != null) { cb("write head: " + e1, null); return; }
+            conn.write(preamble, function (e2) {
+                if (e2 != null) { cb("write preamble: " + e2, null); return; }
+                _pump_file(conn, spec.path, function (perr) {
+                    if (perr != null) { cb(perr, null); return; }
+                    conn.write(epilogue, function (e3) {
+                        if (e3 != null) { cb("write epilogue: " + e3, null); return; }
+                        // response will arrive via on_data/on_end above.
+                    });
+                });
+            });
+        });
+    });
+}
+
+function _normalize_file_spec(file) {
+    if (type(file) == "string") {
+        return {
+            path:         file,
+            name:         "file",
+            filename:     _basename(file),
+            content_type: "application/octet-stream"
+        };
+    }
+    var spec = {
+        path:         file.path,
+        name:         "file",
+        filename:     _basename(file.path),
+        content_type: "application/octet-stream"
+    };
+    if (file.name != null)         { spec.name = file.name; }
+    if (file.filename != null)     { spec.filename = file.filename; }
+    if (file.content_type != null) { spec.content_type = file.content_type; }
+    return spec;
+}
+
+function _basename(p) {
+    var idx = p.byte_length - 1;
+    while (idx >= 0) {
+        var b = p.byte_at(idx);
+        if (b == 47 or b == 92) { return p.byte_slice(idx + 1); }
+        idx = idx - 1;
+    }
+    return p;
+}
+
+// Pull file in 64 KiB chunks, write each, wait for ack before the next read.
+function _pump_file(conn, path, done) {
+    var src = _io.open_read(path);
+    var pump = function () {};
+    pump = function () {
+        src.read(65536, function (rerr, chunk) {
+            if (rerr != null) { src.close(); done("read: " + rerr); return; }
+            // EOF: chunk is null (matches the io.open_read contract).
+            if (chunk == null) { src.close(); done(null); return; }
+            conn.write(chunk, function (werr) {
+                if (werr != null) { src.close(); done("write: " + werr); return; }
+                pump();
+            });
+        });
+    };
+    pump();
 }

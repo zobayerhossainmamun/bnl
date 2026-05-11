@@ -1,41 +1,84 @@
-import "net"   as _net;
-import "tls"   as _tls;
-import "http"  as _http;
-import "url"   as _url;
-import "json"  as _json;
+import "net"       as _net;
+import "tls"       as _tls;
+import "http"      as _http;
+import "url"       as _url;
+import "json"      as _json;
+import "io"        as _io;
+import "multipart" as _mp;
 
-function text(s) {
-    return { status: 200,
-             headers: { "Content-Type": "text/plain; charset=utf-8" },
-             body: s };
+// ============================================================================
+// HTTP server.
+//
+// Python-flavored high-level API (recommended):
+//
+//     var app = web.app();
+//     app.get("/users/:id", function (req) { return {id: req.params.id}; });
+//     app.post("/users",    function (req) { return [201, req.json()]; });
+//     app.before(function (req) { ... });
+//     app.after (function (resp, req) { resp.headers["X-Foo"] = "bar"; return resp; });
+//     app.static("/assets", "./public");
+//     app.on_404(function (req) { return [404, "nope"]; });
+//     app.on_error(function (req, err) { return [500, str(err)]; });
+//     app.listen(3000);                       // or app.listen({port, tls})
+//
+// Handlers can return whatever — the framework coerces to a real response:
+//
+//     "hi"                  → 200 text/plain
+//     {users: [...]}        → 200 application/json
+//     [{...}, {...}]        → 200 application/json (list of maps)
+//     [201, body]           → status + body (body re-coerced)
+//     [201, body, {h: ...}] → status + body + extra headers
+//     {status, body, ...}   → raw response (as-is)
+//     null                  → 204 No Content
+//     web.file("path")      → streamed from disk
+//
+// Request shorthand (populated by the framework):
+//     req.path, req.query (map), req.params (path params), req.method, req.headers
+//     req.body, req.json(), req.form()
+//     req.file(name), req.files(), req.fields()
+//
+// Low-level API (still here, used internally by app.listen + back-compat):
+//     web.serve({port, tls?}, function (req) { return {status, body, headers?}; })
+// ============================================================================
+
+
+// ---------------- response builders (also usable from handlers) -----------
+
+function text(s)     {
+    return { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: s };
 }
 
-function html(s) {
-    return { status: 200,
-             headers: { "Content-Type": "text/html; charset=utf-8" },
-             body: s };
+function html(s)     {
+    return { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" }, body: s };
 }
 
 function json(value) {
-    return { status: 200,
-             headers: { "Content-Type": "application/json; charset=utf-8" },
+    return { status: 200, headers: { "Content-Type": "application/json; charset=utf-8" },
              body: _json.stringify(value) };
 }
 
-// ---------- request helpers (exported) -------------------------------------
-
-// Parse req.body as application/x-www-form-urlencoded → {k: v, ...}.
-function parse_form(req) {
-    return _url.parse_query(req.body);
+function redirect(url) {
+    return { status: 302, headers: { "Location": url }, body: "" };
 }
 
-// Parse req.body as JSON. Returns null on malformed input (json.parse
-// contract — an error message is also written to stderr by the native).
-function parse_json(req) {
-    return _json.parse(req.body);
+function error(status, msg) {
+    if (msg == null) { msg = _status_text(status); }
+    return { status: status,
+             headers: { "Content-Type": "text/plain; charset=utf-8" },
+             body: msg };
 }
 
-// ---------- internals -------------------------------------------------------
+// web.file(path) — return a streaming response that reads from disk.
+function file(path) {
+    return { _kind: "file", path: path };
+}
+
+// ---------------- legacy request-body helpers ------------------------------
+
+function parse_form(req) { return _url.parse_query(req.body); }
+function parse_json(req) { return _json.parse(req.body); }
+
+// ---------------- HTTP status text -----------------------------------------
 
 function _status_text(s) {
     if (s == 200) { return "OK"; }
@@ -55,6 +98,8 @@ function _status_text(s) {
     return "OK";
 }
 
+// ---------------- header helpers -------------------------------------------
+
 function _has_header(h, name_lower) {
     for (var k of h.keys()) {
         if (k.to_lower() == name_lower) { return true; }
@@ -62,7 +107,102 @@ function _has_header(h, name_lower) {
     return false;
 }
 
+function _content_type_for(path) {
+    var ext = "";
+    var i = path.byte_length - 1;
+    while (i >= 0) {
+        var b = path.byte_at(i);
+        if (b == 46) { ext = path.byte_slice(i).to_lower(); }
+        if (b == 46 or b == 47 or b == 92) { i = -1; }
+        i = i - 1;
+    }
+    if (ext == ".html" or ext == ".htm") { return "text/html; charset=utf-8"; }
+    if (ext == ".css")                    { return "text/css; charset=utf-8"; }
+    if (ext == ".js")                     { return "application/javascript"; }
+    if (ext == ".json")                   { return "application/json"; }
+    if (ext == ".txt" or ext == ".md")    { return "text/plain; charset=utf-8"; }
+    if (ext == ".png")                    { return "image/png"; }
+    if (ext == ".jpg" or ext == ".jpeg")  { return "image/jpeg"; }
+    if (ext == ".gif")                    { return "image/gif"; }
+    if (ext == ".svg")                    { return "image/svg+xml"; }
+    if (ext == ".ico")                    { return "image/x-icon"; }
+    if (ext == ".pdf")                    { return "application/pdf"; }
+    if (ext == ".zip")                    { return "application/zip"; }
+    if (ext == ".wasm")                   { return "application/wasm"; }
+    return "application/octet-stream";
+}
+
+// ---------------- response coercion ---------------------------------------
+
+// _coerce(value) → canonical { status, headers, body, _kind? } shape that
+// _send_response understands. Recursive: lists with [status, body] re-coerce
+// the body part to handle [201, {x: 1}] (status + auto-JSON).
+function _coerce(value) {
+    if (value == null) {
+        return { status: 204, headers: {}, body: "" };
+    }
+    var t = type(value);
+    if (t == "string") {
+        return { status: 200,
+                 headers: { "Content-Type": "text/plain; charset=utf-8" },
+                 body: value };
+    }
+    if (t == "number" or t == "bool") {
+        return { status: 200,
+                 headers: { "Content-Type": "text/plain; charset=utf-8" },
+                 body: str(value) };
+    }
+    if (t == "list") {
+        if (value.length >= 1 and value.length <= 3
+            and type(value[0]) == "number"
+            and value[0] >= 100 and value[0] <= 599) {
+            var r = { status: value[0], headers: {}, body: "" };
+            if (value.length >= 2) {
+                var inner = _coerce(value[1]);
+                r.body = inner.body;
+                for (var k of inner.headers.keys()) { r.headers[k] = inner.headers[k]; }
+                if (inner._kind != null) { r._kind = inner._kind; r.path = inner.path; }
+            }
+            if (value.length >= 3) {
+                for (var hk of value[2].keys()) { r.headers[hk] = value[2][hk]; }
+            }
+            return r;
+        }
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: _json.stringify(value) };
+    }
+    if (t == "map") {
+        if (value._kind == "file") {
+            // Ensure .headers exists so after hooks can always mutate it.
+            if (value.headers == null) { value.headers = {}; }
+            return value;
+        }
+        if (value.status != null and (value.body != null or value.headers != null)) {
+            var raw = { status: value.status, body: value.body, headers: value.headers };
+            if (raw.body == null)    { raw.body = ""; }
+            if (raw.headers == null) { raw.headers = {}; }
+            return raw;
+        }
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: _json.stringify(value) };
+    }
+    return { status: 200,
+             headers: { "Content-Type": "text/plain; charset=utf-8" },
+             body: str(value) };
+}
+
+// ---------------- response sender ------------------------------------------
+
+// _send_response — takes the canonical shape from _coerce (or the raw shape
+// used by web.serve callers) and writes it to the conn. Handles three
+// flavors: buffered body, streamed file, and the no-body 204 case.
 function _send_response(conn, resp) {
+    if (resp._kind == "file") {
+        _send_file(conn, resp);
+        return;
+    }
     var status = resp.status;
     if (status == null) { status = 200; }
     var headers = resp.headers;
@@ -70,7 +210,7 @@ function _send_response(conn, resp) {
     var body = resp.body;
     if (body == null) { body = ""; }
 
-    if (not _has_header(headers, "content-type")) {
+    if (status != 204 and not _has_header(headers, "content-type")) {
         headers["Content-Type"] = "text/plain; charset=utf-8";
     }
     if (not _has_header(headers, "content-length")) {
@@ -86,13 +226,69 @@ function _send_response(conn, resp) {
     }
     out = out + "\r\n" + body;
 
-    conn.write(out, function (err) {
-        conn.close();
+    conn.write(out, function (err) { conn.close(); });
+}
+
+// Stream a file from disk to the connection. Headers go first (with
+// Content-Length from io.stat), then the file body in 64 KiB chunks with
+// backpressure via conn.write's callback.
+function _send_file(conn, resp) {
+    var path = resp.path;
+    if (not _io.exists(path)) {
+        _send_response(conn, error(404));
+        return;
+    }
+    var st = _io.stat(path);
+    if (st.is_dir) {
+        _send_response(conn, error(403, "Forbidden"));
+        return;
+    }
+
+    var headers = resp.headers;
+    if (headers == null) { headers = {}; }
+    if (not _has_header(headers, "content-type")) {
+        headers["Content-Type"] = _content_type_for(path);
+    }
+    headers["Content-Length"] = str(st.bytes);
+    if (not _has_header(headers, "connection")) {
+        headers["Connection"] = "close";
+    }
+
+    var status = resp.status;
+    if (status == null) { status = 200; }
+
+    var head = "HTTP/1.1 " + str(status) + " " + _status_text(status) + "\r\n";
+    for (var k of headers.keys()) {
+        head = head + k + ": " + str(headers[k]) + "\r\n";
+    }
+    head = head + "\r\n";
+
+    conn.write(head, function (err) {
+        if (err != null) { conn.close(); return; }
+        if (st.bytes == 0) { conn.close(); return; }
+        var src = _io.open_read(path);
+        var pump = function () {};
+        pump = function () {
+            src.read(65536, function (rerr, chunk) {
+                // io.open_read signals EOF with chunk = null.
+                if (rerr != null or chunk == null) {
+                    src.close();
+                    conn.close();
+                    return;
+                }
+                conn.write(chunk, function (werr) {
+                    if (werr != null) { src.close(); conn.close(); return; }
+                    pump();
+                });
+            });
+        };
+        pump();
     });
 }
 
+// ---------------- request enrichment ---------------------------------------
+
 function _enrich(parsed, conn) {
-    // parsed already has {method, url, version, headers, body, complete, consumed}
     var qmark = parsed.url.index_of("?");
     if (qmark >= 0) {
         parsed.path  = parsed.url.byte_slice(0, qmark);
@@ -105,13 +301,71 @@ function _enrich(parsed, conn) {
     parsed.respond = function (r) {
         if (done) { return; }
         done = true;
-        _send_response(conn, r);
+        _send_response(conn, _coerce(r));
     };
     return parsed;
 }
 
-// One handler call per connection. v1 closes after a single response — no
-// keep-alive yet (the response forces Connection: close).
+// Add the high-level conveniences (json/form/file/files/fields/params) to
+// the already-enriched req. Called only from app dispatch — low-level
+// web.serve handlers don't get these so they don't pay the cost.
+function _enrich_for_app(req, params) {
+    req.params = params;
+    req.json   = function () { return _json.parse(req.body); };
+    req.form   = function () { return _url.parse_query(req.body); };
+    req.file   = function (name) {
+        var parts = _parse_multipart_cached(req);
+        var i = 0;
+        while (i < parts.length) {
+            if (parts[i].name == name and parts[i].filename != null) { return parts[i]; }
+            i = i + 1;
+        }
+        return null;
+    };
+    req.files = function () {
+        var parts = _parse_multipart_cached(req);
+        var out = [];
+        var i = 0;
+        while (i < parts.length) {
+            if (parts[i].filename != null) { out.push(parts[i]); }
+            i = i + 1;
+        }
+        return out;
+    };
+    req.fields = function () {
+        var parts = _parse_multipart_cached(req);
+        var out = {};
+        var i = 0;
+        while (i < parts.length) {
+            if (parts[i].filename == null) { out[parts[i].name] = parts[i].body; }
+            i = i + 1;
+        }
+        return out;
+    };
+    return req;
+}
+
+function _parse_multipart_cached(req) {
+    if (req._mp_cache != null) { return req._mp_cache; }
+    var ct = req.headers["content-type"];
+    if (ct == null) { req._mp_cache = []; return req._mp_cache; }
+    var bidx = ct.index_of("boundary=");
+    if (bidx < 0)  { req._mp_cache = []; return req._mp_cache; }
+    var boundary = ct.byte_slice(bidx + 9).trim();
+    // Strip trailing `;param` or quotes
+    var semi = boundary.index_of(";");
+    if (semi >= 0) { boundary = boundary.byte_slice(0, semi).trim(); }
+    if (boundary.byte_length >= 2
+        and boundary.byte_at(0) == 34
+        and boundary.byte_at(boundary.byte_length - 1) == 34) {
+        boundary = boundary.byte_slice(1, boundary.byte_length - 1);
+    }
+    req._mp_cache = _mp.decode(req.body, boundary);
+    return req._mp_cache;
+}
+
+// ---------------- core connection handler ---------------------------------
+
 function _handle_connection(conn, handler) {
     var buf = "";
     var dispatched = false;
@@ -128,21 +382,18 @@ function _handle_connection(conn, handler) {
         try {
             resp = handler(req);
         } catch (e) {
-            print("[web] handler error:", e);
             resp = { status: 500, body: "Internal Server Error" };
         }
-        if (resp != null) { _send_response(conn, resp); }
-        // null → handler will call req.respond(resp) asynchronously.
+        if (resp != null) { _send_response(conn, _coerce(resp)); }
     });
     conn.on_end(function () { conn.close(); });
 }
 
-// ---------- exported entry point -------------------------------------------
+// ---------------- low-level serve (back-compat) ---------------------------
 
 function serve(opts, handler) {
     var port = opts.port;
     if (port == null) { port = 0; }
-
     if (opts.tls != null) {
         return _tls.listen(port, opts.tls, function (conn) {
             _handle_connection(conn, handler);
@@ -151,4 +402,193 @@ function serve(opts, handler) {
     return _net.tcp_listen(port, function (conn) {
         _handle_connection(conn, handler);
     });
+}
+
+// ---------------- path routing ---------------------------------------------
+
+function _split_path(p) {
+    var raw = p.split("/");
+    var out = [];
+    var i = 0;
+    while (i < raw.length) {
+        if (raw[i].byte_length > 0) { out.push(raw[i]); }
+        i = i + 1;
+    }
+    return out;
+}
+
+function _compile_pattern(pattern) {
+    var segs = _split_path(pattern);
+    var wild = false;
+    if (segs.length > 0 and segs[segs.length - 1] == "*") {
+        wild = true;
+        segs.pop();
+    }
+    return { segs: segs, wild: wild };
+}
+
+function _match_pattern(pattern, req_segs) {
+    var p = pattern.segs;
+    var params = {};
+    if (pattern.wild) {
+        if (req_segs.length < p.length) { return null; }
+        var i = 0;
+        while (i < p.length) {
+            if (p[i].starts_with(":")) {
+                params[p[i].byte_slice(1)] = req_segs[i];
+            } else if (p[i] != req_segs[i]) {
+                return null;
+            }
+            i = i + 1;
+        }
+        var tail = "";
+        while (i < req_segs.length) {
+            if (tail.byte_length > 0) { tail = tail + "/"; }
+            tail = tail + req_segs[i];
+            i = i + 1;
+        }
+        params._wild = tail;
+        return params;
+    }
+    if (req_segs.length != p.length) { return null; }
+    var j = 0;
+    while (j < p.length) {
+        if (p[j].starts_with(":")) {
+            params[p[j].byte_slice(1)] = req_segs[j];
+        } else if (p[j] != req_segs[j]) {
+            return null;
+        }
+        j = j + 1;
+    }
+    return params;
+}
+
+// ---------------- app() ----------------------------------------------------
+
+function app() {
+    var routes        = [];        // [{method, pattern, fn}]
+    var before_fns    = [];
+    var after_fns     = [];
+    var on_404_fns    = [];
+    var on_error_fns  = [];
+
+    var a = {};
+
+    var add_route = function (method, path, fn) {
+        routes.push({ method: method, pattern: _compile_pattern(path), fn: fn });
+    };
+
+    a.get    = function (p, fn) { add_route("GET",    p, fn); return a; };
+    a.post   = function (p, fn) { add_route("POST",   p, fn); return a; };
+    a.put    = function (p, fn) { add_route("PUT",    p, fn); return a; };
+    a.patch  = function (p, fn) { add_route("PATCH",  p, fn); return a; };
+    a.delete = function (p, fn) { add_route("DELETE", p, fn); return a; };
+    a.head   = function (p, fn) { add_route("HEAD",   p, fn); return a; };
+    a.any    = function (p, fn) { add_route(null,     p, fn); return a; };
+    a.route  = function (m, p, fn) { add_route(m, p, fn); return a; };
+
+    a.before   = function (fn) { before_fns.push(fn);   return a; };
+    a.after    = function (fn) { after_fns.push(fn);    return a; };
+    a.on_404   = function (fn) { on_404_fns.push(fn);   return a; };
+    a.on_error = function (fn) { on_error_fns.push(fn); return a; };
+
+    // app.static(prefix, dir) — serve files from `dir` under `prefix`.
+    a.static = function (prefix, dir) {
+        add_route("GET", prefix + "/*", function (req) {
+            return _serve_static(req, dir);
+        });
+        return a;
+    };
+
+    a.listen = function (arg) {
+        var opts = arg;
+        if (type(arg) == "number") { opts = { port: arg }; }
+        return serve(opts, function (req) {
+            return _dispatch(req, routes, before_fns, after_fns, on_404_fns, on_error_fns);
+        });
+    };
+
+    return a;
+}
+
+function _dispatch(req, routes, before_fns, after_fns, on_404_fns, on_error_fns) {
+    var resp_value = null;
+    var short_circuited = false;
+
+    // before hooks — first non-null short-circuits the routing.
+    var i = 0;
+    while (i < before_fns.length and not short_circuited) {
+        var maybe = before_fns[i](req);
+        if (maybe != null) {
+            resp_value = maybe;
+            short_circuited = true;
+        }
+        i = i + 1;
+    }
+
+    if (not short_circuited) {
+        var req_segs = _split_path(req.path);
+        var matched = false;
+        var j = 0;
+        while (j < routes.length and not matched) {
+            var rt = routes[j];
+            if (rt.method == null or rt.method == req.method) {
+                var params = _match_pattern(rt.pattern, req_segs);
+                if (params != null) {
+                    _enrich_for_app(req, params);
+                    matched = true;
+                    try {
+                        resp_value = rt.fn(req);
+                    } catch (e) {
+                        resp_value = _run_error(on_error_fns, req, e);
+                    }
+                }
+            }
+            j = j + 1;
+        }
+        if (not matched) {
+            resp_value = _run_404(on_404_fns, req);
+        }
+    }
+
+    // Coerce ONCE up front so after hooks operate on the canonical
+    // {status, headers, body} shape — they can always do `resp.headers[...]`
+    // without worrying about whether the handler returned a string or a map.
+    var canonical = _coerce(resp_value);
+    var k = 0;
+    while (k < after_fns.length) {
+        var maybe2 = after_fns[k](canonical, req);
+        if (maybe2 != null) { canonical = _coerce(maybe2); }
+        k = k + 1;
+    }
+    return canonical;
+}
+
+function _run_404(on_404_fns, req) {
+    if (on_404_fns.length == 0) { return [404, "Not Found"]; }
+    return on_404_fns[0](req);
+}
+
+function _run_error(on_error_fns, req, err) {
+    if (on_error_fns.length == 0) { return [500, "Internal Server Error"]; }
+    return on_error_fns[0](req, err);
+}
+
+// ---------------- static serving ------------------------------------------
+
+function _serve_static(req, dir) {
+    var rel = req.params._wild;
+    if (rel == null) { rel = ""; }
+    // Reject path traversal — any `..` segment in the resolved tail.
+    var segs = rel.split("/");
+    var i = 0;
+    while (i < segs.length) {
+        if (segs[i] == ".." or segs[i] == ".") { return [403, "forbidden"]; }
+        i = i + 1;
+    }
+    var full = dir + "/" + rel;
+    if (not _io.exists(full)) { return [404, "not found"]; }
+    var st = _io.stat(full);
+    if (st.is_dir) { return [403, "is a directory"]; }
+    return file(full);
 }

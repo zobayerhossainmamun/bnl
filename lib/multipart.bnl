@@ -1,0 +1,211 @@
+import "crypto" as crypto;
+
+// multipart/form-data encoder + decoder (RFC 7578-ish).
+//
+// Part shape — for encode():
+//   text field: { name: "user",  value: "alice" }
+//   file part:  { name: "photo", filename: "p.jpg",
+//                 content_type: "image/jpeg", body: <bytes> }
+//
+// Decoded part shape — what decode() returns for each part:
+//   { name, filename, content_type, body, headers }
+// filename / content_type are null on parts that didn't have them.
+
+function generate_boundary() {
+    return "----bnlBoundary" + crypto.random_hex(16);
+}
+
+// ---------- encode -----------------------------------------------------------
+
+function encode(parts, boundary) {
+    var out = "";
+    var i = 0;
+    while (i < parts.length) {
+        var p = parts[i];
+        out = out + "--" + boundary + "\r\n";
+        out = out + "Content-Disposition: form-data; name=\"" + p.name + "\"";
+        if (p.filename != null) {
+            out = out + "; filename=\"" + p.filename + "\"";
+        }
+        out = out + "\r\n";
+        if (p.content_type != null) {
+            out = out + "Content-Type: " + p.content_type + "\r\n";
+        }
+        out = out + "\r\n";
+        if (p.body != null) {
+            out = out + p.body;
+        } else if (p.value != null) {
+            out = out + str(p.value);
+        }
+        out = out + "\r\n";
+        i = i + 1;
+    }
+    out = out + "--" + boundary + "--\r\n";
+    return out;
+}
+
+// Streaming helpers — return individual pieces so a caller can interleave
+// reads from disk with conn.write() without ever holding the full body in
+// memory. Used by request.upload().
+function build_field_part(boundary, name, value) {
+    return "--" + boundary + "\r\n"
+         + "Content-Disposition: form-data; name=\"" + name + "\"\r\n"
+         + "\r\n"
+         + str(value) + "\r\n";
+}
+
+function build_file_preamble(boundary, name, filename, content_type) {
+    if (content_type == null) { content_type = "application/octet-stream"; }
+    return "--" + boundary + "\r\n"
+         + "Content-Disposition: form-data; name=\"" + name + "\""
+         + "; filename=\"" + filename + "\"\r\n"
+         + "Content-Type: " + content_type + "\r\n"
+         + "\r\n";
+}
+
+function build_epilogue(boundary) {
+    return "\r\n--" + boundary + "--\r\n";
+}
+
+// ---------- decode -----------------------------------------------------------
+
+// decode(body, boundary) → list of part maps. Tolerant of LF-only line
+// endings produced by some buggy clients. Stops at the closing
+// "--<boundary>--" delimiter.
+function decode(body, boundary) {
+    var parts = [];
+    var delim = "--" + boundary;
+
+    // Find the opening delimiter.
+    var first = body.index_of(delim);
+    if (first < 0) { return parts; }
+    var pos = first + delim.byte_length;
+    pos = _skip_newline(body, pos);
+
+    var done = false;
+    while (not done) {
+        // Locate the next boundary (delimited from current part body by
+        // CRLF or LF + dashes).
+        var next_crlf = _find_from(body, "\r\n" + delim, pos);
+        var next_lf   = _find_from(body, "\n"   + delim, pos);
+        var next_idx  = -1;
+        var prefix_len = 0;
+        if (next_crlf >= 0 and (next_lf < 0 or next_crlf <= next_lf)) {
+            next_idx   = next_crlf;
+            prefix_len = 2;
+        } else if (next_lf >= 0) {
+            next_idx   = next_lf;
+            prefix_len = 1;
+        } else {
+            done = true;
+        }
+
+        if (not done) {
+            var part_raw = body.byte_slice(pos, next_idx);
+            var part = _parse_part(part_raw);
+            if (part != null) { parts.push(part); }
+
+            pos = next_idx + prefix_len + delim.byte_length;
+
+            // End-of-multipart marker: two dashes follow.
+            if (pos + 1 < body.byte_length
+                and body.byte_at(pos)     == 45     // '-'
+                and body.byte_at(pos + 1) == 45) {
+                done = true;
+            } else {
+                pos = _skip_newline(body, pos);
+            }
+        }
+    }
+    return parts;
+}
+
+function _skip_newline(s, pos) {
+    if (pos < s.byte_length and s.byte_at(pos) == 13) {
+        if (pos + 1 < s.byte_length and s.byte_at(pos + 1) == 10) {
+            return pos + 2;
+        }
+        return pos + 1;
+    }
+    if (pos < s.byte_length and s.byte_at(pos) == 10) {
+        return pos + 1;
+    }
+    return pos;
+}
+
+// `string.index_of` doesn't take a start offset in the bnl intrinsics, so
+// we slice + re-add. Cheap byte-slice on a moderate-sized multipart body.
+function _find_from(s, needle, from) {
+    if (from >= s.byte_length) { return -1; }
+    var idx = s.byte_slice(from).index_of(needle);
+    if (idx < 0) { return -1; }
+    return idx + from;
+}
+
+function _parse_part(raw) {
+    // Split headers from body on the first blank-line separator.
+    var hdr_end = raw.index_of("\r\n\r\n");
+    var sep_len = 4;
+    if (hdr_end < 0) {
+        hdr_end = raw.index_of("\n\n");
+        sep_len = 2;
+    }
+    if (hdr_end < 0) { return null; }
+
+    var hdr_text = raw.byte_slice(0, hdr_end);
+    var body     = raw.byte_slice(hdr_end + sep_len);
+
+    var part = {
+        name:         null,
+        filename:     null,
+        content_type: null,
+        body:         body,
+        headers:      {}
+    };
+
+    var lines = hdr_text.split("\n");
+    var i = 0;
+    while (i < lines.length) {
+        var ln = lines[i];
+        // strip trailing CR if any
+        if (ln.byte_length > 0 and ln.byte_at(ln.byte_length - 1) == 13) {
+            ln = ln.byte_slice(0, ln.byte_length - 1);
+        }
+        if (ln.byte_length > 0) {
+            var colon = ln.index_of(":");
+            if (colon > 0) {
+                var hname = ln.byte_slice(0, colon).trim().to_lower();
+                var hval  = ln.byte_slice(colon + 1).trim();
+                part.headers[hname] = hval;
+                if (hname == "content-disposition") {
+                    part.name     = _extract_param(hval, "name");
+                    part.filename = _extract_param(hval, "filename");
+                } else if (hname == "content-type") {
+                    part.content_type = hval;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return part;
+}
+
+// Extract `name=...` or `name="..."` from a header value like
+// `form-data; name="user"; filename="a.txt"`. Returns null if absent.
+function _extract_param(header, key) {
+    var needle = key + "=";
+    var i = header.index_of(needle);
+    if (i < 0) { return null; }
+    var start = i + needle.byte_length;
+    if (start >= header.byte_length) { return ""; }
+    if (header.byte_at(start) == 34) {                  // '"'
+        var end_q = header.byte_slice(start + 1).index_of("\"");
+        if (end_q < 0) { return header.byte_slice(start + 1); }
+        return header.byte_slice(start + 1, start + 1 + end_q);
+    }
+    // unquoted — read until ';' or end-of-string
+    var rest = header.byte_slice(start);
+    var semi = rest.index_of(";");
+    if (semi < 0) { return rest.trim(); }
+    return rest.byte_slice(0, semi).trim();
+}

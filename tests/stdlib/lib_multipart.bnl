@@ -1,0 +1,62 @@
+import "multipart" as mp;
+
+print("--- generate_boundary produces a unique-ish string ---");
+var b1 = mp.generate_boundary();
+var b2 = mp.generate_boundary();
+print(b1.starts_with("----bnlBoundary"));
+print(b1 != b2);
+
+print("--- encode + decode roundtrip ---");
+var boundary = "----testBoundary123";
+var parts = [
+    { name: "user",  value: "alice" },
+    { name: "lang",  value: "bnl" },
+    { name: "photo", filename: "hi.txt",
+      content_type: "text/plain", body: "line1\nline2\twith\ttabs" }
+];
+
+var body = mp.encode(parts, boundary);
+print(body.index_of("--" + boundary) == 0);
+print(body.ends_with("--" + boundary + "--\r\n"));
+print(body.index_of("name=\"user\"") >= 0);
+print(body.index_of("filename=\"hi.txt\"") >= 0);
+print(body.index_of("Content-Type: text/plain") >= 0);
+
+var decoded = mp.decode(body, boundary);
+print(decoded.length);
+
+print(decoded[0].name);
+print(decoded[0].body);
+print(decoded[0].filename);
+print(decoded[0].content_type);
+
+print(decoded[1].name);
+print(decoded[1].body);
+
+print(decoded[2].name);
+print(decoded[2].filename);
+print(decoded[2].content_type);
+print(decoded[2].body);
+
+print("--- decode handles missing leading whitespace ---");
+var raw = "--bnd\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n42\r\n--bnd--\r\n";
+var d2 = mp.decode(raw, "bnd");
+print(d2.length);
+print(d2[0].name);
+print(d2[0].body);
+
+print("--- decode tolerates LF-only line endings ---");
+var lf = "--bnd\nContent-Disposition: form-data; name=\"y\"\n\nlf-only\n--bnd--\n";
+var d3 = mp.decode(lf, "bnd");
+print(d3.length);
+print(d3[0].name);
+print(d3[0].body);
+
+print("--- empty input yields empty list ---");
+print(mp.decode("", "bnd").length);
+
+print("--- streaming helpers compose ---");
+var pre = mp.build_file_preamble("bnd", "f", "x.bin", "application/octet-stream");
+var ep  = mp.build_epilogue("bnd");
+print(pre.starts_with("--bnd\r\n"));
+print(ep.ends_with("--bnd--\r\n"));

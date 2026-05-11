@@ -1,0 +1,128 @@
+// Axios-style features of lib/request: verb methods, json/form auto-encode,
+// params query serialization, resp.data + resp.ok, r.create() instances with
+// before/after interceptors, r.download to disk.
+import "web"     as web;
+import "request" as r;
+import "json"    as json;
+import "io"      as io;
+
+var server = web.serve({port: 0}, function (req) {
+    if (req.path == "/method") {
+        return { status: 200, body: req.method };
+    }
+    if (req.path == "/echo-body") {
+        return { status: 200,
+                 headers: { "Content-Type": req.headers["content-type"] },
+                 body: req.body };
+    }
+    if (req.path == "/echo-headers") {
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: json.stringify(req.headers) };
+    }
+    if (req.path == "/query") {
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: json.stringify(req.query) };
+    }
+    if (req.path == "/blob") {
+        return { status: 200, body: "blob content for download test" };
+    }
+    return { status: 404, body: "not found" };
+});
+
+var base = "http://127.0.0.1:" + str(server.port);
+print("port valid:", server.port > 0);
+
+// Helper: terminate the test by closing the server.
+function done() { server.close(); }
+
+// Step 7 (last): instance with base_url + before/after interceptors.
+function step_instance() {
+    var api = r.create({ base_url: base, headers: { "X-Custom": "yes" } });
+    var hits = 0;
+    api.before(function (cfg) {
+        hits = hits + 1;
+        cfg.headers["X-Trace"] = "abc";
+        return cfg;
+    });
+    api.after(function (resp) {
+        resp.from_after = true;
+        return resp;
+    });
+    api.get("/echo-headers", function (err, resp) {
+        print("hits:", hits);
+        print("from_after:", resp.from_after);
+        print("x-custom:", resp.data["x-custom"]);
+        print("x-trace:",  resp.data["x-trace"]);
+        done();
+    });
+}
+
+// Step 6: download to disk, verify bytes_written + file contents.
+function step_download() {
+    var dest = "_request_axios_dl.bin";
+    r.download(base + "/blob", dest, function (err, resp) {
+        print("download status:", resp.status);
+        print("download ok:", resp.ok);
+        print("download bytes:", resp.bytes_written);
+        print("file contents:", io.read_file(dest));
+        io.remove(dest);
+        step_instance();
+    });
+}
+
+// Step 5: resp.ok flag for 4xx.
+function step_404() {
+    r.get(base + "/missing", function (err, resp) {
+        print("404 ok:", resp.ok);
+        print("404 status:", resp.status);
+        step_download();
+    });
+}
+
+// Step 4: params auto-appended as query string.
+function step_params() {
+    r.request({ url: base + "/query", method: "GET",
+                params: { a: "1", b: "two" } }, function (err, resp) {
+        print("params a:", resp.data.a);
+        print("params b:", resp.data.b);
+        step_404();
+    });
+}
+
+// Step 3: form-encoded body via post_form.
+function step_form() {
+    r.post_form(base + "/echo-body", { user: "alice", n: 7 }, function (err, resp) {
+        print("form ct:", resp.headers["content-type"]);
+        // body has both fields (order may vary); index_of is order-independent.
+        print("form has user:", resp.body.index_of("user=alice") >= 0);
+        print("form has n:",    resp.body.index_of("n=7")        >= 0);
+        step_params();
+    });
+}
+
+// Step 2: JSON body auto-encoded when data is a map.
+function step_json() {
+    r.post(base + "/echo-body", { name: "alice" }, function (err, resp) {
+        print("json ct:", resp.headers["content-type"]);
+        print("json body:", resp.body);
+        print("json data.name:", resp.data.name);
+        step_form();
+    });
+}
+
+// Step 1: verb methods round-trip method name.
+r.put(base + "/method", "x", function (e1, r1) {
+    print("PUT:",   r1.body);
+    r.patch(base + "/method", "x", function (e2, r2) {
+        print("PATCH:", r2.body);
+        r.delete(base + "/method", function (e3, r3) {
+            print("DELETE:", r3.body);
+            r.head(base + "/method", function (e4, r4) {
+                print("HEAD status:", r4.status);
+                step_json();
+            });
+        });
+    });
+});

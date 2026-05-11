@@ -1,0 +1,34 @@
+--- generate_boundary produces a unique-ish string ---
+true
+true
+--- encode + decode roundtrip ---
+true
+true
+true
+true
+true
+3
+user
+alice
+null
+null
+lang
+bnl
+photo
+hi.txt
+text/plain
+line1
+line2	with	tabs
+--- decode handles missing leading whitespace ---
+1
+x
+42
+--- decode tolerates LF-only line endings ---
+1
+y
+lf-only
+--- empty input yields empty list ---
+0
+--- streaming helpers compose ---
+true
+true

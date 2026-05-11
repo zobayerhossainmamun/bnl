@@ -16,10 +16,37 @@ string(APPEND content
 string(APPEND content
     "    static const std::unordered_map<std::string, std::string> table = {\n")
 
+# MSVC's per-literal limit is 16,380 bytes. We chunk well under that so the
+# adjacent raw-string literals concatenate cleanly at compile time. The
+# `BNL_EMBED` delimiter is unique enough that no bnl source contains the
+# closing `)BNL_EMBED"` sequence.
+set(CHUNK_SIZE 8000)
+
 foreach(file ${lib_files})
     get_filename_component(name "${file}" NAME_WE)
     file(READ "${file}" src)
-    string(APPEND content "        { \"${name}\", R\"BNL_EMBED(${src})BNL_EMBED\" },\n")
+    string(LENGTH "${src}" src_len)
+
+    string(APPEND content "        { \"${name}\", ")
+
+    if(src_len LESS_EQUAL CHUNK_SIZE)
+        string(APPEND content "R\"BNL_EMBED(${src})BNL_EMBED\"")
+    else()
+        set(pos 0)
+        while(pos LESS src_len)
+            math(EXPR remaining "${src_len} - ${pos}")
+            if(remaining LESS CHUNK_SIZE)
+                set(take ${remaining})
+            else()
+                set(take ${CHUNK_SIZE})
+            endif()
+            string(SUBSTRING "${src}" ${pos} ${take} chunk)
+            string(APPEND content "R\"BNL_EMBED(${chunk})BNL_EMBED\" ")
+            math(EXPR pos "${pos} + ${take}")
+        endwhile()
+    endif()
+
+    string(APPEND content " },\n")
 endforeach()
 
 string(APPEND content "    };\n")

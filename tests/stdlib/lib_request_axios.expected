@@ -1,0 +1,23 @@
+port valid: true
+PUT: PUT
+PATCH: PATCH
+DELETE: DELETE
+HEAD status: 200
+json ct: application/json; charset=utf-8
+json body: {"name":"alice"}
+json data.name: alice
+form ct: application/x-www-form-urlencoded
+form has user: true
+form has n: true
+params a: 1
+params b: two
+404 ok: false
+404 status: 404
+download status: 200
+download ok: true
+download bytes: 30
+file contents: blob content for download test
+hits: 1
+from_after: true
+x-custom: yes
+x-trace: abc

@@ -1,0 +1,29 @@
+port valid: true
+root: hello
+root ct: text/plain; charset=utf-8
+after-hook: ok
+users ct: application/json; charset=utf-8
+users[0].name: alice
+users[1].id: 2
+user id: 42
+verb dispatch: PUT
+created status: 201
+created id: 42
+created echo: alice
+204 status: 204
+204 body len: 0
+locked status: 401
+locked body: auth required
+404 status: 404
+404 body: custom 404 for /no-such-thing
+error status: 500
+error body: caught: kaboom
+upload status: 200
+upload filename: report.txt
+upload bytes: 16
+upload body_text: uploaded payload
+upload field_name: alice
+static status: 200
+static ct: text/plain; charset=utf-8
+static body: static file body
+static missing: 404
