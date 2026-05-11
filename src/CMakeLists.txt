@@ -41,6 +41,9 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/pg.cpp
     stdlib/mysql.cpp
     stdlib/mongo.cpp
+    stdlib/math.cpp
+    stdlib/random.cpp
+    stdlib/time.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the

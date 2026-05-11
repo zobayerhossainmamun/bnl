@@ -96,6 +96,9 @@ Interpreter::Interpreter()
     register_pg    (*this);
     register_mysql (*this);
     register_mongo (*this);
+    register_math  (*this);
+    register_random(*this);
+    register_time  (*this);
 }
 
 Interpreter::~Interpreter() {

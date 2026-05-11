@@ -1,0 +1,57 @@
+// Native clocks + tm-struct conversion. Uses known fixed timestamps so the
+// roundtrip / breakdown checks don't depend on the test-machine's timezone.
+import "_time" as time;
+
+print("--- now_ms and now_ns are positive numbers ---");
+var ms = time.now_ms();
+var ns = time.now_ns();
+print(type(ms));
+print(type(ns));
+print(ms > 0);
+print(ns > 0);
+
+print("--- epoch zero ---");
+var c0 = time.to_components(0, false);
+print(c0.year);
+print(c0.month);
+print(c0.day);
+print(c0.hour);
+print(c0.minute);
+print(c0.second);
+print(c0.ms);
+print(c0.weekday);   // 1970-01-01 is a Thursday → 4
+print(c0.yearday);   // day 1
+
+print("--- known timestamp 1700000000000 ms (2023-11-14T22:13:20 UTC) ---");
+var c1 = time.to_components(1700000000000, false);
+print(c1.year);
+print(c1.month);
+print(c1.day);
+print(c1.hour);
+print(c1.minute);
+print(c1.second);
+
+print("--- roundtrip to_components -> from_components ---");
+var back = time.from_components(c1, false);
+print(back == 1700000000000);
+
+print("--- ms precision is preserved ---");
+var c2 = time.to_components(1700000000123, false);
+print(c2.ms);
+var back2 = time.from_components(c2, false);
+print(back2 == 1700000000123);
+
+print("--- local_offset_ms returns a number ---");
+print(type(time.local_offset_ms()));
+print(type(time.local_offset_ms(0)));
+
+print("--- bad args ---");
+try {
+    time.to_components(0, "not a bool");
+    print("FAIL");
+} catch (e) { print("threw"); }
+
+try {
+    time.from_components("not a map", false);
+    print("FAIL");
+} catch (e) { print("threw"); }

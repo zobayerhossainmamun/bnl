@@ -1,0 +1,39 @@
+// Native libm wrapper — verify each primitive does what cmath says.
+import "_math" as math;
+
+print("--- constants ---");
+print(math.pi > 3.1415 and math.pi < 3.1416);
+print(math.e  > 2.7182 and math.e  < 2.7183);
+print(math.is_finite(math.inf) == false);
+print(math.is_nan(math.nan));
+
+print("--- powers / roots / logs ---");
+print(math.sqrt(16));
+print(math.pow(2, 10));
+print(math.exp(0));
+print(math.log(math.e) > 0.9999 and math.log(math.e) < 1.0001);
+print(math.log2(1024));
+print(math.log10(1000));
+
+print("--- trig ---");
+print(math.sin(0));
+print(math.cos(0));
+print(math.tan(0));
+print(math.asin(1) > 1.5707 and math.asin(1) < 1.5708);
+print(math.acos(0) > 1.5707 and math.acos(0) < 1.5708);
+print(math.atan(1) > 0.7853 and math.atan(1) < 0.7854);
+print(math.atan2(1, 1) > 0.7853 and math.atan2(1, 1) < 0.7854);
+
+print("--- rounding ---");
+print(math.floor(3.7));
+print(math.ceil(3.2));
+print(math.round(3.5));
+print(math.trunc(-3.7));
+print(math.abs(-42));
+print(math.abs(42));
+
+print("--- classification ---");
+print(math.is_nan(0));
+print(math.is_nan(math.nan));
+print(math.is_finite(1));
+print(math.is_finite(math.inf));

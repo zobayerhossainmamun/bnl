@@ -1,0 +1,74 @@
+// Composed random helpers — verify ranges, choice picks-from-list,
+// shuffle yields a permutation, sample returns k distinct items.
+import "random" as random;
+
+print("--- int(min, max) inclusive ---");
+random.seed(123);
+var i = 0;
+var ok = true;
+while (i < 200) {
+    var k = random.int(1, 6);
+    if (k < 1 or k > 6) { ok = false; }
+    i = i + 1;
+}
+print(ok);
+
+print("--- float / range ---");
+random.seed(1);
+var f0 = random.float();
+print(f0 >= 0 and f0 < 1);
+var f2 = random.range(50, 60);
+print(f2 >= 50 and f2 < 60);
+
+print("--- bool / probability ---");
+random.seed(99);
+var ts = 0;
+var j = 0;
+while (j < 1000) {
+    if (random.bool()) { ts = ts + 1; }
+    j = j + 1;
+}
+print(ts > 400 and ts < 600);
+random.seed(99);
+var hi = 0;
+var k2 = 0;
+while (k2 < 1000) {
+    if (random.probability(0.9)) { hi = hi + 1; }
+    k2 = k2 + 1;
+}
+print(hi > 850 and hi < 950);
+
+print("--- choice ---");
+random.seed(5);
+var picks = ["apple", "banana", "cherry"];
+var k = 0;
+var found = true;
+while (k < 30) {
+    var p = random.choice(picks);
+    if (p != "apple" and p != "banana" and p != "cherry") { found = false; }
+    k = k + 1;
+}
+print(found);
+
+print("--- shuffle is a permutation ---");
+random.seed(2026);
+var xs = [1, 2, 3, 4, 5];
+random.shuffle(xs);
+print(xs.length);
+// Verify all original elements still present.
+var sum = 0;
+var m = 0;
+while (m < xs.length) { sum = sum + xs[m]; m = m + 1; }
+print(sum);
+
+print("--- sample returns k items, doesn't mutate input ---");
+var src = [10, 20, 30, 40, 50];
+random.seed(11);
+var s = random.sample(src, 3);
+print(s.length);
+print(src.length);
+
+print("--- bad args ---");
+try { random.int(5, 1);     print("FAIL"); } catch (e) { print("threw"); }
+try { random.choice([]);    print("FAIL"); } catch (e) { print("threw"); }
+try { random.sample([1], 5); print("FAIL"); } catch (e) { print("threw"); }

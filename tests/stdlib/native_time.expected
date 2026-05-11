@@ -1,0 +1,33 @@
+--- now_ms and now_ns are positive numbers ---
+number
+number
+true
+true
+--- epoch zero ---
+1970
+1
+1
+0
+0
+0
+0
+4
+1
+--- known timestamp 1700000000000 ms (2023-11-14T22:13:20 UTC) ---
+2023
+11
+14
+22
+13
+20
+--- roundtrip to_components -> from_components ---
+true
+--- ms precision is preserved ---
+123
+true
+--- local_offset_ms returns a number ---
+number
+number
+--- bad args ---
+threw
+threw

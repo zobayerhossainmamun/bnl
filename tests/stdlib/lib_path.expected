@@ -1,0 +1,46 @@
+--- is_absolute ---
+true
+true
+true
+false
+false
+false
+--- dirname ---
+/foo/bar
+/
+/
+foo
+.
+.
+--- basename ---
+baz.txt
+baz.txt
+
+
+--- stem ---
+baz
+foo.tar
+.gitignore
+noext
+--- extname ---
+.gz
+.txt
+
+
+.
+.txt
+--- join ---
+foo/bar/baz
+foo/bar/baz
+/foo/bar
+foo/bar
+
+--- normalize ---
+/foo/baz
+/foo/bar
+foo/baz
+../bar
+/
+foo
+.
+foo/

@@ -1,0 +1,21 @@
+--- basic parse ---
+alice
+5432
+hello world
+no $expansion
+foo
+
+key=value=more
+trimmed
+null
+--- CRLF lines parse the same ---
+bar
+qux
+--- empty input ---
+0
+--- load_or_empty on a missing file ---
+map
+0
+--- load() roundtrip via a temp file ---
+1
+two

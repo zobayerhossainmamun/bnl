@@ -1,0 +1,56 @@
+// Path utilities — pure bnl. Cross-platform but tests use forward slashes
+// (which work everywhere). is_absolute also checks Windows drive paths.
+import "path" as path;
+
+print("--- is_absolute ---");
+print(path.is_absolute("/foo/bar"));
+print(path.is_absolute("C:/Users/zo"));
+print(path.is_absolute("C:\\Users\\zo"));
+print(path.is_absolute("foo/bar"));
+print(path.is_absolute(""));
+print(path.is_absolute("./foo"));
+
+print("--- dirname ---");
+print(path.dirname("/foo/bar/baz"));
+print(path.dirname("/foo"));
+print(path.dirname("/"));
+print(path.dirname("foo/bar"));
+print(path.dirname("foo"));
+print(path.dirname(""));
+
+print("--- basename ---");
+print(path.basename("/foo/bar/baz.txt"));
+print(path.basename("baz.txt"));
+print(path.basename("/foo/"));
+print(path.basename(""));
+
+print("--- stem ---");
+print(path.stem("/foo/bar/baz.txt"));
+print(path.stem("foo.tar.gz"));
+print(path.stem(".gitignore"));
+print(path.stem("noext"));
+
+print("--- extname ---");
+print(path.extname("foo.tar.gz"));
+print(path.extname("foo.txt"));
+print(path.extname("foo"));
+print(path.extname(".gitignore"));
+print(path.extname("foo."));
+print(path.extname("/path/to/foo.txt"));
+
+print("--- join ---");
+print(path.join(["foo", "bar", "baz"]));
+print(path.join(["foo/", "/bar", "baz"]));
+print(path.join(["/foo", "bar"]));
+print(path.join(["foo", "", "bar"]));
+print(path.join([]));
+
+print("--- normalize ---");
+print(path.normalize("/foo/./bar/../baz"));
+print(path.normalize("/foo//bar"));
+print(path.normalize("foo/bar/../baz"));
+print(path.normalize("foo/../../bar"));
+print(path.normalize("/a/b/../../.."));
+print(path.normalize("./foo"));
+print(path.normalize(""));
+print(path.normalize("foo/"));

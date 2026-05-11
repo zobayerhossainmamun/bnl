@@ -1,0 +1,30 @@
+--- min / max / sign ---
+3
+7
+-1
+0
+1
+--- clamp ---
+5
+0
+3
+--- lerp ---
+0
+10
+2.5
+--- deg / rad ---
+true
+true
+--- mod (non-negative) ---
+2
+4
+3
+--- sum / product / mean ---
+10
+24
+4
+0
+true
+--- passthroughs still work via lib ---
+9
+3

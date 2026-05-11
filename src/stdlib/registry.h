@@ -35,6 +35,12 @@ class Interpreter;
 //             shaped API rather than SQL: connect → client → db →
 //             collection → {insert_one/find/...}. Public "mongo" name
 //             belongs to lib/mongo.bnl.
+//   _math   — libm wrapper (sqrt/sin/cos/log/...). Public "math" belongs
+//             to lib/math.bnl (adds min/max/clamp/lerp helpers).
+//   _random — Mersenne-Twister PRNG primitives. Public "random" belongs
+//             to lib/random.bnl (int/float/choice/shuffle/sample helpers).
+//   _time   — system + monotonic clocks, tm-struct conversion. Public
+//             "time" belongs to lib/time.bnl (ISO 8601 + arithmetic).
 //
 // Anything else is delivered as a plugin by the separate package manager.
 void register_sys   (Interpreter& interp);
@@ -52,5 +58,8 @@ void register_sqlite(Interpreter& interp);
 void register_pg    (Interpreter& interp);
 void register_mysql (Interpreter& interp);
 void register_mongo (Interpreter& interp);
+void register_math  (Interpreter& interp);
+void register_random(Interpreter& interp);
+void register_time  (Interpreter& interp);
 
 }  // namespace bnl

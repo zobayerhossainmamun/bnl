@@ -1,0 +1,20 @@
+--- default formatter has a timestamped shape ---
+1
+true
+true
+true
+--- custom formatter ---
+3
+INFO:i
+WARN:w
+ERROR:e
+--- set_level('warn') drops info ---
+2
+WARN:kept
+ERROR:kept
+--- set_level by number ---
+1
+DEBUG:now visible
+--- bad set_level ---
+threw
+threw

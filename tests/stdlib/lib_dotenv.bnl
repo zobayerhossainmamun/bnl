@@ -1,0 +1,53 @@
+// dotenv parsing — comments / quotes / export / odd values, plus
+// load_or_empty's missing-file path.
+import "dotenv" as dotenv;
+import "io"     as io;
+
+print("--- basic parse ---");
+var src = ""
+    + "# leading comment\n"
+    + "\n"
+    + "NAME=alice\n"
+    + "PORT=5432\n"
+    + "GREETING=\"hello world\"\n"
+    + "LITERAL='no $expansion'\n"
+    + "export EXPORTED=foo\n"
+    + "EMPTY=\n"
+    + "WITH_EQUALS=key=value=more\n"
+    + "  PADDED_KEY  =  trimmed  \n"
+    + "# trailing comment\n"
+    + "NO_EQUAL_HERE\n";
+
+var m = dotenv.parse(src);
+print(m.NAME);
+print(m.PORT);
+print(m.GREETING);
+print(m.LITERAL);
+print(m.EXPORTED);
+print(m.EMPTY);
+print(m.WITH_EQUALS);
+print(m.PADDED_KEY);
+print(m.NO_EQUAL_HERE);   // null — not added
+
+print("--- CRLF lines parse the same ---");
+var crlf = "FOO=bar\r\nBAZ=qux\r\n";
+var c = dotenv.parse(crlf);
+print(c.FOO);
+print(c.BAZ);
+
+print("--- empty input ---");
+var e = dotenv.parse("");
+print(e.size);
+
+print("--- load_or_empty on a missing file ---");
+var missing = dotenv.load_or_empty("does_not_exist.env");
+print(type(missing));
+print(missing.size);
+
+print("--- load() roundtrip via a temp file ---");
+var tmp = "_dotenv_test.env";
+io.write_file(tmp, "X=1\nY=two\n");
+var loaded = dotenv.load(tmp);
+print(loaded.X);
+print(loaded.Y);
+io.remove(tmp);

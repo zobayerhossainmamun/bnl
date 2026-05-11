@@ -1,0 +1,91 @@
+import "_math" as _math;
+
+// ---- Constants (re-exported as bnl-level values) ----
+var pi  = _math.pi;
+var e   = _math.e;
+var inf = _math.inf;
+var nan = _math.nan;
+
+// ---- Direct passthroughs (one-line wrappers so users only import "math") ----
+function sqrt(x)     { return _math.sqrt(x); }
+function exp(x)      { return _math.exp(x); }
+function log(x)      { return _math.log(x); }
+function log2(x)     { return _math.log2(x); }
+function log10(x)    { return _math.log10(x); }
+function sin(x)      { return _math.sin(x); }
+function cos(x)      { return _math.cos(x); }
+function tan(x)      { return _math.tan(x); }
+function asin(x)     { return _math.asin(x); }
+function acos(x)     { return _math.acos(x); }
+function atan(x)     { return _math.atan(x); }
+function atan2(y, x) { return _math.atan2(y, x); }
+function pow(x, y)   { return _math.pow(x, y); }
+function floor(x)    { return _math.floor(x); }
+function ceil(x)     { return _math.ceil(x); }
+function round(x)    { return _math.round(x); }
+function trunc(x)    { return _math.trunc(x); }
+function abs(x)      { return _math.abs(x); }
+function is_nan(x)    { return _math.is_nan(x); }
+function is_finite(x) { return _math.is_finite(x); }
+
+// ---- bnl-level helpers (composition that doesn't need C++) ----
+function sign(x) {
+    if (x > 0) { return 1; }
+    if (x < 0) { return -1; }
+    return 0;
+}
+
+function min(a, b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+function max(a, b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+// clamp(x, lo, hi) — pin x into [lo, hi].
+function clamp(x, lo, hi) {
+    if (x < lo) { return lo; }
+    if (x > hi) { return hi; }
+    return x;
+}
+
+// Linear interpolation. t=0 returns a, t=1 returns b.
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+// Degrees <-> radians convenience.
+function to_radians(deg) { return deg * pi / 180; }
+function to_degrees(rad) { return rad * 180 / pi; }
+
+// Integer-mod that always returns a non-negative result. `%` in bnl is
+// fmod, which follows the sign of the dividend (so -1 % 5 == -1). For
+// array-indexing math you usually want -1 mod 5 == 4.
+function mod(a, b) {
+    var r = a % b;
+    if (r < 0) { r = r + b; }
+    return r;
+}
+
+// Sum / product / mean of a list. Empty list returns identity / 0 / nan.
+function sum(xs) {
+    var total = 0;
+    var i = 0;
+    while (i < xs.length) { total = total + xs[i]; i = i + 1; }
+    return total;
+}
+
+function product(xs) {
+    var total = 1;
+    var i = 0;
+    while (i < xs.length) { total = total * xs[i]; i = i + 1; }
+    return total;
+}
+
+function mean(xs) {
+    if (xs.length == 0) { return nan; }
+    return sum(xs) / xs.length;
+}

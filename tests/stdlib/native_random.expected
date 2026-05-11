@@ -1,0 +1,13 @@
+--- seeded determinism ---
+true
+true
+--- next in [0, 1) ---
+true
+--- next_int(max) in [0, max) ---
+true
+--- bytes returns the requested length ---
+32
+0
+--- bad args ---
+threw
+threw

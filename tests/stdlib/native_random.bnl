@@ -1,0 +1,43 @@
+// Native PRNG — seeded determinism, range invariants, byte count.
+import "_random" as random;
+
+print("--- seeded determinism ---");
+random.seed(42);
+var a1 = random.next();
+var a2 = random.next();
+random.seed(42);
+var b1 = random.next();
+var b2 = random.next();
+print(a1 == b1);
+print(a2 == b2);
+
+print("--- next in [0, 1) ---");
+random.seed(1);
+var n = 0;
+var in_range = true;
+while (n < 50) {
+    var x = random.next();
+    if (x < 0 or x >= 1) { in_range = false; }
+    n = n + 1;
+}
+print(in_range);
+
+print("--- next_int(max) in [0, max) ---");
+random.seed(7);
+var i = 0;
+var ok = true;
+while (i < 50) {
+    var k = random.next_int(10);
+    if (k < 0 or k >= 10) { ok = false; }
+    i = i + 1;
+}
+print(ok);
+
+print("--- bytes returns the requested length ---");
+var b = random.bytes(32);
+print(b.byte_length);
+print(random.bytes(0).byte_length);
+
+print("--- bad args ---");
+try { random.next_int(0); print("FAIL"); } catch (e) { print("threw"); }
+try { random.bytes(-1);   print("FAIL"); } catch (e) { print("threw"); }

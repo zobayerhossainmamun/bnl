@@ -1,0 +1,32 @@
+--- constants ---
+true
+true
+true
+true
+--- powers / roots / logs ---
+4
+1024
+1
+true
+10
+3
+--- trig ---
+0
+1
+0
+true
+true
+true
+true
+--- rounding ---
+3
+4
+4
+-3
+42
+42
+--- classification ---
+false
+true
+true
+false

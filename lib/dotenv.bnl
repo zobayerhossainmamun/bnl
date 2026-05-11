@@ -1,0 +1,63 @@
+import "io" as io;
+
+// Parse a `.env`-style text into a {key: value} map.
+//
+// Supported syntax:
+//   KEY=value                — bare value, trim leading/trailing whitespace
+//   KEY="quoted value"       — double-quoted (no escape expansion in v1)
+//   KEY='literal'            — single-quoted (no escape expansion, no $expand)
+//   export KEY=value         — bash-style export prefix, stripped
+//   # comment                — full-line comment, ignored
+//   <blank line>             — ignored
+//
+// NOT supported in v1:
+//   - $VAR / ${VAR} interpolation
+//   - backslash escape sequences inside quoted values
+//   - multi-line values
+//
+// Lines without `=` are silently skipped (matches dotenv-rs and friends).
+// Returns a fresh map.
+function parse(text) {
+    var out = {};
+    var lines = text.split("\n");
+    for (var raw of lines) {
+        var line = raw.trim();              // also strips trailing \r on CRLF files
+        if (line.byte_length == 0)   { /* blank */ }
+        else if (line.starts_with("#")) { /* comment */ }
+        else {
+            if (line.starts_with("export ")) {
+                line = line.byte_slice(7).trim();
+            }
+            var eq = line.index_of("=");
+            if (eq < 0) { /* malformed → skip */ }
+            else {
+                var key = line.byte_slice(0, eq).trim();
+                var val = line.byte_slice(eq + 1).trim();
+                if (val.byte_length >= 2) {
+                    var first = val.byte_at(0);
+                    var last  = val.byte_at(val.byte_length - 1);
+                    if ((first == 34 and last == 34) or (first == 39 and last == 39)) {
+                        val = val.byte_slice(1, val.byte_length - 1);
+                    }
+                }
+                if (key.byte_length > 0) {
+                    out[key] = val;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+// load(path) — read + parse a `.env` file. Throws if the file is missing.
+function load(path) {
+    return parse(io.read_file(path));
+}
+
+// load_or_empty(path) — like load but returns {} if the file isn't there.
+// Useful for "config layered over defaults" patterns where the .env is
+// optional in dev.
+function load_or_empty(path) {
+    if (not io.exists(path)) { return {}; }
+    return parse(io.read_file(path));
+}

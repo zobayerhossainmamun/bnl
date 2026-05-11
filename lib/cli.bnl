@@ -1,0 +1,236 @@
+import "sys" as sys;
+
+// Declarative CLI args parser.
+//
+// Usage shape:
+//   var p = cli.parser("myapp");
+//   p.description = "Does the thing";
+//   cli.flag(p,       {name: "verbose", short: "v", help: "Enable verbose"});
+//   cli.option(p,     {name: "output",  short: "o", help: "Output file",
+//                      default: "out.txt"});
+//   cli.positional(p, {name: "input",   help: "Input file"});
+//   var args = cli.parse(p);                 // reads sys.arg(*)
+//   var args = cli.parse_argv(p, ["a","b"]); // for tests / synthetic input
+//
+// args is a map:
+//   - one entry per flag    (bool, default false)
+//   - one entry per option  (string, default per `default` field)
+//   - one entry per positional (string, default per `default` field)
+//   - `_rest` — any extra positional args past the declared positionals.
+//
+// `cli.usage(p)` returns the auto-generated help string. Help-flag handling
+// is left to the caller (e.g. add a `--help` flag and check args.help).
+
+function parser(name) {
+    return {
+        name:        name,
+        description: "",
+        flags:       [],
+        options:     [],
+        positionals: []
+    };
+}
+
+function flag(p, spec) {
+    p.flags.push({
+        name:  spec.name,
+        short: spec.short,
+        help:  spec.help or ""
+    });
+    return p;
+}
+
+function option(p, spec) {
+    p.options.push({
+        name:    spec.name,
+        short:   spec.short,
+        help:    spec.help or "",
+        default: spec.default
+    });
+    return p;
+}
+
+function positional(p, spec) {
+    p.positionals.push({
+        name:    spec.name,
+        help:    spec.help or "",
+        default: spec.default
+    });
+    return p;
+}
+
+function parse(p) {
+    var argv = [];
+    var i = 0;
+    while (i < sys.argc()) {
+        argv.push(sys.arg(i));
+        i = i + 1;
+    }
+    return parse_argv(p, argv);
+}
+
+function parse_argv(p, argv) {
+    var out = {};
+
+    // Initialize defaults.
+    var i = 0;
+    while (i < p.flags.length)       { out[p.flags[i].name]       = false;                  i = i + 1; }
+    i = 0;
+    while (i < p.options.length)     { out[p.options[i].name]     = p.options[i].default;   i = i + 1; }
+    i = 0;
+    while (i < p.positionals.length) { out[p.positionals[i].name] = p.positionals[i].default; i = i + 1; }
+    out._rest = [];
+
+    var pos_idx = 0;
+    var k = 0;
+    while (k < argv.length) {
+        var a = argv[k];
+
+        if (a.starts_with("--")) {
+            // Long form: --name OR --name=value OR --name <value>
+            var body = a.byte_slice(2);
+            var eq = body.index_of("=");
+            var key = body;
+            var inline_val = null;
+            if (eq >= 0) {
+                key        = body.byte_slice(0, eq);
+                inline_val = body.byte_slice(eq + 1);
+            }
+            var consumed_next = _apply_long(p, out, key, inline_val, argv, k);
+            k = k + consumed_next;
+
+        } else if (a.starts_with("-") and a.byte_length > 1
+                   and not _is_negative_number(a)) {
+            // Short form: -x (flag) or -x value (option).
+            var short_key = a.byte_slice(1);
+            var consumed_next = _apply_short(p, out, short_key, argv, k);
+            k = k + consumed_next;
+
+        } else {
+            // Positional.
+            if (pos_idx < p.positionals.length) {
+                out[p.positionals[pos_idx].name] = a;
+                pos_idx = pos_idx + 1;
+            } else {
+                out._rest.push(a);
+            }
+        }
+
+        k = k + 1;
+    }
+
+    return out;
+}
+
+// Returns the number of EXTRA argv slots consumed past `k` (0 or 1 for v1
+// — long options with inline `=value` consume 0, separate-value forms
+// consume 1). The outer loop adds its own +1 step.
+function _apply_long(p, out, key, inline_val, argv, k) {
+    var i = 0;
+    while (i < p.flags.length) {
+        if (p.flags[i].name == key) {
+            if (inline_val != null) {
+                throw "cli: flag --" + key + " does not take a value";
+            }
+            out[key] = true;
+            return 0;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < p.options.length) {
+        if (p.options[i].name == key) {
+            if (inline_val != null) {
+                out[key] = inline_val;
+                return 0;
+            }
+            if (k + 1 >= argv.length) {
+                throw "cli: option --" + key + " requires a value";
+            }
+            out[key] = argv[k + 1];
+            return 1;
+        }
+        i = i + 1;
+    }
+    throw "cli: unknown option --" + key;
+}
+
+function _apply_short(p, out, short_key, argv, k) {
+    var i = 0;
+    while (i < p.flags.length) {
+        if (p.flags[i].short != null and p.flags[i].short == short_key) {
+            out[p.flags[i].name] = true;
+            return 0;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while (i < p.options.length) {
+        if (p.options[i].short != null and p.options[i].short == short_key) {
+            if (k + 1 >= argv.length) {
+                throw "cli: option -" + short_key + " requires a value";
+            }
+            out[p.options[i].name] = argv[k + 1];
+            return 1;
+        }
+        i = i + 1;
+    }
+    throw "cli: unknown short option -" + short_key;
+}
+
+// `-3.14` looks like a short option but should pass through as a positional.
+function _is_negative_number(s) {
+    if (s.byte_length < 2) { return false; }
+    var b = s.byte_at(1);
+    return (b >= 48 and b <= 57) or b == 46;   // digit or '.'
+}
+
+// usage(p) — auto-generated help string. Does not print; caller decides.
+function usage(p) {
+    var u = "usage: " + p.name;
+    var i = 0;
+    while (i < p.flags.length) {
+        u = u + " [--" + p.flags[i].name + "]";
+        i = i + 1;
+    }
+    i = 0;
+    while (i < p.options.length) {
+        u = u + " [--" + p.options[i].name + " <value>]";
+        i = i + 1;
+    }
+    i = 0;
+    while (i < p.positionals.length) {
+        u = u + " <" + p.positionals[i].name + ">";
+        i = i + 1;
+    }
+    if (p.description.byte_length > 0) {
+        u = u + "\n\n" + p.description;
+    }
+    if (p.flags.length > 0 or p.options.length > 0 or p.positionals.length > 0) {
+        u = u + "\n\nOptions:";
+        i = 0;
+        while (i < p.flags.length) {
+            var f = p.flags[i];
+            u = u + "\n  --" + f.name;
+            if (f.short != null) { u = u + ", -" + f.short; }
+            if (f.help.byte_length > 0) { u = u + "  " + f.help; }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < p.options.length) {
+            var o = p.options[i];
+            u = u + "\n  --" + o.name + " <value>";
+            if (o.short != null) { u = u + ", -" + o.short; }
+            if (o.help.byte_length > 0) { u = u + "  " + o.help; }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < p.positionals.length) {
+            var pp = p.positionals[i];
+            u = u + "\n  <" + pp.name + ">";
+            if (pp.help.byte_length > 0) { u = u + "  " + pp.help; }
+            i = i + 1;
+        }
+    }
+    return u;
+}

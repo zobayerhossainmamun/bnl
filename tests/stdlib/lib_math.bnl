@@ -1,0 +1,40 @@
+// Embedded math lib — composed helpers (min/max/clamp/lerp/sum/...) on top
+// of the libm primitives.
+import "math" as math;
+
+print("--- min / max / sign ---");
+print(math.min(3, 7));
+print(math.max(3, 7));
+print(math.sign(-5));
+print(math.sign(0));
+print(math.sign(5));
+
+print("--- clamp ---");
+print(math.clamp(10, 0, 5));
+print(math.clamp(-3, 0, 5));
+print(math.clamp(3,  0, 5));
+
+print("--- lerp ---");
+print(math.lerp(0, 10, 0));
+print(math.lerp(0, 10, 1));
+print(math.lerp(0, 10, 0.25));
+
+print("--- deg / rad ---");
+print(math.to_radians(180) > 3.1415 and math.to_radians(180) < 3.1416);
+print(math.to_degrees(math.pi) > 179.9 and math.to_degrees(math.pi) < 180.1);
+
+print("--- mod (non-negative) ---");
+print(math.mod(7, 5));
+print(math.mod(-1, 5));
+print(math.mod(-7, 5));
+
+print("--- sum / product / mean ---");
+print(math.sum([1, 2, 3, 4]));
+print(math.product([1, 2, 3, 4]));
+print(math.mean([2, 4, 6]));
+print(math.sum([]));
+print(math.is_nan(math.mean([])));
+
+print("--- passthroughs still work via lib ---");
+print(math.sqrt(81));
+print(math.floor(3.7));

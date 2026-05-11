@@ -1,0 +1,90 @@
+// CLI arg parser. Uses parse_argv with synthetic argv lists so it doesn't
+// depend on the test runner's actual argv.
+import "cli" as cli;
+
+function _make_parser() {
+    var p = cli.parser("myapp");
+    p.description = "Does the thing";
+    cli.flag(p,       {name: "verbose", short: "v", help: "Enable verbose"});
+    cli.flag(p,       {name: "dry_run", help: "Don't actually run"});
+    cli.option(p,     {name: "output",  short: "o", help: "Output file",
+                       default: "out.txt"});
+    cli.positional(p, {name: "input",   help: "Input file"});
+    return p;
+}
+
+print("--- defaults applied when nothing given ---");
+var p1 = _make_parser();
+var a1 = cli.parse_argv(p1, []);
+print(a1.verbose);
+print(a1.dry_run);
+print(a1.output);
+print(a1.input);
+print(a1._rest.length);
+
+print("--- long flags and options ---");
+var p2 = _make_parser();
+var a2 = cli.parse_argv(p2, ["--verbose", "--output", "x.txt", "in.dat"]);
+print(a2.verbose);
+print(a2.output);
+print(a2.input);
+
+print("--- --option=value inline form ---");
+var p3 = _make_parser();
+var a3 = cli.parse_argv(p3, ["--output=inline.txt", "thefile"]);
+print(a3.output);
+print(a3.input);
+
+print("--- short flags and options ---");
+var p4 = _make_parser();
+var a4 = cli.parse_argv(p4, ["-v", "-o", "short.txt", "f"]);
+print(a4.verbose);
+print(a4.output);
+print(a4.input);
+
+print("--- extra positionals land in _rest ---");
+var p5 = _make_parser();
+var a5 = cli.parse_argv(p5, ["main.dat", "extra1", "extra2"]);
+print(a5.input);
+print(a5._rest.length);
+print(a5._rest[0]);
+print(a5._rest[1]);
+
+print("--- negative-number positional ---");
+var p6 = _make_parser();
+var a6 = cli.parse_argv(p6, ["-3.14"]);
+print(a6.input);
+
+print("--- option requires a value ---");
+try {
+    cli.parse_argv(_make_parser(), ["--output"]);
+    print("FAIL");
+} catch (e) { print("threw"); }
+try {
+    cli.parse_argv(_make_parser(), ["-o"]);
+    print("FAIL");
+} catch (e) { print("threw"); }
+
+print("--- unknown options throw ---");
+try {
+    cli.parse_argv(_make_parser(), ["--nope"]);
+    print("FAIL");
+} catch (e) { print("threw"); }
+try {
+    cli.parse_argv(_make_parser(), ["-z"]);
+    print("FAIL");
+} catch (e) { print("threw"); }
+
+print("--- flag with =value rejected ---");
+try {
+    cli.parse_argv(_make_parser(), ["--verbose=true"]);
+    print("FAIL");
+} catch (e) { print("threw"); }
+
+print("--- usage() includes name and description ---");
+var u = cli.usage(_make_parser());
+print(u.index_of("usage: myapp") >= 0);
+print(u.index_of("Does the thing") >= 0);
+print(u.index_of("--verbose") >= 0);
+print(u.index_of("--output") >= 0);
+print(u.index_of("<input>") >= 0);

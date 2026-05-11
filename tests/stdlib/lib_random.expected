@@ -1,0 +1,20 @@
+--- int(min, max) inclusive ---
+true
+--- float / range ---
+true
+true
+--- bool / probability ---
+true
+true
+--- choice ---
+true
+--- shuffle is a permutation ---
+5
+15
+--- sample returns k items, doesn't mutate input ---
+3
+5
+--- bad args ---
+threw
+threw
+threw

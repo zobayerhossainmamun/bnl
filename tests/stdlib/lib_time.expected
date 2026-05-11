@@ -1,0 +1,31 @@
+--- now / now_ns ---
+true
+true
+--- iso(0) is the Unix epoch ---
+1970-01-01T00:00:00.000Z
+--- iso of a known timestamp ---
+2023-11-14T22:13:20.123Z
+--- parse_iso roundtrip ---
+true
+--- parse_iso with offset converts back to UTC ms ---
+2024-01-15T08:00:00.000Z
+--- parse_iso date-only ---
+2026
+5
+11
+0
+--- parse_iso bad inputs throw ---
+threw
+threw
+threw
+--- duration helpers ---
+2000
+180000
+3600000
+86400000
+--- add_days / add_hours preserve precision ---
+2026-05-12T00:00:00.000Z
+2026-05-11T12:00:00.000Z
+2026-05-11T00:00:30.000Z
+--- components / from roundtrip via the lib ---
+true

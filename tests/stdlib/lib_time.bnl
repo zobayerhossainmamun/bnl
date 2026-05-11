@@ -1,0 +1,51 @@
+// Embedded time lib — ISO 8601 format + parse + duration arithmetic.
+// All checks pinned to UTC so they don't depend on test-machine timezone.
+import "time" as time;
+
+print("--- now / now_ns ---");
+print(time.now() > 0);
+print(time.now_ns() > 0);
+
+print("--- iso(0) is the Unix epoch ---");
+print(time.iso(0));
+
+print("--- iso of a known timestamp ---");
+print(time.iso(1700000000123));
+
+print("--- parse_iso roundtrip ---");
+var s = "2026-05-11T12:34:56.789Z";
+var ms = time.parse_iso(s);
+print(time.iso(ms) == s);
+
+print("--- parse_iso with offset converts back to UTC ms ---");
+var u = time.parse_iso("2024-01-15T10:00:00+02:00");
+print(time.iso(u));
+
+print("--- parse_iso date-only ---");
+var d = time.parse_iso("2026-05-11");
+var c = time.components(d, false);
+print(c.year);
+print(c.month);
+print(c.day);
+print(c.hour);
+
+print("--- parse_iso bad inputs throw ---");
+try { time.parse_iso("not a date"); print("FAIL"); } catch (e) { print("threw"); }
+try { time.parse_iso("2026/05/11"); print("FAIL"); } catch (e) { print("threw"); }
+try { time.parse_iso("2026-05-11T10");     print("FAIL"); } catch (e) { print("threw"); }
+
+print("--- duration helpers ---");
+print(time.seconds(2));
+print(time.minutes(3));
+print(time.hours(1));
+print(time.days(1));
+
+print("--- add_days / add_hours preserve precision ---");
+var base = time.parse_iso("2026-05-11T00:00:00.000Z");
+print(time.iso(time.add_days(base, 1)));
+print(time.iso(time.add_hours(base, 12)));
+print(time.iso(time.add_seconds(base, 30)));
+
+print("--- components / from roundtrip via the lib ---");
+var parts = time.components(1700000000000, false);
+print(time.from(parts, false) == 1700000000000);

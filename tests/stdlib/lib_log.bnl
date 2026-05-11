@@ -1,0 +1,63 @@
+// Logging — default formatter uses time.iso, level filter, custom
+// formatter / sink. Tests pin to a deterministic formatter + capturing
+// sink to avoid timestamp noise.
+import "log" as log;
+
+print("--- default formatter has a timestamped shape ---");
+// Capture output instead of letting it hit stdout (so the timestamp
+// doesn't break the .expected file). Just check the shape.
+var captured = [];
+log.set_sink(function (s) { captured.push(s); });
+
+log.info("hello world");
+print(captured.length);
+print(captured[0].starts_with("["));
+print(captured[0].index_of("Z]") > 0);
+print(captured[0].index_of("INFO hello world") > 0);
+
+print("--- custom formatter ---");
+captured = [];
+log.set_formatter(function (num, name, msg) {
+    return name + ":" + msg;
+});
+
+log.debug("d");
+log.info("i");
+log.warn("w");
+log.error("e");
+
+print(captured.length);   // INFO filter is default → debug dropped → 3
+print(captured[0]);
+print(captured[1]);
+print(captured[2]);
+
+print("--- set_level('warn') drops info ---");
+captured = [];
+log.set_level("warn");
+log.info("dropped");
+log.warn("kept");
+log.error("kept");
+print(captured.length);
+print(captured[0]);
+print(captured[1]);
+
+print("--- set_level by number ---");
+captured = [];
+log.set_level(log.DEBUG);
+log.debug("now visible");
+print(captured.length);
+print(captured[0]);
+
+print("--- bad set_level ---");
+try {
+    log.set_level("trace");
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+try {
+    log.set_level(true);
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}

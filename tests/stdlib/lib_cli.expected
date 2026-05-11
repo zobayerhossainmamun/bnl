@@ -1,0 +1,38 @@
+--- defaults applied when nothing given ---
+false
+false
+out.txt
+null
+0
+--- long flags and options ---
+true
+x.txt
+in.dat
+--- --option=value inline form ---
+inline.txt
+thefile
+--- short flags and options ---
+true
+short.txt
+f
+--- extra positionals land in _rest ---
+main.dat
+2
+extra1
+extra2
+--- negative-number positional ---
+-3.14
+--- option requires a value ---
+threw
+threw
+--- unknown options throw ---
+threw
+threw
+--- flag with =value rejected ---
+threw
+--- usage() includes name and description ---
+true
+true
+true
+true
+true
