@@ -1,0 +1,114 @@
+// WebSocket end-to-end: server (web.upgrade) + raw-TCP client driving
+// the protocol by hand. Verifies handshake (with RFC's sample key →
+// known Sec-WebSocket-Accept), echo of a text frame, and the close
+// handshake.
+import "web" as web;
+import "net" as net;
+
+// ---- server ----------------------------------------------------------------
+
+var server = web.serve({port: 0}, function (req) {
+    var ws = web.upgrade(req);
+    ws.on_message(function (msg, is_binary) {
+        ws.send("echo: " + msg);
+    });
+    ws.on_close(function (code, reason) {
+        print("server close:", code);
+    });
+    return null;            // hijacked — no HTTP response will be sent
+});
+
+print("port valid:", server.port > 0);
+
+// ---- client (raw frames) ---------------------------------------------------
+
+// Build a client-to-server frame with mask=0000 (XOR-identity) so we don't
+// have to compute masked payloads by hand. RFC requires mask=1; payload
+// content doesn't change because every mask byte is zero.
+function frame(opcode, payload) {
+    var b0 = chr(128 + opcode);                 // FIN bit set + opcode
+    var b1 = chr(128 + payload.byte_length);    // MASK bit set + 7-bit len
+    var mask = chr(0) + chr(0) + chr(0) + chr(0);
+    return b0 + b1 + mask + payload;
+}
+
+// Parse one server-to-client frame from `buf` at offset `start`. Servers
+// MUST NOT mask, so the frame layout is simpler than the client's. Returns
+// `null` if `buf` doesn't yet contain a complete frame.
+function parse_frame(buf, start) {
+    if (buf.byte_length - start < 2) { return null; }
+    var b0 = buf.byte_at(start);
+    var b1 = buf.byte_at(start + 1);
+    var opcode = b0 % 16;
+    var len    = b1 % 128;
+    var hdr    = 2;
+    if (len == 126) {
+        if (buf.byte_length - start < 4) { return null; }
+        len = buf.byte_at(start + 2) * 256 + buf.byte_at(start + 3);
+        hdr = 4;
+    }
+    if (buf.byte_length - start < hdr + len) { return null; }
+    return {
+        opcode:   opcode,
+        payload:  buf.byte_slice(start + hdr, start + hdr + len),
+        consumed: hdr + len
+    };
+}
+
+net.tcp_connect("127.0.0.1", server.port, function (err, client) {
+    var buf = "";
+    var phase = "handshake";
+    var frames_seen = 0;
+
+    client.on_data(function (chunk) {
+        buf = buf + chunk;
+
+        if (phase == "handshake") {
+            var sep = buf.index_of("\r\n\r\n");
+            if (sep < 0) { return; }
+            print("status line:", buf.byte_slice(0, buf.index_of("\r\n")));
+            print("has accept:",
+                  buf.index_of("Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=") > 0);
+            buf = buf.byte_slice(sep + 4);
+            phase = "frames";
+
+            // Send a text message.
+            client.write(frame(1, "hello"));
+        }
+
+        var pos = 0;
+        var more = true;
+        while (more) {
+            var f = parse_frame(buf, pos);
+            if (f == null) { more = false; }
+            else {
+                pos = pos + f.consumed;
+                frames_seen = frames_seen + 1;
+                if (frames_seen == 1) {
+                    print("echo opcode:",  f.opcode);
+                    print("echo payload:", f.payload);
+                    // Send close with status 1000 ("normal").
+                    client.write(frame(8, chr(3) + chr(232)));
+                } else if (frames_seen == 2) {
+                    print("close opcode:", f.opcode);
+                    print("close code:",
+                        f.payload.byte_at(0) * 256 + f.payload.byte_at(1));
+                    server.close();
+                    client.close();
+                    more = false;
+                }
+            }
+        }
+        if (pos > 0) { buf = buf.byte_slice(pos); }
+    });
+
+    // Open the handshake. Using RFC 6455's sample key so the expected
+    // Accept value is the documented one.
+    client.write("GET /ws HTTP/1.1\r\n"
+               + "Host: x\r\n"
+               + "Upgrade: websocket\r\n"
+               + "Connection: Upgrade\r\n"
+               + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+               + "Sec-WebSocket-Version: 13\r\n"
+               + "\r\n");
+});

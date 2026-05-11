@@ -1,0 +1,8 @@
+port valid: true
+status line: HTTP/1.1 101 Switching Protocols
+has accept: true
+echo opcode: 1
+echo payload: echo: hello
+server close: 1000
+close opcode: 8
+close code: 1000

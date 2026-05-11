@@ -1,0 +1,299 @@
+import "crypto" as _crypto;
+import "math"   as _math;
+
+// WebSocket (RFC 6455) — server-side, pure bnl on top of the existing
+// `net` / `tls` conn surface. Plug into the HTTP server via
+// `web.upgrade(req)` which calls `ws.accept` under the hood.
+//
+// Connection API returned by accept():
+//   ws.on_message(fn)        fn(msg, is_binary)
+//   ws.on_close(fn)          fn(code, reason)
+//   ws.on_ping(fn)           fn(payload)   (auto-pong is the default)
+//   ws.send(text)            send a text frame
+//   ws.send_binary(bytes)    send a binary frame
+//   ws.ping(payload?)        send a ping
+//   ws.close(code?, reason?) send a close frame and shut down
+//
+// Limits / scope (v1):
+//   - Text / binary / close / ping / pong opcodes.
+//   - Reassembles fragmented messages (continuation frames).
+//   - Single-byte XOR unmask via bit-walking math — correct but O(n) per
+//     payload byte. Fine for chat-size messages (<= ~100 KB); large
+//     payloads will be slow until a native unmask helper lands.
+//   - No permessage-deflate compression.
+//   - Server-side only. Client `ws.connect(...)` is a follow-up.
+
+var WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+// ---------------- handshake -----------------------------------------------
+
+// validate_request(req) → true if the upgrade headers look like a WS open.
+// Doesn't check Origin / subprotocol selection — caller can.
+function validate_request(req) {
+    if (req.method != "GET") { return false; }
+    var u = req.headers["upgrade"];
+    if (u == null or u.to_lower() != "websocket") { return false; }
+    var c = req.headers["connection"];
+    if (c == null or c.to_lower().index_of("upgrade") < 0) { return false; }
+    var v = req.headers["sec-websocket-version"];
+    if (v != "13") { return false; }
+    var k = req.headers["sec-websocket-key"];
+    if (k == null or k.byte_length == 0) { return false; }
+    return true;
+}
+
+// Build the 101 Switching Protocols response for a client key.
+// `crypto.hash` returns a hex digest, but Sec-WebSocket-Accept needs the
+// base64 of the *raw* SHA-1 bytes — hex_decode round-trips back to bytes.
+function _build_accept_response(client_key) {
+    var hex    = _crypto.hash("sha1", client_key + WS_GUID);
+    var accept = _crypto.b64_encode(_crypto.hex_decode(hex));
+    return "HTTP/1.1 101 Switching Protocols\r\n"
+         + "Upgrade: websocket\r\n"
+         + "Connection: Upgrade\r\n"
+         + "Sec-WebSocket-Accept: " + accept + "\r\n"
+         + "\r\n";
+}
+
+// accept(conn, req) — perform the upgrade handshake and return a ws conn.
+// Caller is expected to verify with `validate_request(req)` first OR catch
+// the throw from this function. After accept() returns, the TCP conn is
+// effectively owned by the ws conn — do NOT write to it directly.
+function accept(conn, req) {
+    if (not validate_request(req)) {
+        throw "ws.accept: not a valid WebSocket upgrade request";
+    }
+    conn.write(_build_accept_response(req.headers["sec-websocket-key"]));
+    return _build_conn(conn);
+}
+
+// ---------------- per-connection state ------------------------------------
+
+function _build_conn(conn) {
+    var state = {
+        conn:             conn,
+        buf:              "",
+        closed:           false,
+        // user callbacks
+        on_message_fn:    null,
+        on_close_fn:      null,
+        on_ping_fn:       null,
+        // reassembly across fragmented frames
+        pending_opcode:   0,
+        pending_payload:  ""
+    };
+
+    conn.on_data(function (chunk) {
+        if (state.closed) { return; }
+        state.buf = state.buf + chunk;
+        _drain(state);
+    });
+    conn.on_end(function () {
+        if (state.closed) { return; }
+        state.closed = true;
+        if (state.on_close_fn != null) { state.on_close_fn(1006, ""); }
+    });
+
+    var api = {};
+
+    api.on_message = function (fn) { state.on_message_fn = fn; return api; };
+    api.on_close   = function (fn) { state.on_close_fn   = fn; return api; };
+    api.on_ping    = function (fn) { state.on_ping_fn    = fn; return api; };
+
+    api.send = function (text) {
+        if (state.closed) { return; }
+        conn.write(_build_frame(1, text));
+    };
+    api.send_binary = function (data) {
+        if (state.closed) { return; }
+        conn.write(_build_frame(2, data));
+    };
+    api.ping = function (data) {
+        if (state.closed) { return; }
+        if (data == null) { data = ""; }
+        conn.write(_build_frame(9, data));
+    };
+    api.close = function (code, reason) {
+        if (state.closed) { return; }
+        state.closed = true;
+        if (code == null)   { code = 1000; }
+        if (reason == null) { reason = ""; }
+        var payload = chr(_math.floor(code / 256))
+                    + chr(code % 256)
+                    + reason;
+        conn.write(_build_frame(8, payload), function (err) {
+            state.conn.close();
+        });
+    };
+
+    return api;
+}
+
+// ---------------- frame decoder -------------------------------------------
+
+// Try to consume as many complete frames as `state.buf` holds, dispatching
+// each one. Stops cleanly when the buffer no longer has a full frame.
+function _drain(state) {
+    var go = true;
+    while (go and not state.closed) {
+        var n = _try_parse_frame(state);
+        if (n == 0) { go = false; }
+    }
+}
+
+// Returns the byte count consumed (0 if not enough bytes for a complete
+// frame). On success it dispatches the frame to the appropriate handler.
+function _try_parse_frame(state) {
+    var buf = state.buf;
+    if (buf.byte_length < 2) { return 0; }
+    var b0 = buf.byte_at(0);
+    var b1 = buf.byte_at(1);
+    var fin    = _math.floor(b0 / 128) % 2 == 1;
+    var opcode = b0 % 16;
+    var masked = _math.floor(b1 / 128) % 2 == 1;
+    var len    = b1 % 128;
+    var hdr_size = 2;
+    if (len == 126) {
+        if (buf.byte_length < 4) { return 0; }
+        len = buf.byte_at(2) * 256 + buf.byte_at(3);
+        hdr_size = 4;
+    } else if (len == 127) {
+        if (buf.byte_length < 10) { return 0; }
+        var big = 0;
+        var i = 0;
+        while (i < 8) {
+            big = big * 256 + buf.byte_at(2 + i);
+            i = i + 1;
+        }
+        len = big;
+        hdr_size = 10;
+    }
+    var mask_off = hdr_size;
+    if (masked) { hdr_size = hdr_size + 4; }
+    var total = hdr_size + len;
+    if (buf.byte_length < total) { return 0; }
+
+    var payload = buf.byte_slice(hdr_size, hdr_size + len);
+    if (masked) {
+        var mask = buf.byte_slice(mask_off, mask_off + 4);
+        payload = _unmask(payload, mask);
+    }
+    state.buf = buf.byte_slice(total);
+
+    _dispatch_frame(state, fin, opcode, payload);
+    return total;
+}
+
+function _dispatch_frame(state, fin, opcode, payload) {
+    if (opcode == 8) {                           // close
+        var code = 1005;
+        var reason = "";
+        if (payload.byte_length >= 2) {
+            code = payload.byte_at(0) * 256 + payload.byte_at(1);
+            reason = payload.byte_slice(2);
+        }
+        if (not state.closed) {
+            // Echo the close, then shut the conn down.
+            state.closed = true;
+            state.conn.write(_build_frame(8, payload), function (err) {
+                state.conn.close();
+            });
+        }
+        if (state.on_close_fn != null) { state.on_close_fn(code, reason); }
+        return;
+    }
+    if (opcode == 9) {                           // ping → auto-pong
+        state.conn.write(_build_frame(10, payload));
+        if (state.on_ping_fn != null) { state.on_ping_fn(payload); }
+        return;
+    }
+    if (opcode == 10) {                           // pong — ignored
+        return;
+    }
+    if (opcode == 1 or opcode == 2) {          // text / binary
+        if (fin) {
+            _deliver(state, opcode, payload);
+        } else {
+            state.pending_opcode  = opcode;
+            state.pending_payload = payload;
+        }
+        return;
+    }
+    if (opcode == 0) {                           // continuation
+        state.pending_payload = state.pending_payload + payload;
+        if (fin) {
+            _deliver(state, state.pending_opcode, state.pending_payload);
+            state.pending_opcode  = 0;
+            state.pending_payload = "";
+        }
+        return;
+    }
+}
+
+function _deliver(state, opcode, payload) {
+    if (state.on_message_fn != null) {
+        state.on_message_fn(payload, opcode == 2);
+    }
+}
+
+// ---------------- frame encoder -------------------------------------------
+
+// Build a server→client frame. Always sets FIN, never masks (server frames
+// MUST NOT be masked per RFC).
+function _build_frame(opcode, payload) {
+    var b0 = 128 + opcode;
+    var head = chr(b0);
+    var len  = payload.byte_length;
+    if (len < 126) {
+        head = head + chr(len);
+    } else if (len < 65536) {
+        head = head + chr(126)
+                    + chr(_math.floor(len / 256))
+                    + chr(len % 256);
+    } else {
+        head = head + chr(127);
+        // 8-byte big-endian length
+        var bytes = [];
+        var n = len;
+        var i = 0;
+        while (i < 8) {
+            bytes.push(n % 256);
+            n = _math.floor(n / 256);
+            i = i + 1;
+        }
+        var j = 7;
+        while (j >= 0) {
+            head = head + chr(bytes[j]);
+            j = j - 1;
+        }
+    }
+    return head + payload;
+}
+
+// ---------------- bitwise XOR (slow but correct) --------------------------
+
+// payload XOR'd byte-wise with the 4-byte mask (mask repeats). bnl has no
+// native bitwise ops yet, so each byte is decomposed bit-by-bit. A native
+// `crypto.xor(data, key)` would speed this up ~50× — TODO for v2.
+function _unmask(payload, mask) {
+    var out = "";
+    var i = 0;
+    while (i < payload.byte_length) {
+        out = out + chr(_xor_byte(payload.byte_at(i),
+                                   mask.byte_at(i % 4)));
+        i = i + 1;
+    }
+    return out;
+}
+
+function _xor_byte(a, b) {
+    var r   = 0;
+    var bit = 1;
+    while (bit < 256) {
+        var ab = _math.floor(a / bit) % 2;
+        var bb = _math.floor(b / bit) % 2;
+        if (ab != bb) { r = r + bit; }
+        bit = bit * 2;
+    }
+    return r;
+}

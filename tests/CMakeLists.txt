@@ -85,6 +85,7 @@ add_bnl_test(lib_multipart        stdlib)
 add_bnl_test(lib_multipart_stream stdlib)
 add_bnl_test(lib_template         stdlib)
 add_bnl_test(lib_template_advanced stdlib)
+add_bnl_test(lib_ws               stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

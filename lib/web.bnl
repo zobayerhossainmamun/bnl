@@ -7,6 +7,7 @@ import "io"        as _io;
 import "timers"    as _timers;
 import "multipart" as _mp;
 import "template"  as _tpl;
+import "ws"        as _ws;
 
 // Defaults applied to web.serve / app.listen opts when the caller doesn't
 // override. Hardening knobs only — connection logic doesn't depend on them.
@@ -91,6 +92,23 @@ function view(path, ctx) {
 
 function set_views(dir)       { _tpl.set_views(dir); }
 function clear_views_cache()  { _tpl.clear_cache(); }
+
+// web.upgrade(req) — perform a WebSocket upgrade handshake on req's
+// underlying TCP conn and hand back the WS conn object (see lib/ws.bnl
+// for the API). Sets req._upgraded so the server skips its response /
+// keep-alive / close logic — the WS layer now owns the socket.
+//
+// Throws if the request headers don't look like a valid Upgrade. Catch
+// and respond with 400 if you want to keep serving the same TCP conn
+// as plain HTTP afterwards (rare).
+function upgrade(req) {
+    if (req._conn == null) {
+        throw "web.upgrade: req has no underlying conn";
+    }
+    var ws_conn = _ws.accept(req._conn, req);
+    req._upgraded = true;
+    return ws_conn;
+}
 
 // ---------------- legacy request-body helpers ------------------------------
 
@@ -445,6 +463,11 @@ function _handle_connection(conn, handler, server_opts) {
         }
 
         var req = _enrich(parsed);
+        // Stash the raw conn so feature add-ons (web.upgrade for WebSocket,
+        // future SSE, etc.) can take it over. Plain HTTP handlers should
+        // ignore this field — it's not part of the documented surface.
+        req._conn     = conn;
+        req._upgraded = false;
         var responded = false;
 
         var send_canonical = function (resp) {
@@ -465,13 +488,24 @@ function _handle_connection(conn, handler, server_opts) {
             });
         };
 
-        req.respond = function (r) { send_canonical(_coerce(r)); };
+        req.respond = function (r) {
+            if (req._upgraded) { return; }
+            send_canonical(_coerce(r));
+        };
 
         var resp_value = null;
         try {
             resp_value = handler(req);
         } catch (e) {
             resp_value = { status: 500, body: "Internal Server Error" };
+        }
+        // If the handler hijacked the conn (web.upgrade), it now owns the
+        // socket — don't send a response, don't recurse, don't close.
+        // Crucially, cancel the HTTP idle timer; otherwise it keeps the
+        // libuv loop alive for the full idle window after the WS conn ends.
+        if (req._upgraded) {
+            if (idle_cancel != null) { idle_cancel(); idle_cancel = null; }
+            return;
         }
         if (resp_value != null) {
             send_canonical(_coerce(resp_value));
@@ -1012,6 +1046,10 @@ function _dispatch(req, routes, before_fns, after_fns, on_404_fns, on_error_fns)
             resp_value = _run_404(on_404_fns, req);
         }
     }
+
+    // If the handler hijacked the conn (web.upgrade for WebSocket), skip
+    // the entire response pipeline — there's nothing to send.
+    if (req._upgraded) { return null; }
 
     // Coerce ONCE up front so after hooks operate on the canonical
     // {status, headers, body} shape — they can always do `resp.headers[...]`
