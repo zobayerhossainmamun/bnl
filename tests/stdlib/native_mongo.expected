@@ -1,0 +1,11 @@
+--- version ---
+string
+true
+--- connect parses URI ok, ping fails fast on closed port ---
+threw
+--- malformed URI throws at connect ---
+threw
+--- non-string arg ---
+threw
+--- accessor on closed client throws ---
+threw

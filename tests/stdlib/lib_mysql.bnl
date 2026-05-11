@@ -1,0 +1,60 @@
+// Embedded bnl stdlib — mysql module. parse_url + connect-thru wrapper +
+// helpers. Live roundtrip tests deferred (need BNL_TEST_MYSQL_URL).
+import "mysql" as mysql;
+
+print("--- version ---");
+print(type(mysql.version()));
+
+print("--- parse_url full form ---");
+var u = mysql.parse_url("mysql://alice:secret@db.example.com:3307/myapp?ssl=true&connect_timeout=5");
+print(u.user);
+print(u.password);
+print(u.host);
+print(u.port);
+print(u.database);
+print(u.ssl);
+print(u.connect_timeout);
+
+print("--- parse_url minimal (host only) ---");
+var m = mysql.parse_url("mysql://db.example.com");
+print(m.host);
+print(m.user == null);
+print(m.port == null);
+print(m.database == null);
+
+print("--- parse_url rejects non-mysql scheme ---");
+try {
+    mysql.parse_url("http://example.com");
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+
+print("--- url-form connect routes through the wrapper and fails fast ---");
+try {
+    mysql.connect("mysql://nope:nope@127.0.0.1:1/nope?connect_timeout=2");
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- map-form connect also works ---");
+try {
+    mysql.connect({
+        host:            "127.0.0.1",
+        port:            1,
+        user:            "nope",
+        connect_timeout: 2
+    });
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- bad arg type ---");
+try {
+    mysql.connect(123);
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}

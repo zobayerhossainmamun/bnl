@@ -1,0 +1,6 @@
+--- version ---
+string
+--- non-string ---
+threw
+--- connect routes to native + ping fails fast ---
+threw

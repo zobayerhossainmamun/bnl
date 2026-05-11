@@ -1,0 +1,9 @@
+--- version ---
+string
+--- map-form connect builds conninfo + fails the same way ---
+threw
+--- string-form connect still works through the wrapper ---
+threw
+--- bad arg type ---
+threw
+threw

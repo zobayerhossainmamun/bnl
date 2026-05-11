@@ -1,0 +1,7 @@
+--- version is a non-empty string ---
+string
+true
+--- bad connect throws cleanly ---
+threw
+--- non-string arg throws ---
+threw

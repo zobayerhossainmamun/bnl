@@ -1,0 +1,23 @@
+--- version ---
+string
+--- parse_url full form ---
+alice
+secret
+db.example.com
+3307
+myapp
+true
+5
+--- parse_url minimal (host only) ---
+db.example.com
+true
+true
+true
+--- parse_url rejects non-mysql scheme ---
+threw
+--- url-form connect routes through the wrapper and fails fast ---
+threw
+--- map-form connect also works ---
+threw
+--- bad arg type ---
+threw

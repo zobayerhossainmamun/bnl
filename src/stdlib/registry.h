@@ -25,6 +25,16 @@ class Interpreter;
 //   _sqlite — SQLite open / exec / query / etc (vcpkg sqlite3).
 //             Public "sqlite" name belongs to lib/sqlite.bnl
 //             (transaction / migrate / insert helpers).
+//   _pg     — PostgreSQL connect / exec / query / etc (vcpkg libpq).
+//             Public "pg" name belongs to lib/pg.bnl
+//             (transaction / migrate / insert helpers + map-form connect).
+//   _mysql  — MySQL/MariaDB via vcpkg libmariadb (LGPL, wire-compatible
+//             with MySQL servers). Public "mysql" name belongs to
+//             lib/mysql.bnl. Uses prepared statements + `?` placeholders.
+//   _mongo  — MongoDB via vcpkg mongo-c-driver (Apache-2.0). Collection-
+//             shaped API rather than SQL: connect → client → db →
+//             collection → {insert_one/find/...}. Public "mongo" name
+//             belongs to lib/mongo.bnl.
 //
 // Anything else is delivered as a plugin by the separate package manager.
 void register_sys   (Interpreter& interp);
@@ -39,5 +49,8 @@ void register_json  (Interpreter& interp);
 void register_exec  (Interpreter& interp);
 void register_dns   (Interpreter& interp);
 void register_sqlite(Interpreter& interp);
+void register_pg    (Interpreter& interp);
+void register_mysql (Interpreter& interp);
+void register_mongo (Interpreter& interp);
 
 }  // namespace bnl

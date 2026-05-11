@@ -31,6 +31,9 @@ find_package(llhttp             CONFIG REQUIRED)   # stdlib/http.cpp
 find_package(nlohmann_json      CONFIG REQUIRED)   # used by module loader to read bnl.json
 find_package(OpenSSL            REQUIRED)          # stdlib/crypto.cpp + tls.cpp
 find_package(unofficial-sqlite3 CONFIG REQUIRED)   # stdlib/sqlite.cpp
+find_package(PostgreSQL         REQUIRED)          # stdlib/pg.cpp
+find_package(unofficial-libmariadb CONFIG REQUIRED) # stdlib/mysql.cpp
+find_package(mongoc             CONFIG REQUIRED)   # stdlib/mongo.cpp
 
 set(BNL_STDLIB_EMBEDDED_HEADER ${CMAKE_BINARY_DIR}/generated/stdlib_embedded.h)
 file(GLOB BNL_LIB_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/lib/*.bnl)

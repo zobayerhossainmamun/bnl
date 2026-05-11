@@ -1,0 +1,30 @@
+// Native mysql primitive — version + connect error path. No live server.
+import "_mysql" as mysql;
+
+print("--- version is a non-empty string ---");
+var v = mysql.version();
+print(type(v));
+print(v.length > 0);
+
+print("--- bad connect throws cleanly ---");
+try {
+    mysql.connect({
+        host:            "127.0.0.1",
+        port:            1,
+        user:            "nope",
+        password:        "nope",
+        database:        "nope",
+        connect_timeout: 2
+    });
+    print("FAIL: connect should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- non-map arg throws ---");
+try {
+    mysql.connect("not a map");
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}

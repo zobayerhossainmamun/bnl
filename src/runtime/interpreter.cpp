@@ -93,6 +93,9 @@ Interpreter::Interpreter()
     register_exec  (*this);
     register_dns   (*this);
     register_sqlite(*this);
+    register_pg    (*this);
+    register_mysql (*this);
+    register_mongo (*this);
 }
 
 Interpreter::~Interpreter() {

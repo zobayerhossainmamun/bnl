@@ -1,0 +1,45 @@
+// Native mongo primitive — version + connect/ping error paths. No live
+// server. Live tests over the full insert/find/update/delete surface are
+// deferred until BNL_TEST_MONGO_URL gating lands.
+import "_mongo" as mongo;
+
+print("--- version ---");
+var v = mongo.version();
+print(type(v));
+print(v.length > 0);
+
+print("--- connect parses URI ok, ping fails fast on closed port ---");
+var c = mongo.connect("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=500&connectTimeoutMS=500");
+try {
+    c.ping();
+    print("FAIL: ping should have thrown");
+} catch (e) {
+    print("threw");
+}
+c.close();
+
+print("--- malformed URI throws at connect ---");
+try {
+    mongo.connect("not a valid uri");
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+
+print("--- non-string arg ---");
+try {
+    mongo.connect(123);
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+
+print("--- accessor on closed client throws ---");
+var c2 = mongo.connect("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=500");
+c2.close();
+try {
+    c2.db("test");
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}

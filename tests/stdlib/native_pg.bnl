@@ -1,0 +1,24 @@
+// Native postgres primitive — version + connect error path. No live server.
+// Live roundtrip tests are deferred until we add the BNL_TEST_PG_URL gate.
+import "_pg" as pg;
+
+print("--- version is a non-empty string ---");
+var v = pg.version();
+print(type(v));
+print(v.length > 0);
+
+print("--- bad connect throws cleanly ---");
+try {
+    pg.connect("host=127.0.0.1 port=1 user=nope dbname=nope connect_timeout=2");
+    print("FAIL: connect should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- non-string arg throws ---");
+try {
+    pg.connect(123);
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}

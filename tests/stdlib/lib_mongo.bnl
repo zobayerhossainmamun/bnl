@@ -1,0 +1,23 @@
+// Embedded bnl stdlib — mongo wrapper. Live roundtrip tests deferred.
+import "mongo" as mongo;
+
+print("--- version ---");
+print(type(mongo.version()));
+
+print("--- non-string ---");
+try {
+    mongo.connect(42);
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+
+print("--- connect routes to native + ping fails fast ---");
+var c = mongo.connect("mongodb://127.0.0.1:1/?serverSelectionTimeoutMS=500&connectTimeoutMS=500");
+try {
+    c.ping();
+    print("FAIL");
+} catch (e) {
+    print("threw");
+}
+c.close();

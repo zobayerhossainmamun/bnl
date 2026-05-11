@@ -38,6 +38,9 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/exec.cpp
     stdlib/dns.cpp
     stdlib/sqlite.cpp
+    stdlib/pg.cpp
+    stdlib/mysql.cpp
+    stdlib/mongo.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -72,6 +75,9 @@ target_link_libraries(bnl_core
         OpenSSL::SSL                    # stdlib/tls.cpp — pulls in OpenSSL::Crypto
                                         # transitively, which stdlib/crypto.cpp also uses
         unofficial::sqlite3::sqlite3    # stdlib/sqlite.cpp
+        PostgreSQL::PostgreSQL          # stdlib/pg.cpp
+        unofficial::libmariadb          # stdlib/mysql.cpp
+        $<IF:$<TARGET_EXISTS:mongoc::shared>,mongoc::shared,mongoc::static>  # stdlib/mongo.cpp
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
 

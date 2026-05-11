@@ -1,0 +1,13 @@
+import "_mongo" as _mongo;
+
+function version() { return _mongo.version(); }
+
+// connect(uri) — mongodb:// or mongodb+srv:// URI. Returns a client module.
+// Note: connection is lazy. Call client.ping() to force a handshake against
+// the server (useful for "is this URI actually live?" checks).
+function connect(uri) {
+    if (type(uri) != "string") {
+        throw "mongo.connect: expected URI string";
+    }
+    return _mongo.connect(uri);
+}

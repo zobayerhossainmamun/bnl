@@ -45,6 +45,9 @@ add_bnl_test(native_json          stdlib)
 add_bnl_test(native_exec          stdlib)
 add_bnl_test(native_dns           stdlib)
 add_bnl_test(native_sqlite        stdlib)
+add_bnl_test(native_pg            stdlib)
+add_bnl_test(native_mysql         stdlib)
+add_bnl_test(native_mongo         stdlib)
 
 # ---------- embedded bnl stdlib (lib/*.bnl) -------------------------------
 add_bnl_test(lib_url              stdlib)
@@ -54,6 +57,9 @@ add_bnl_test(lib_web_https        stdlib)
 add_bnl_test(lib_exec             stdlib)
 add_bnl_test(lib_dns              stdlib)
 add_bnl_test(lib_sqlite           stdlib)
+add_bnl_test(lib_pg               stdlib)
+add_bnl_test(lib_mysql            stdlib)
+add_bnl_test(lib_mongo            stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

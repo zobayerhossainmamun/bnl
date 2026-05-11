@@ -1,0 +1,99 @@
+import "_pg" as _pg;
+
+function version() { return _pg.version(); }
+
+// connect(conninfo_or_opts)
+//   - string: passed straight to libpq as conninfo or postgresql:// URI.
+//   - map:    keyword=value pairs (host, port, user, password, dbname,
+//             sslmode, connect_timeout, ...). Values are quoted + escaped
+//             for libpq conninfo. Use a URI string if you have weird chars.
+function connect(arg) {
+    if (type(arg) == "string") {
+        return _pg.connect(arg);
+    }
+    if (type(arg) == "map") {
+        return _pg.connect(_build_conninfo(arg));
+    }
+    throw "pg.connect: expected string conninfo or options map";
+}
+
+function _build_conninfo(opts) {
+    var keys = opts.keys();
+    var parts = [];
+    var i = 0;
+    while (i < keys.length) {
+        var k = keys[i];
+        var v = opts[k];
+        if (v == null) { i = i + 1; }
+        else {
+            parts.push(k + "=" + _quote_value(str(v)));
+            i = i + 1;
+        }
+    }
+    var out = "";
+    var j = 0;
+    while (j < parts.length) {
+        if (j > 0) { out = out + " "; }
+        out = out + parts[j];
+        j = j + 1;
+    }
+    return out;
+}
+
+// libpq conninfo quoting: single-quote the value, backslash-escape any
+// literal backslash or single-quote inside it.
+function _quote_value(s) {
+    var out = "'";
+    var i = 0;
+    while (i < s.length) {
+        var ch = s.char_at(i);
+        if (ch == "\\" or ch == "'") { out = out + "\\"; }
+        out = out + ch;
+        i = i + 1;
+    }
+    return out + "'";
+}
+
+function transaction(db, fn) {
+    db.exec("BEGIN");
+    try {
+        var result = fn(db);
+        db.exec("COMMIT");
+        return result;
+    } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
+    }
+}
+
+function migrate(db, statements) {
+    return transaction(db, function (d) {
+        for (var s of statements) { d.exec(s); }
+        return statements.length;
+    });
+}
+
+// insert(db, table, row) — auto-build INSERT with $1..$N placeholders and
+// "RETURNING *". Returns the inserted row as a map (so server-side defaults
+// like auto-increment ids and timestamps are visible to the caller).
+//
+// Postgres has no global last_insert_id; this is the idiomatic replacement.
+function insert(db, table, row) {
+    var keys = row.keys();
+    if (keys.length == 0) {
+        throw "pg.insert: row must have at least one column";
+    }
+    var cols = "";
+    var phs  = "";
+    var vals = [];
+    var i = 0;
+    while (i < keys.length) {
+        if (i > 0) { cols = cols + ", "; phs = phs + ", "; }
+        cols = cols + keys[i];
+        phs  = phs + "$" + str(i + 1);
+        vals.push(row[keys[i]]);
+        i = i + 1;
+    }
+    var sql = "INSERT INTO " + table + " (" + cols + ") VALUES (" + phs + ") RETURNING *";
+    return db.query_one(sql, vals);
+}

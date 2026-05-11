@@ -1,0 +1,44 @@
+// Embedded bnl stdlib — pg module. Map-form connect + helpers exist and
+// surface the same errors as the native primitive. Live roundtrip tests
+// are deferred (need BNL_TEST_PG_URL).
+import "pg" as pg;
+
+print("--- version ---");
+print(type(pg.version()));
+
+print("--- map-form connect builds conninfo + fails the same way ---");
+try {
+    pg.connect({
+        host:            "127.0.0.1",
+        port:            1,
+        user:            "nope",
+        dbname:          "nope",
+        connect_timeout: 2
+    });
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- string-form connect still works through the wrapper ---");
+try {
+    pg.connect("host=127.0.0.1 port=1 user=nope dbname=nope connect_timeout=2");
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+print("--- bad arg type ---");
+try {
+    pg.connect(null);
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
+
+try {
+    pg.connect(42);
+    print("FAIL: should have thrown");
+} catch (e) {
+    print("threw");
+}
