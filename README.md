@@ -1,10 +1,8 @@
 # Bnlang (bnl)
 
-A bilingual programming language and runtime — write the same program in **Bangla** or **English**, side by side. Implemented as a native C++ tree-walking interpreter with a small built-in stdlib (I/O, timers, networking, HTTP, TLS, JSON, regex, crypto, exec, DNS, SQLite) and a runtime FFI plugin system.
+A bilingual programming language and runtime — write the same program in **Bangla** or **English**, side by side. Implemented as a native C++ tree-walking interpreter with a built-in stdlib (I/O, timers, networking, HTTP, TLS, JSON, regex, crypto, exec, DNS, SQLite, Postgres, MySQL, MongoDB).
 
-- **Embeddable**: link `bnl_core` from a C++ host (`examples/embed/host.cpp`).
-- **Extensible**: drop `.dll` / `.so` / `.dylib` plugins into `deps/<name>/` and `import` them like any other module (`examples/plugin_native/mathx.cpp`).
-- **Self-contained binaries**: Release builds statically link all third-party deps and (on Linux) libstdc++/libgcc — users don't need to install a runtime.
+- **Self-contained binary**: Release builds statically link everything into a single `bnl` executable — users don't install a runtime, don't manage DLLs, just download and run.
 
 Status: **1.0.0**. Source is currently private; binary distribution is free.
 
@@ -75,14 +73,7 @@ cmake --preset macos-release
 cmake --build --preset windows-release
 ```
 
-Output goes to `build/<preset>/bin/`:
-
-| Build flag | What you get |
-|---|---|
-| `BNL_ENABLE_FFI=ON` (default) | `bnl` + `bnl_core.{dll,so,dylib}` — ships as two files; FFI plugins can be loaded at runtime |
-| `BNL_ENABLE_FFI=OFF` | `bnl` only — single self-contained binary; `import` of native plugins raises a clear runtime error |
-
-Add `-DBNL_ENABLE_FFI=OFF` to either `cmake --preset ...` invocation for the single-binary build.
+Output goes to `build/<preset>/bin/bnl{.exe}` — a single self-contained binary.
 
 ### Run the test suite
 
@@ -90,51 +81,20 @@ Add `-DBNL_ENABLE_FFI=OFF` to either `cmake --preset ...` invocation for the sin
 ctest --test-dir build/windows-release --output-on-failure -C Release
 ```
 
-39 tests cover lexer/parser semantics, every stdlib module, the embedded `lib/*.bnl` helpers, and FFI plugin loading.
-
----
-
-## Embedding bnl in a C++ host
-
-```cpp
-#include <bnl/interpreter.h>
-#include "frontend/lexer.h"
-#include "frontend/parser.h"
-
-bnl::Lexer  lexer("লিখুন(\"hi from বাংলা\");");
-auto        tokens  = lexer.tokenize();
-bnl::Parser parser(std::move(tokens));
-auto        program = parser.parse();
-
-bnl::Interpreter interp;
-interp.run(std::move(program));
-```
-
-See `examples/embed/host.cpp` for a complete program, including how to register native modules into the interpreter's globals.
-
----
-
-## Writing a native plugin
-
-A plugin is a shared library that exports `bnl_register` and returns a `bnl::NativeModule`. The host (`bnl.exe` or any embedder) loads it via `import "myplugin"` or by absolute path.
-
-See `examples/plugin_native/mathx.cpp` for a working sample (cube, hypot, a string greeting). The same DLL is exercised by the `proj_full` and `direct_plugin` integration tests.
+74 tests cover lexer/parser semantics, every stdlib module, and the embedded `lib/*.bnl` helpers.
 
 ---
 
 ## Project layout
 
 ```
-include/bnl/         Public C++ headers (embedders + plugins link against these)
+include/bnl/         Internal C++ headers (used inside bnl_core)
 src/                 Interpreter sources
   frontend/          Lexer, parser, AST printer
   runtime/           Values, environment, evaluator, classes, module loader
   stdlib/            Built-in native modules (sys, io, http, tls, sqlite, …)
-  ffi/               Plugin loader (cross-platform dlopen wrapper)
 lib/                 Pure-bnl stdlib helpers (baked into the binary)
-examples/embed/      C++ host embedding bnl_core
-examples/plugin_native/  Sample native plugin (mathx.dll)
-tests/               ctest-driven .bnl tests + integration fixtures
+tests/               ctest-driven .bnl tests
 cmake/               Helper scripts (embed_stdlib.cmake, run_bnl_test.cmake)
 installer/windows/   NSIS installer (x86 + x64)
 resources/           Icon, version-info .rc, README/LICENSE for distribution

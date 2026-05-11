@@ -1,3 +1,0 @@
-// Driver for the proj_full integration fixture. The fixture's app.bnl is
-// where the actual resolution scenarios live — this just enters it.
-import "../_fixtures/proj_full/app.bnl" as app;

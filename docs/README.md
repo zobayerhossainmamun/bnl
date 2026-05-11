@@ -6,7 +6,6 @@ Reference docs for the bnl language and runtime.
 |---|---|
 | [Guide](./guide.md) | First time using bnl. Install, first program, projects, async, classes. |
 | [Syntax](./syntax.md) | Language reference. Tokens, grammar, types, operators, statements. |
-| [Plugin development](./plugin-dev.md) | Authoring an FFI plugin (C++ shared library) loaded by bnl. |
 | [Dep development](./deps-dev.md) | Authoring a pure-bnl package distributed under `deps/`. |
 
 bnl is a tree-walking interpreter for a Bangla+English language with Python-flavored

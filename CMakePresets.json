@@ -95,7 +95,7 @@
 
         {
             "name": "windows-release",
-            "displayName": "Windows ship (x64, Release, deps static; ships bnl.exe + bnl_core.dll. For single .exe, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "Windows ship (x64, Release, deps static, single bnl.exe)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
             "cacheVariables": {
@@ -105,7 +105,7 @@
         },
         {
             "name": "windows-x86-release",
-            "displayName": "Windows ship (x86, Release, deps static; ships bnl.exe + bnl_core.dll. For single .exe, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "Windows ship (x86, Release, deps static, single bnl.exe)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
             "architecture": { "value": "x86", "strategy": "external" },
@@ -116,7 +116,7 @@
         },
         {
             "name": "linux-release",
-            "displayName": "Linux ship   (x64, Release, deps static + libstdc++/libgcc static; ships bnl + libbnl_core.so. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "Linux ship   (x64, Release, deps static + libstdc++/libgcc static, single bnl binary)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
             "cacheVariables": {
@@ -127,7 +127,7 @@
         },
         {
             "name": "linux-x86-release",
-            "displayName": "Linux ship   (x86, Release, deps static + libstdc++/libgcc static; ships bnl + libbnl_core.so. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "Linux ship   (x86, Release, deps static + libstdc++/libgcc static, single bnl binary)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
             "cacheVariables": {
@@ -141,7 +141,7 @@
         },
         {
             "name": "macos-release",
-            "displayName": "macOS ship   (arm64, Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "macOS ship   (arm64, Release, deps static, single bnl binary)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
             "cacheVariables": {
@@ -152,7 +152,7 @@
         },
         {
             "name": "macos-x64-release",
-            "displayName": "macOS ship   (x64 Intel, Release, deps static; ships bnl + libbnl_core.dylib. For single binary, add -DBNL_ENABLE_FFI=OFF)",
+            "displayName": "macOS ship   (x64 Intel, Release, deps static, single bnl binary)",
             "inherits": "_release",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
             "cacheVariables": {

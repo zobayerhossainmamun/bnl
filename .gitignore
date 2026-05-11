@@ -32,6 +32,3 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 
-# Generated test-fixture content (bnl.json + plugin DLL stamped at build time
-# by tests/CMakeLists.txt — see proj_full_plugin_stage).
-/tests/_fixtures/proj_full/deps/mathx-plugin/

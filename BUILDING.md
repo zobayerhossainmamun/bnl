@@ -131,13 +131,13 @@ Each block below is a complete copy-paste sequence: configure → build → test
 
 ### Output location
 
-Everything lands in `build/<preset>/bin/`. File names per platform:
+Everything lands in `build/<preset>/bin/`. The CLI binary per platform:
 
-| Platform | CLI | Runtime (FFI=ON) | Plugin sample |
-|---|---|---|---|
-| Windows | `bnl.exe` | `bnl_core.dll` | `mathx.dll` |
-| Linux | `bnl` | `libbnl_core.so` | `libmathx.so` |
-| macOS | `bnl` | `libbnl_core.dylib` | `libmathx.dylib` |
+| Platform | Output |
+|---|---|
+| Windows | `bnl.exe` |
+| Linux | `bnl` |
+| macOS | `bnl` |
 
 ### Windows x64
 
@@ -288,30 +288,7 @@ ctest --test-dir build/linux-release -R native_http --output-on-failure
 ctest --test-dir build/linux-release -R "lib_.*" --output-on-failure
 ```
 
-Expect **39 tests total** with `BNL_ENABLE_FFI=ON` (the default); **37** with `BNL_ENABLE_FFI=OFF` (the two FFI integration tests are skipped automatically).
-
----
-
-## Build options
-
-Pass these to the **configure** step with `-D`:
-
-### `BNL_ENABLE_FFI` (default `ON`)
-
-Controls whether `bnl_core` is built as a shared or static library.
-
-| Value | Output shape | When to use |
-|---|---|---|
-| `ON` (default) | `bnl` + `bnl_core.{dll,so,dylib}` ship side by side; native plugins can be loaded at runtime via `import "name"` | normal builds, plugin development, production with a package ecosystem |
-| `OFF` | `bnl` only — `bnl_core` links statically into the CLI; native plugin `import` raises a clear runtime error | single-binary distributions; minimal footprint; reproducible-build sensitive contexts |
-
-Add it to any preset's configure step:
-
-```sh
-cmake --preset linux-release -DBNL_ENABLE_FFI=OFF
-cmake --build --preset linux-release
-# build/linux-release/bin/bnl is now a single static executable, no .so files
-```
+Expect **74 tests total** to pass.
 
 ---
 
@@ -333,20 +310,11 @@ cmake --build --preset windows-release
 
 For the x86 installer, substitute the `windows-x86-release` preset and `/DARCH=x86`. The installer:
 
-- copies `bnl.exe` (and `bnl_core.dll` when FFI is ON) to `C:\Program Files\Bnlang`
+- copies `bnl.exe` to `C:\Program Files\Bnlang`
 - adds the install dir to system `PATH` (idempotent — safe to reinstall)
 - registers Apps & Features entries for clean uninstall
 
 It does **not** require admin elevation beyond the standard installer prompt, doesn't modify PowerShell execution policy, and doesn't run any post-install scripts.
-
----
-
-## Embedding / extending — see also
-
-- `examples/embed/host.cpp` + `examples/embed/CMakeLists.txt` — minimal C++ host linking `bnl_core`.
-- `examples/plugin_native/mathx.cpp` + `examples/plugin_native/CMakeLists.txt` — minimal native plugin that `import` can load.
-
-Both are built by the standard presets and exercised by the test suite.
 
 ---
 
@@ -382,7 +350,6 @@ sudo apt install -y gcc-multilib g++-multilib
 
 ### A test fails with "Access violation" only on a release build
 
-If the failure is in `proj_full` or `direct_plugin`, the staged sample plugin in `tests/_fixtures/proj_full/deps/mathx-plugin/` may be stale from a different build configuration (Debug vs Release). Both configs stage to the same path. Either re-run `cmake --build` for the failing preset (it re-stages) or delete the stale `mathx.{dll,so,dylib}` under that fixture directory.
 
 ### Build cache trash / weird stale errors
 

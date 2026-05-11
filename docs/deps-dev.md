@@ -17,10 +17,9 @@ You can mix: a dep can re-export functionality from a plugin it bundles.
 A dep is just a directory under `deps/<name>/`. The runtime decides what to load
 by trying entry-point forms in this order:
 
-1. `bnl.json` `"native"` field — covered in [plugin development](./plugin-dev.md).
-2. `bnl.json` `"main"` field → resolves to a bnl source file.
-3. `index.bnl` (Node-style fallback).
-4. `<dep_name>.bnl` (single-file dep).
+1. `bnl.json` `"main"` field → resolves to a bnl source file.
+2. `index.bnl` (Node-style fallback).
+3. `<dep_name>.bnl` (single-file dep).
 
 The first form that resolves wins.
 
@@ -76,12 +75,6 @@ deps/tag-helper/
 
 This is the convention for one-file experiments where even `index.bnl` is
 overkill.
-
-### Shape D — `bnl.json` with `native` (FFI)
-
-When the dep ships a compiled shared library — see
-[plugin development](./plugin-dev.md). The same dep dir can host both a
-`native` and a `main` field; `native` takes precedence.
 
 ## What goes in the entry file
 
@@ -176,8 +169,3 @@ consumer drops it into their `deps/` directory. A package manager is being
 built that will automate this; until then, the format is stable so packages
 won't need rewriting later.
 
-## Reference examples
-
-The integration test fixture at `tests/_fixtures/proj_full/deps/` exercises
-all three pure-bnl shapes (A: `mathlib`, B: `greeter`, C: `flat-utils`) plus
-the FFI shape (D: `mathx-plugin`). Read those for canonical layouts.

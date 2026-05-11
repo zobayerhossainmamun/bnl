@@ -40,13 +40,6 @@ private:
     ModulePtr load_canonical_file(const std::filesystem::path& canonical,
                                   const Token&                 import_token);
 
-    // Load a native plugin (.dll/.so/.dylib) by canonical path. Caches the
-    // resulting Module by path and keeps the DynamicLibrary alive for the
-    // process lifetime (closures inside the module hold raw function pointers
-    // into the plugin).
-    ModulePtr load_native_library(const std::filesystem::path& canonical,
-                                  const Token&                 import_token);
-
     // Evaluate from raw source. `display_path` is what shows up in errors and
     // module.path; `cache_key` is what we put in the cache map.
     ModulePtr evaluate_source(const std::string& cache_key,

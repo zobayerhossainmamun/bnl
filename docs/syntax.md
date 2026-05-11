@@ -216,9 +216,8 @@ Bare `super(args)` is sugar for `super.init(args)`.
 
 ```bnl
 import "sys" as sys;                          // built-in native module
-import "mathx" as m;                          // dep (deps/mathx/)
+import "utils" as u;                          // dep (deps/utils/)
 import "./utils.bnl" as utils;                // relative path
-import "./mathx.dll" as plugin;               // direct-path FFI plugin
 
 আমদানি "sys" যেমন sys;                       // bilingual form
 ```

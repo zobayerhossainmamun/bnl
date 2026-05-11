@@ -16,8 +16,6 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
 endif()
 
-option(BNL_ENABLE_FFI "Build with runtime FFI plugin support (forces bnl_core to be shared)" ON)
-
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
@@ -70,12 +68,6 @@ add_custom_command(
 add_custom_target(bnl_cacert_embedded ALL DEPENDS ${BNL_CACERT_HEADER})
 
 add_subdirectory(src)
-
-add_subdirectory(examples/embed)
-
-if(BNL_ENABLE_FFI)
-    add_subdirectory(examples/plugin_native)
-endif()
 
 enable_testing()
 add_subdirectory(tests)

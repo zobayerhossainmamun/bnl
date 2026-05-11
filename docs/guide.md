@@ -17,7 +17,7 @@ cmake --preset windows
 cmake --build --preset windows
 ```
 
-This produces `build/windows/bin/bnl.exe` and `bnl_core.dll`.
+This produces `build/windows/bin/bnl.exe`.
 
 ### Linux / macOS
 
@@ -72,9 +72,6 @@ my-app/
 ├── src/
 │   └── helpers.bnl
 └── deps/                 ← all third-party packages live here
-    ├── mathx/
-    │   ├── bnl.json      ← {"native": "mathx.dll"}
-    │   └── mathx.dll
     └── utils/
         ├── bnl.json      ← {"main": "src/index.bnl"}
         └── src/index.bnl
@@ -93,10 +90,9 @@ package manager is being built that will use them.
 
 ```bnl
 import "sys" as sys;                  // (1) built-in native module
-import "mathx" as m;                  // (2) dep, walked-up via deps/
+import "utils" as u;                  // (2) dep, walked-up via deps/
 import "./utils.bnl" as utils;        // (3) relative bnl source
-import "./mathx.dll" as plugin;       // (4) direct-path FFI plugin
-import "C:/abs/path/lib.bnl" as lib;  // (5) absolute path
+import "C:/abs/path/lib.bnl" as lib;  // (4) absolute path
 ```
 
 The resolver tries forms in this order:
@@ -246,6 +242,5 @@ c.inc();
 
 ## Where to go next
 
-- Need to call a C library? → [Plugin development](./plugin-dev.md)
 - Want to publish a pure-bnl package? → [Dep development](./deps-dev.md)
 - Need the precise grammar? → [Syntax reference](./syntax.md)

@@ -6,8 +6,8 @@
 ;   makensis /DARCH=x86 installer/windows/bnl_installer.nsi
 ;
 ; Expects the CMake release builds to already exist:
-;   build/windows-release/bin/bnl.exe       (+ bnl_core.dll when FFI=ON)
-;   build/windows-x86-release/bin/bnl.exe   (+ bnl_core.dll when FFI=ON)
+;   build/windows-release/bin/bnl.exe
+;   build/windows-x86-release/bin/bnl.exe
 ;
 ; PATH manipulation uses ReadRegStr/WriteRegExpandStr — for very long system
 ; PATHs (>1024 chars with the default NSIS build, >8192 with the Large Strings
@@ -132,12 +132,8 @@ Section "Core (required)" SEC_CORE
 
   !if "${ARCH}" == "x64"
     File /oname=bnl.exe "..\\..\\build\\windows-release\\bin\\bnl.exe"
-    ; bnl_core.dll only exists when BNL_ENABLE_FFI=ON (the default build).
-    ; /nonfatal makes the static-binary build (FFI=OFF) work with the same script.
-    File /nonfatal /oname=bnl_core.dll "..\\..\\build\\windows-release\\bin\\bnl_core.dll"
   !else
     File /oname=bnl.exe "..\\..\\build\\windows-x86-release\\bin\\bnl.exe"
-    File /nonfatal /oname=bnl_core.dll "..\\..\\build\\windows-x86-release\\bin\\bnl_core.dll"
   !endif
 
   File /nonfatal "..\\..\\resources\\README.txt"
@@ -170,7 +166,6 @@ Section "Uninstall"
   Call un.RemoveFromSystemPath
 
   Delete /REBOOTOK "$INSTDIR\\bnl.exe"
-  Delete /REBOOTOK "$INSTDIR\\bnl_core.dll"
   Delete /REBOOTOK "$INSTDIR\\README.txt"
   Delete /REBOOTOK "$INSTDIR\\LICENSE.txt"
   Delete /REBOOTOK "$INSTDIR\\Uninstall.exe"

@@ -43,7 +43,6 @@ Windows:
 Linux:
   1. Extract the archive (e.g., tar -xzf bnlang-v1.0.0-linux-x64.tar.gz).
   2. Move the 'bnl' binary somewhere on your PATH (e.g., /usr/local/bin).
-     If FFI is enabled, place the accompanying libbnl_core.so next to it.
   3. Make it executable if necessary:
        chmod +x bnl
   4. Verify installation:
@@ -52,7 +51,6 @@ Linux:
 macOS:
   1. Mount the DMG or extract the archive.
   2. Copy 'bnl' into /usr/local/bin or another directory on your PATH.
-     If FFI is enabled, place the accompanying libbnl_core.dylib next to it.
   3. On first run you may need to approve execution in System Settings
      (Gatekeeper prompt).
   4. Verify installation:
@@ -81,7 +79,7 @@ Windows:
   3. Click "Uninstall" and follow the prompts.
 
 Linux/macOS:
-  1. Delete the 'bnl' binary (and libbnl_core.* if shipped) from your PATH.
+  1. Delete the 'bnl' binary from your PATH.
   2. Remove any related files such as ~/.bnlang and ~/.bpm if present.
 
 ---------------------------------------------------------------

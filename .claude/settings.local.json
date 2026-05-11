@@ -138,7 +138,8 @@
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\google_debug.bnl)",
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe -e \"print\\([1, 2, 3]\\); print\\({a: 1, b: \"\"hello\"\", c: [10, 20, 30]}\\); print\\(\"\"scalar string\"\"\\); print\\(42, true, null\\);\")",
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl)",
-      "PowerShell($env:BNL_PRINT_COLOR=1; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl | Out-String -Stream | ForEach-Object { \\($_ -replace \"`e\",\"ESC\"\\) })"
+      "PowerShell($env:BNL_PRINT_COLOR=1; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl | Out-String -Stream | ForEach-Object { \\($_ -replace \"`e\",\"ESC\"\\) })",
+      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows-release\\\\bin\\\\bnl.exe -e \"print\\('hello from static bnl', 1 + 2\\);\")"
     ]
   }
 }
