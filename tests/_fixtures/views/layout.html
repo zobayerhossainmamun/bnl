@@ -1,0 +1,13 @@
+<h2>{{ title }}</h2>
+<p>by {{ author.name }}</p>
+{# this comment is removed #}
+{% if items %}
+  <ul>
+    {% for item in items %}
+      <li data-i="{{ loop.index }}">{{ item.name }}{% if loop.last %} (last){% end %}</li>
+    {% end %}
+  </ul>
+{% else %}
+  <p>nothing yet</p>
+{% end %}
+{% include "footer.html" %}

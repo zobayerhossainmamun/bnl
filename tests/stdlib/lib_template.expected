@@ -1,0 +1,59 @@
+--- 1. simple interpolation ---
+Hello alice
+--- 2. dot path ---
+a@b
+--- 3. HTML auto-escape ---
+&lt;script&gt;x&amp;y&lt;/script&gt;
+--- 4. {{= }} raw skip-escape ---
+<b>raw</b>
+--- 5. if / else ---
+yes
+no
+--- 6. comparison ---
+pos
+nope
+--- 7. string equality + and ---
+go
+
+--- 8. for loop with loop vars ---
+1:a, 2:b, 3:c. 
+--- 9. nested if inside for ---
+2 3 
+--- 10. missing variable -> empty (no throw) ---
+[]
+--- 11. comments are dropped ---
+abc
+--- 12. not operator ---
+pending
+--- 13. file render + include + loop.last ---
+<h2>Hello</h2>
+<p>by alice</p>
+
+
+  <ul>
+    
+      <li data-i="1">one</li>
+    
+      <li data-i="2">two (last)</li>
+    
+  </ul>
+
+<footer>(c) 2026</footer>
+
+
+--- 14. file render with empty list goes to else ---
+<h2>Empty</h2>
+<p>by bob</p>
+
+
+  <p>nothing yet</p>
+
+<footer>(c) 2026</footer>
+
+
+--- 15. web.view end-to-end ---
+status: 200
+ct: text/html; charset=utf-8
+has h2: true
+has li: true
+footer: true

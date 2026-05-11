@@ -1,0 +1,94 @@
+// Template engine — pure-bnl Liquid/Jinja-flavored renderer with auto-
+// escape, dot-paths, comparisons, if/for/include.
+import "template" as tpl;
+import "web"      as web;
+import "request"  as req;
+
+print("--- 1. simple interpolation ---");
+print(tpl.render_string("Hello {{ name }}", { name: "alice" }));
+
+print("--- 2. dot path ---");
+print(tpl.render_string("{{ user.profile.email }}",
+    { user: { profile: { email: "a@b" } } }));
+
+print("--- 3. HTML auto-escape ---");
+print(tpl.render_string("{{ s }}", { s: "<script>x&y</script>" }));
+
+print("--- 4. {{= }} raw skip-escape ---");
+print(tpl.render_string("{{= s }}", { s: "<b>raw</b>" }));
+
+print("--- 5. if / else ---");
+print(tpl.render_string("{% if admin %}yes{% else %}no{% end %}",
+    { admin: true }));
+print(tpl.render_string("{% if admin %}yes{% else %}no{% end %}",
+    { admin: false }));
+
+print("--- 6. comparison ---");
+print(tpl.render_string("{% if n > 0 %}pos{% else %}nope{% end %}",
+    { n: 5 }));
+print(tpl.render_string("{% if n > 0 %}pos{% else %}nope{% end %}",
+    { n: -1 }));
+
+print("--- 7. string equality + and ---");
+print(tpl.render_string("{% if status == \"ok\" and count > 0 %}go{% end %}",
+    { status: "ok", count: 3 }));
+print(tpl.render_string("{% if status == \"ok\" and count > 0 %}go{% end %}",
+    { status: "ok", count: 0 }));
+
+print("--- 8. for loop with loop vars ---");
+print(tpl.render_string(
+    "{% for x in xs %}{{ loop.index }}:{{ x }}{% if loop.last %}.{% else %},{% end %} {% end %}",
+    { xs: ["a", "b", "c"] }));
+
+print("--- 9. nested if inside for ---");
+print(tpl.render_string(
+    "{% for n in ns %}{% if n > 1 %}{{ n }} {% end %}{% end %}",
+    { ns: [0, 1, 2, 3] }));
+
+print("--- 10. missing variable -> empty (no throw) ---");
+print(tpl.render_string("[{{ nope }}]", {}));
+
+print("--- 11. comments are dropped ---");
+print(tpl.render_string("a{# comment #}b{# more #}c", {}));
+
+print("--- 12. not operator ---");
+print(tpl.render_string("{% if not done %}pending{% end %}", { done: false }));
+
+print("--- 13. file render + include + loop.last ---");
+tpl.set_views("../_fixtures/views");
+print(tpl.render("layout.html", {
+    title:  "Hello",
+    author: { name: "alice" },
+    items:  [ { name: "one" }, { name: "two" } ],
+    year:   2026
+}));
+
+print("--- 14. file render with empty list goes to else ---");
+print(tpl.render("layout.html", {
+    title:  "Empty",
+    author: { name: "bob" },
+    items:  [],
+    year:   2026
+}));
+
+print("--- 15. web.view end-to-end ---");
+web.set_views("../_fixtures/views");
+var server = web.serve({port: 0}, function (r) {
+    if (r.path == "/page") {
+        return web.view("layout.html", {
+            title:  "via http",
+            author: { name: "alice" },
+            items:  [{ name: "item-1" }],
+            year:   2026
+        });
+    }
+    return [404, "nope"];
+});
+req.get("http://127.0.0.1:" + str(server.port) + "/page", function (e, resp) {
+    print("status:", resp.status);
+    print("ct:",     resp.headers["content-type"]);
+    print("has h2:", resp.body.index_of("<h2>via http</h2>") >= 0);
+    print("has li:", resp.body.index_of("data-i=\"1\"") >= 0);
+    print("footer:", resp.body.index_of("<footer>(c) 2026</footer>") >= 0);
+    server.close();
+});

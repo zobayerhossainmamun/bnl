@@ -1,0 +1,65 @@
+// Template engine — whitespace control, filters, and inheritance.
+import "template" as tpl;
+
+print("--- 1. whitespace control: {%- -%} strips both sides ---");
+print(tpl.render_string(
+    "a\n   {%- if show -%}   b   {%- end -%}   \nc",
+    { show: true }
+));
+
+print("--- 2. left-only and right-only strip ---");
+print(tpl.render_string(
+    "[  {%- if true %}KEEP_RIGHT_WS{% end -%}  ]", {}
+));
+
+print("--- 3. {{- -}} on outputs ---");
+print(tpl.render_string(
+    "x   {{- name -}}   y", { name: "ALICE" }
+));
+
+print("--- 4. filter: upper / lower / capitalize ---");
+print(tpl.render_string("{{ name | upper }}",      { name: "alice" }));
+print(tpl.render_string("{{ name | lower }}",      { name: "ALICE" }));
+print(tpl.render_string("{{ name | capitalize }}", { name: "alice" }));
+
+print("--- 5. filter: length ---");
+print(tpl.render_string("{{ xs | length }}",   { xs: [1, 2, 3, 4] }));
+print(tpl.render_string("{{ s | length }}",    { s: "hello" }));
+
+print("--- 6. filter: default ---");
+print(tpl.render_string("{{ missing | default(\"fallback\") }}", {}));
+print(tpl.render_string("{{ name | default(\"fallback\") }}",    { name: "alice" }));
+
+print("--- 7. filter: trim / replace / truncate ---");
+print(tpl.render_string("[{{ s | trim }}]",                 { s: "  spaced  " }));
+print(tpl.render_string("{{ s | replace(\"X\", \"Y\") }}",  { s: "aXbXc" }));
+print(tpl.render_string("{{ s | truncate(5) }}",            { s: "hello world" }));
+
+print("--- 8. filter: join ---");
+print(tpl.render_string("{{ xs | join(\", \") }}", { xs: ["a", "b", "c"] }));
+
+print("--- 9. filter chain ---");
+print(tpl.render_string("{{ name | upper | replace(\"A\", \"@\") }}",
+    { name: "alice" }));
+
+print("--- 10. filter: safe skips auto-escape ---");
+print(tpl.render_string("{{ html | safe }}",
+    { html: "<b>bold</b>" }));
+
+print("--- 11. filter: escape forces escape on RAW ---");
+print(tpl.render_string("{{= html | escape }}",
+    { html: "<b>bold</b>" }));
+
+print("--- 12. custom filter via register_filter ---");
+tpl.register_filter("exclaim", function (v, args) {
+    return str(v) + "!";
+});
+print(tpl.render_string("{{ greeting | exclaim }}", { greeting: "hi" }));
+
+print("--- 13. inheritance: child overrides title + body, inherits heading ---");
+tpl.set_views("../_fixtures/views");
+tpl.clear_cache();
+print(tpl.render("child.html", { name: "alice" }));
+
+print("--- 14. inheritance: grandchild extends child extends base ---");
+print(tpl.render("grandchild.html", { name: "bob" }));

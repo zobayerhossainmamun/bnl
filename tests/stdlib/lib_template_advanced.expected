@@ -1,0 +1,46 @@
+--- 1. whitespace control: {%- -%} strips both sides ---
+abc
+--- 2. left-only and right-only strip ---
+[KEEP_RIGHT_WS]
+--- 3. {{- -}} on outputs ---
+xALICEy
+--- 4. filter: upper / lower / capitalize ---
+ALICE
+alice
+Alice
+--- 5. filter: length ---
+4
+5
+--- 6. filter: default ---
+fallback
+alice
+--- 7. filter: trim / replace / truncate ---
+[spaced]
+aYbYc
+hello...
+--- 8. filter: join ---
+a, b, c
+--- 9. filter chain ---
+@LICE
+--- 10. filter: safe skips auto-escape ---
+<b>bold</b>
+--- 11. filter: escape forces escape on RAW ---
+&lt;b&gt;bold&lt;/b&gt;
+--- 12. custom filter via register_filter ---
+hi!
+--- 13. inheritance: child overrides title + body, inherits heading ---
+<!doctype html>
+<title>child title</title>
+<body>
+<h1>default heading</h1>
+hello alice!
+</body>
+
+--- 14. inheritance: grandchild extends child extends base ---
+<!doctype html>
+<title>child title</title>
+<body>
+<h1>grandchild heading</h1>
+hello bob!
+</body>
+

@@ -6,6 +6,7 @@ import "json"      as _json;
 import "io"        as _io;
 import "timers"    as _timers;
 import "multipart" as _mp;
+import "template"  as _tpl;
 
 // Defaults applied to web.serve / app.listen opts when the caller doesn't
 // override. Hardening knobs only — connection logic doesn't depend on them.
@@ -78,6 +79,18 @@ function error(status, msg) {
 function file(path) {
     return { _kind: "file", path: path };
 }
+
+// web.view(path, ctx) — render a template (resolved against the configured
+// views directory) and wrap it in a 200 text/html response. Use
+// web.set_views(dir) to point at your templates dir.
+function view(path, ctx) {
+    return { status:  200,
+             headers: { "Content-Type": "text/html; charset=utf-8" },
+             body:    _tpl.render(path, ctx) };
+}
+
+function set_views(dir)       { _tpl.set_views(dir); }
+function clear_views_cache()  { _tpl.clear_cache(); }
 
 // ---------------- legacy request-body helpers ------------------------------
 

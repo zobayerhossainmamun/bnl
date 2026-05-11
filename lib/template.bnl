@@ -1,0 +1,758 @@
+import "io" as _io;
+
+// Liquid/Jinja-flavored template engine.
+//
+// Syntax:
+//   {{ expr }}                              output, HTML-auto-escaped
+//   {{= expr }}                             output, NOT escaped (trusted HTML)
+//   {{ expr | filter | filter(args) }}      filter chain on output
+//   {% if cond %} ... {% else %} ... {% end %}
+//   {% for x in xs %} ... {% end %}         exposes `loop`:
+//                                             .index (1-based), .index0,
+//                                             .first, .last, .length
+//   {% include "partial.html" %}            file partial
+//   {% extends "base.html" %}               inherit from a base template
+//   {% block name %} ... {% end %}          named slot, override-able by child
+//   {# comment #}                           discarded at tokenize-time
+//
+// Whitespace control: `{%- ... -%}` and `{{- ... -}}` trim adjacent
+// whitespace (left and/or right of the tag). `{%- ... %}` strips left only,
+// `{% ... -%}` strips right only.
+//
+// Expressions:
+//   null, true, false, numbers, "double-quoted strings"
+//   identifier paths:  user.name.first  (null-safe)
+//   comparisons:       == != < > <= >=
+//   logical:           and or not
+//   precedence:        not < cmp < and < or
+// No arithmetic, no function calls — keep computation in the handler.
+//
+// Built-in filters: upper, lower, capitalize, length, default(v), trim,
+// replace(from, to), join(sep), truncate(n), escape, safe.
+// Register your own: tpl.register_filter("date", function(v, args) {...});
+//
+// API:
+//   tpl.set_views(dir)                      default "views"
+//   tpl.render(path, ctx)                   file-based, cached compile
+//   tpl.render_string(text, ctx)            inline, no cache
+//   tpl.register_filter(name, fn)           fn(value, args_list) -> new value
+//   tpl.clear_cache()                       bust the cache (dev mode)
+
+var _views_dir = "views";
+var _cache     = {};
+var _filters   = {};
+
+function set_views(dir) { _views_dir = dir; }
+function clear_cache()  { _cache = {}; }
+function register_filter(name, fn) { _filters[name] = fn; }
+
+function render(path, ctx) {
+    if (ctx == null) { ctx = {}; }
+    return _render_template(_compile(path), ctx, {});
+}
+
+function render_string(text, ctx) {
+    if (ctx == null) { ctx = {}; }
+    var tokens = _tokenize(text);
+    var compiled = _parse(tokens);
+    return _render_template(compiled, ctx, {});
+}
+
+// ---------------- loader + cache ------------------------------------------
+
+function _compile(path) {
+    var full = _views_dir + "/" + path;
+    if (_cache[full] != null) { return _cache[full]; }
+    var src      = _io.read_file(full);
+    var tokens   = _tokenize(src);
+    var compiled = _parse(tokens);
+    _cache[full] = compiled;
+    return compiled;
+}
+
+// ---------------- tokenizer -----------------------------------------------
+
+function _tokenize(src) {
+    var tokens = [];
+    var i      = 0;
+    while (i < src.byte_length) {
+        var nt = _find_next_tag(src, i);
+        if (nt < 0) {
+            tokens.push({ type: "TEXT", text: src.byte_slice(i) });
+            i = src.byte_length;
+        } else {
+            if (nt > i) {
+                tokens.push({ type: "TEXT", text: src.byte_slice(i, nt) });
+            }
+            var open = src.byte_slice(nt, nt + 2);
+            if (open == "{{") {
+                i = _scan_output(src, nt, tokens);
+            } else if (open == "{%") {
+                i = _scan_block(src, nt, tokens);
+            } else if (open == "{#") {
+                var close_c = _index_of_at(src, "#}", nt + 2);
+                if (close_c < 0) { throw "template: unclosed {# at " + str(nt); }
+                i = close_c + 2;
+            }
+        }
+    }
+    _apply_whitespace_control(tokens);
+    return tokens;
+}
+
+// Consume one `{{ ... }}` or `{{= ... }}` tag. Returns next position.
+function _scan_output(src, nt, tokens) {
+    var inner_start = nt + 2;
+    var strip_left = false;
+    if (inner_start < src.byte_length and src.byte_at(inner_start) == 45) {
+        strip_left  = true;
+        inner_start = inner_start + 1;
+    }
+    var close = _index_of_at(src, "}}", inner_start);
+    if (close < 0) { throw "template: unclosed {{ at " + str(nt); }
+    var inner_end  = close;
+    var strip_right = false;
+    if (close > inner_start and src.byte_at(close - 1) == 45) {
+        strip_right = true;
+        inner_end   = close - 1;
+    }
+    var inner = src.byte_slice(inner_start, inner_end).trim();
+    var raw = false;
+    if (inner.starts_with("=")) {
+        raw   = true;
+        inner = inner.byte_slice(1).trim();
+    }
+    var parsed = _parse_output_expr(inner);
+    var tok;
+    if (raw) {
+        tok = { type: "RAW",    expr: parsed.expr, filters: parsed.filters };
+    } else {
+        tok = { type: "OUTPUT", expr: parsed.expr, filters: parsed.filters };
+    }
+    tok.strip_left  = strip_left;
+    tok.strip_right = strip_right;
+    tokens.push(tok);
+    return close + 2;
+}
+
+// Consume one `{% ... %}` tag. Returns next position.
+function _scan_block(src, nt, tokens) {
+    var inner_start = nt + 2;
+    var strip_left = false;
+    if (inner_start < src.byte_length and src.byte_at(inner_start) == 45) {
+        strip_left  = true;
+        inner_start = inner_start + 1;
+    }
+    var close = _index_of_at(src, "%}", inner_start);
+    if (close < 0) { throw "template: unclosed {% at " + str(nt); }
+    var inner_end  = close;
+    var strip_right = false;
+    if (close > inner_start and src.byte_at(close - 1) == 45) {
+        strip_right = true;
+        inner_end   = close - 1;
+    }
+    var inner = src.byte_slice(inner_start, inner_end).trim();
+    var tok = _classify_block(inner);
+    tok.strip_left  = strip_left;
+    tok.strip_right = strip_right;
+    tokens.push(tok);
+    return close + 2;
+}
+
+function _find_next_tag(src, from) {
+    var rest = src.byte_slice(from);
+    var a = rest.index_of("{{");
+    var b = rest.index_of("{%");
+    var c = rest.index_of("{#");
+    var m = -1;
+    if (a >= 0 and (m < 0 or a < m)) { m = a; }
+    if (b >= 0 and (m < 0 or b < m)) { m = b; }
+    if (c >= 0 and (m < 0 or c < m)) { m = c; }
+    if (m < 0) { return -1; }
+    return from + m;
+}
+
+function _index_of_at(src, needle, from) {
+    var rest = src.byte_slice(from);
+    var idx  = rest.index_of(needle);
+    if (idx < 0) { return -1; }
+    return from + idx;
+}
+
+function _classify_block(inner) {
+    if (inner == "end")  { return { type: "END" }; }
+    if (inner == "else") { return { type: "ELSE" }; }
+    if (inner.starts_with("if ") or inner.starts_with("if\t")) {
+        return { type: "IF", cond: inner.byte_slice(3).trim() };
+    }
+    if (inner.starts_with("for ") or inner.starts_with("for\t")) {
+        var rest = inner.byte_slice(4).trim();
+        var in_idx = rest.index_of(" in ");
+        if (in_idx < 0) { throw "template: for tag missing ' in '"; }
+        return {
+            type:      "FOR",
+            var_name:  rest.byte_slice(0, in_idx).trim(),
+            list_expr: rest.byte_slice(in_idx + 4).trim()
+        };
+    }
+    if (inner.starts_with("include ") or inner.starts_with("include\t")) {
+        return { type: "INCLUDE", path: _unquote(inner.byte_slice(8).trim()) };
+    }
+    if (inner.starts_with("extends ") or inner.starts_with("extends\t")) {
+        return { type: "EXTENDS", path: _unquote(inner.byte_slice(8).trim()) };
+    }
+    if (inner.starts_with("block ") or inner.starts_with("block\t")) {
+        return { type: "BLOCK", name: inner.byte_slice(6).trim() };
+    }
+    throw "template: unknown block tag: " + inner;
+}
+
+function _unquote(s) {
+    if (s.byte_length >= 2 and s.starts_with("\"") and s.ends_with("\"")) {
+        return s.byte_slice(1, s.byte_length - 1);
+    }
+    return s;
+}
+
+// After tokenizing, apply `-` whitespace-control flags: tags marked
+// strip_left trim trailing whitespace from the previous TEXT token;
+// strip_right trim leading whitespace from the next TEXT token.
+function _apply_whitespace_control(tokens) {
+    var i = 0;
+    while (i < tokens.length) {
+        var t = tokens[i];
+        if (t.strip_left == true and i > 0 and tokens[i - 1].type == "TEXT") {
+            tokens[i - 1].text = _rtrim_ws(tokens[i - 1].text);
+        }
+        if (t.strip_right == true and i + 1 < tokens.length
+            and tokens[i + 1].type == "TEXT") {
+            tokens[i + 1].text = _ltrim_ws(tokens[i + 1].text);
+        }
+        i = i + 1;
+    }
+}
+
+function _rtrim_ws(s) {
+    var i = s.byte_length - 1;
+    var go = true;
+    while (go and i >= 0) {
+        var c = s.byte_at(i);
+        if (c == 32 or c == 9 or c == 10 or c == 13) { i = i - 1; }
+        else { go = false; }
+    }
+    return s.byte_slice(0, i + 1);
+}
+
+function _ltrim_ws(s) {
+    var i = 0;
+    var go = true;
+    while (go and i < s.byte_length) {
+        var c = s.byte_at(i);
+        if (c == 32 or c == 9 or c == 10 or c == 13) { i = i + 1; }
+        else { go = false; }
+    }
+    return s.byte_slice(i);
+}
+
+// ---------------- filter parsing (for OUTPUT/RAW inner) -------------------
+
+// Split `expr | f1 | f2(arg, arg)` into { expr, filters: [{name, args}] }.
+// `|` inside string literals or parens is honored — top-level only.
+function _parse_output_expr(inner) {
+    var parts = _split_top_level(inner, 124);     // 124 = '|'
+    var expr = parts[0].trim();
+    var filters = [];
+    var k = 1;
+    while (k < parts.length) {
+        var f = parts[k].trim();
+        if (f.byte_length == 0) { throw "template: empty filter"; }
+        var p_idx = f.index_of("(");
+        if (p_idx < 0) {
+            filters.push({ name: f, args: [] });
+        } else {
+            // strip trailing ')'
+            var close = -1;
+            var i = f.byte_length - 1;
+            var go = true;
+            while (go and i > p_idx) {
+                if (f.byte_at(i) == 41) { close = i; go = false; }
+                else                     { i = i - 1; }
+            }
+            if (close < 0) { throw "template: filter missing ')': " + f; }
+            var name = f.byte_slice(0, p_idx).trim();
+            var args_src = f.byte_slice(p_idx + 1, close);
+            var args = _split_top_level(args_src, 44);  // 44 = ','
+            var args_out = [];
+            var j = 0;
+            while (j < args.length) {
+                var a = args[j].trim();
+                if (a.byte_length > 0) { args_out.push(a); }
+                j = j + 1;
+            }
+            filters.push({ name: name, args: args_out });
+        }
+        k = k + 1;
+    }
+    return { expr: expr, filters: filters };
+}
+
+// Split `s` at every top-level occurrence of byte `sep_byte`, respecting
+// "double-quoted" strings and nested parens.
+function _split_top_level(s, sep_byte) {
+    var parts = [];
+    var start = 0;
+    var i = 0;
+    var in_str = false;
+    var depth = 0;
+    while (i < s.byte_length) {
+        var c = s.byte_at(i);
+        if (c == 34) { in_str = not in_str; }
+        else if (not in_str) {
+            if (c == 40) { depth = depth + 1; }
+            else if (c == 41) { depth = depth - 1; }
+            else if (c == sep_byte and depth == 0) {
+                parts.push(s.byte_slice(start, i));
+                start = i + 1;
+            }
+        }
+        i = i + 1;
+    }
+    parts.push(s.byte_slice(start));
+    return parts;
+}
+
+// ---------------- parser (token list -> compiled template) ----------------
+
+// Returns { extends: <path or null>, blocks: {name: nodes}, body: nodes }.
+function _parse(tokens) {
+    var extends_path = null;
+    var blocks = {};
+    var i = 0;
+
+    // First non-text token can be EXTENDS — if so, capture and skip.
+    while (i < tokens.length and tokens[i].type == "TEXT") { i = i + 1; }
+    if (i < tokens.length and tokens[i].type == "EXTENDS") {
+        extends_path = tokens[i].path;
+        i = i + 1;
+    } else {
+        i = 0;
+    }
+
+    var r = _parse_nodes(tokens, i, [], blocks);
+    if (r.next_pos != tokens.length) {
+        throw "template: unexpected token at parse end";
+    }
+    return { extends_path: extends_path, blocks: blocks, body: r.nodes };
+}
+
+// Collect nodes until we hit any token whose type is in `end_types`. As a
+// side effect, records every BLOCK definition into `blocks`.
+function _parse_nodes(tokens, start, end_types, blocks) {
+    var nodes = [];
+    var pos   = start;
+    while (pos < tokens.length) {
+        var t = tokens[pos];
+        if (_includes(end_types, t.type)) {
+            return { nodes: nodes, next_pos: pos };
+        }
+        if (t.type == "TEXT" or t.type == "OUTPUT" or t.type == "RAW"
+            or t.type == "INCLUDE") {
+            nodes.push(t);
+            pos = pos + 1;
+        } else if (t.type == "EXTENDS") {
+            // Already consumed if at top; nested extends is an error.
+            throw "template: extends must be the first tag";
+        } else if (t.type == "IF") {
+            var then_r = _parse_nodes(tokens, pos + 1, ["ELSE", "END"], blocks);
+            var node = { type: "IF", cond: t.cond,
+                         then_body: then_r.nodes, else_body: [] };
+            pos = then_r.next_pos;
+            if (pos < tokens.length and tokens[pos].type == "ELSE") {
+                var else_r = _parse_nodes(tokens, pos + 1, ["END"], blocks);
+                node.else_body = else_r.nodes;
+                pos = else_r.next_pos;
+            }
+            if (pos >= tokens.length or tokens[pos].type != "END") {
+                throw "template: unclosed if";
+            }
+            pos = pos + 1;
+            nodes.push(node);
+        } else if (t.type == "FOR") {
+            var body_r = _parse_nodes(tokens, pos + 1, ["END"], blocks);
+            if (body_r.next_pos >= tokens.length
+                or tokens[body_r.next_pos].type != "END") {
+                throw "template: unclosed for";
+            }
+            nodes.push({ type: "FOR", var_name: t.var_name,
+                         list_expr: t.list_expr, body: body_r.nodes });
+            pos = body_r.next_pos + 1;
+        } else if (t.type == "BLOCK") {
+            var blk_r = _parse_nodes(tokens, pos + 1, ["END"], blocks);
+            if (blk_r.next_pos >= tokens.length
+                or tokens[blk_r.next_pos].type != "END") {
+                throw "template: unclosed block";
+            }
+            var block_node = { type: "BLOCK", name: t.name, body: blk_r.nodes };
+            blocks[t.name] = blk_r.nodes;          // register for inheritance
+            nodes.push(block_node);
+            pos = blk_r.next_pos + 1;
+        } else {
+            throw "template: unexpected token: " + t.type;
+        }
+    }
+    return { nodes: nodes, next_pos: pos };
+}
+
+function _includes(list, val) {
+    var i = 0;
+    while (i < list.length) {
+        if (list[i] == val) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// ---------------- renderer ------------------------------------------------
+
+// Render a compiled template. If it extends another, recurse into the
+// parent with the child's block definitions merged on top of any prior
+// overrides — that's how multi-level inheritance chains resolve.
+function _render_template(compiled, ctx, blocks_override) {
+    var merged = {};
+    for (var k of compiled.blocks.keys())     { merged[k] = compiled.blocks[k]; }
+    for (var k of blocks_override.keys())     { merged[k] = blocks_override[k]; }
+
+    if (compiled.extends_path != null) {
+        var parent = _compile(compiled.extends_path);
+        return _render_template(parent, ctx, merged);
+    }
+    return _render_nodes(compiled.body, ctx, merged);
+}
+
+function _render_nodes(nodes, ctx, blocks_override) {
+    var out = "";
+    var i = 0;
+    while (i < nodes.length) {
+        var n = nodes[i];
+        if (n.type == "TEXT") {
+            out = out + n.text;
+        } else if (n.type == "OUTPUT") {
+            var v = _eval(n.expr, ctx);
+            v = _apply_filters(v, n.filters, ctx);
+            if (type(v) == "map" and v.__safe == true) {
+                out = out + _to_string(v.value);
+            } else {
+                out = out + _escape_html(_to_string(v));
+            }
+        } else if (n.type == "RAW") {
+            var v2 = _eval(n.expr, ctx);
+            v2 = _apply_filters(v2, n.filters, ctx);
+            if (type(v2) == "map" and v2.__safe == true) {
+                out = out + _to_string(v2.value);
+            } else {
+                out = out + _to_string(v2);
+            }
+        } else if (n.type == "IF") {
+            if (_truthy(_eval(n.cond, ctx))) {
+                out = out + _render_nodes(n.then_body, ctx, blocks_override);
+            } else {
+                out = out + _render_nodes(n.else_body, ctx, blocks_override);
+            }
+        } else if (n.type == "FOR") {
+            var xs = _eval(n.list_expr, ctx);
+            if (xs != null and type(xs) == "list") {
+                var j = 0;
+                while (j < xs.length) {
+                    out = out + _render_nodes(n.body,
+                                              _extend(ctx, n.var_name, xs[j],
+                                                      j, xs.length),
+                                              blocks_override);
+                    j = j + 1;
+                }
+            }
+        } else if (n.type == "INCLUDE") {
+            // Includes render as a template (no extends; we use body+blocks).
+            var sub = _compile(n.path);
+            out = out + _render_template(sub, ctx, blocks_override);
+        } else if (n.type == "BLOCK") {
+            var override = blocks_override[n.name];
+            var body_to_render = n.body;
+            if (override != null) { body_to_render = override; }
+            out = out + _render_nodes(body_to_render, ctx, blocks_override);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+
+// ---------------- filter dispatch + builtins ------------------------------
+
+function _apply_filters(value, filter_chain, ctx) {
+    var v = value;
+    var i = 0;
+    while (i < filter_chain.length) {
+        var f = filter_chain[i];
+        var fn = _filters[f.name];
+        if (fn == null) { throw "template: unknown filter '" + f.name + "'"; }
+        var args = [];
+        var j = 0;
+        while (j < f.args.length) {
+            args.push(_eval(f.args[j], ctx));
+            j = j + 1;
+        }
+        v = fn(v, args);
+        i = i + 1;
+    }
+    return v;
+}
+
+// Register the built-in filters. Called once at module load.
+function _install_builtin_filters() {
+    _filters["upper"] = function (v, args) { return _to_string(v).to_upper(); };
+    _filters["lower"] = function (v, args) { return _to_string(v).to_lower(); };
+    _filters["trim"]  = function (v, args) { return _to_string(v).trim(); };
+    _filters["length"] = function (v, args) {
+        if (v == null)             { return 0; }
+        if (type(v) == "string")   { return v.length; }
+        if (type(v) == "list")     { return v.length; }
+        if (type(v) == "map")      { return v.size; }
+        return 0;
+    };
+    _filters["default"] = function (v, args) {
+        if (v == null)                                        { return args[0]; }
+        if (type(v) == "string" and v.byte_length == 0)       { return args[0]; }
+        return v;
+    };
+    _filters["replace"] = function (v, args) {
+        return _to_string(v).replace(args[0], args[1]);
+    };
+    _filters["join"] = function (v, args) {
+        if (type(v) != "list") { return _to_string(v); }
+        var sep = args[0]; if (sep == null) { sep = ""; }
+        var out = "";
+        var i = 0;
+        while (i < v.length) {
+            if (i > 0) { out = out + sep; }
+            out = out + _to_string(v[i]);
+            i = i + 1;
+        }
+        return out;
+    };
+    _filters["truncate"] = function (v, args) {
+        var s = _to_string(v);
+        var n = args[0];
+        if (n == null or s.length <= n) { return s; }
+        return s.slice(0, n) + "...";
+    };
+    _filters["capitalize"] = function (v, args) {
+        var s = _to_string(v);
+        if (s.byte_length == 0) { return s; }
+        return s.byte_slice(0, 1).to_upper() + s.byte_slice(1);
+    };
+    _filters["escape"] = function (v, args) {
+        return _escape_html(_to_string(v));
+    };
+    _filters["safe"] = function (v, args) {
+        // Wrap so the OUTPUT renderer skips its auto-escape step.
+        return { __safe: true, value: v };
+    };
+}
+_install_builtin_filters();
+
+// ---------------- shared helpers ------------------------------------------
+
+function _extend(parent, var_name, value, index, length) {
+    var sub = {};
+    for (var k of parent.keys()) { sub[k] = parent[k]; }
+    sub[var_name] = value;
+    sub.loop = {
+        index:   index + 1,
+        index0:  index,
+        first:   index == 0,
+        last:    index == length - 1,
+        length:  length
+    };
+    return sub;
+}
+
+function _to_string(v) {
+    if (v == null) { return ""; }
+    return str(v);
+}
+
+function _truthy(v) {
+    if (v == null)              { return false; }
+    if (type(v) == "bool")      { return v; }
+    if (type(v) == "number")    { return v != 0; }
+    if (type(v) == "string")    { return v.byte_length > 0; }
+    if (type(v) == "list")      { return v.length > 0; }
+    if (type(v) == "map")       { return v.size > 0; }
+    return true;
+}
+
+function _escape_html(s) {
+    s = s.replace("&", "&amp;");
+    s = s.replace("<", "&lt;");
+    s = s.replace(">", "&gt;");
+    s = s.replace("\"", "&quot;");
+    s = s.replace("'", "&#39;");
+    return s;
+}
+
+// ---------------- expression evaluator ------------------------------------
+
+function _eval(src, ctx) {
+    var p = { src: src, pos: 0 };
+    var v = _eval_or(p, ctx);
+    _skip_ws(p);
+    if (p.pos != src.byte_length) {
+        throw "template: extra chars after expression at " + str(p.pos);
+    }
+    return v;
+}
+
+function _eval_or(p, ctx) {
+    var left = _eval_and(p, ctx);
+    while (_match_kw(p, "or")) {
+        var right = _eval_and(p, ctx);
+        if (_truthy(left)) { } else { left = right; }
+    }
+    return left;
+}
+
+function _eval_and(p, ctx) {
+    var left = _eval_not(p, ctx);
+    while (_match_kw(p, "and")) {
+        var right = _eval_not(p, ctx);
+        if (_truthy(left)) { left = right; }
+    }
+    return left;
+}
+
+function _eval_not(p, ctx) {
+    if (_match_kw(p, "not")) {
+        return not _truthy(_eval_not(p, ctx));
+    }
+    return _eval_cmp(p, ctx);
+}
+
+function _eval_cmp(p, ctx) {
+    var left = _eval_atom(p, ctx);
+    _skip_ws(p);
+    var op = _try_op(p);
+    if (op == null) { return left; }
+    var right = _eval_atom(p, ctx);
+    if (op == "==") { return left == right; }
+    if (op == "!=") { return left != right; }
+    if (op == "<")  { return left <  right; }
+    if (op == ">")  { return left >  right; }
+    if (op == "<=") { return left <= right; }
+    if (op == ">=") { return left >= right; }
+    return left;
+}
+
+function _eval_atom(p, ctx) {
+    _skip_ws(p);
+    if (p.pos >= p.src.byte_length) { return null; }
+    var c = p.src.byte_at(p.pos);
+    if (c == 34) { return _parse_string(p); }
+    if (c == 45 or (c >= 48 and c <= 57)) { return _parse_number(p); }
+    var name = _read_identifier(p);
+    if (name.byte_length == 0) { return null; }
+    if (name == "null")  { return null; }
+    if (name == "true")  { return true; }
+    if (name == "false") { return false; }
+    var v = ctx[name];
+    while (p.pos < p.src.byte_length and p.src.byte_at(p.pos) == 46) {
+        p.pos = p.pos + 1;
+        var field = _read_identifier(p);
+        if (v == null)        { return null; }
+        if (type(v) != "map") { return null; }
+        v = v[field];
+    }
+    return v;
+}
+
+function _skip_ws(p) {
+    var go = true;
+    while (go and p.pos < p.src.byte_length) {
+        var c = p.src.byte_at(p.pos);
+        if (c == 32 or c == 9 or c == 10 or c == 13) { p.pos = p.pos + 1; }
+        else { go = false; }
+    }
+}
+
+function _read_identifier(p) {
+    _skip_ws(p);
+    var start = p.pos;
+    var go = true;
+    while (go and p.pos < p.src.byte_length) {
+        var c = p.src.byte_at(p.pos);
+        var is_id = (c >= 65 and c <= 90)
+                 or (c >= 97 and c <= 122)
+                 or (c >= 48 and c <= 57)
+                 or c == 95;
+        if (is_id) { p.pos = p.pos + 1; }
+        else       { go = false; }
+    }
+    return p.src.byte_slice(start, p.pos);
+}
+
+function _match_kw(p, kw) {
+    _skip_ws(p);
+    var n = kw.byte_length;
+    if (p.pos + n > p.src.byte_length) { return false; }
+    if (p.src.byte_slice(p.pos, p.pos + n) != kw) { return false; }
+    if (p.pos + n < p.src.byte_length) {
+        var c = p.src.byte_at(p.pos + n);
+        var is_id = (c >= 65 and c <= 90)
+                 or (c >= 97 and c <= 122)
+                 or (c >= 48 and c <= 57)
+                 or c == 95;
+        if (is_id) { return false; }
+    }
+    p.pos = p.pos + n;
+    return true;
+}
+
+function _try_op(p) {
+    _skip_ws(p);
+    if (p.pos + 2 <= p.src.byte_length) {
+        var two = p.src.byte_slice(p.pos, p.pos + 2);
+        if (two == "==" or two == "!=" or two == "<=" or two == ">=") {
+            p.pos = p.pos + 2;
+            return two;
+        }
+    }
+    if (p.pos < p.src.byte_length) {
+        var c = p.src.byte_at(p.pos);
+        if (c == 60) { p.pos = p.pos + 1; return "<"; }
+        if (c == 62) { p.pos = p.pos + 1; return ">"; }
+    }
+    return null;
+}
+
+function _parse_string(p) {
+    p.pos = p.pos + 1;
+    var start = p.pos;
+    var go = true;
+    while (go and p.pos < p.src.byte_length) {
+        if (p.src.byte_at(p.pos) == 34) { go = false; }
+        else                            { p.pos = p.pos + 1; }
+    }
+    var s = p.src.byte_slice(start, p.pos);
+    if (p.pos < p.src.byte_length) { p.pos = p.pos + 1; }
+    return s;
+}
+
+function _parse_number(p) {
+    var start = p.pos;
+    if (p.src.byte_at(p.pos) == 45) { p.pos = p.pos + 1; }
+    var go = true;
+    while (go and p.pos < p.src.byte_length) {
+        var c = p.src.byte_at(p.pos);
+        if ((c >= 48 and c <= 57) or c == 46) { p.pos = p.pos + 1; }
+        else                                   { go = false; }
+    }
+    return to_number(p.src.byte_slice(start, p.pos));
+}
