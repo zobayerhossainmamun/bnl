@@ -147,7 +147,12 @@
       "Bash(mkdir -p D:/bnlang/new-v/my-test-app/deps/my-plugin)",
       "Bash(cp D:/bnlang/new-v/my-test-lib/mytest.dll D:/bnlang/new-v/my-test-app/deps/my-plugin/mytest.dll)",
       "Bash(echo '{\"name\": \"my-plugin\", \"native\": \"mytest.dll\"}')",
-      "Bash(echo '{}')"
+      "Bash(echo '{}')",
+      "Bash(mkdir -p D:/bnlang/new-v/my-go-lib/bnl)",
+      "Bash(cp D:/bnlang/new-v/bnl/include/bnl/plugin.h D:/bnlang/new-v/my-go-lib/bnl/plugin.h)",
+      "PowerShell(go env *)",
+      "PowerShell(Get-Item *)",
+      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --help)"
     ]
   }
 }
