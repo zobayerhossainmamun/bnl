@@ -1,0 +1,59 @@
+// Streaming multipart decoder — feed a known multipart body in small slices
+// (to exercise the cross-chunk tail-buffering for boundary detection) and
+// verify that each part's headers + body are assembled correctly.
+import "multipart" as mp;
+
+var boundary = "----testStreamBoundary";
+var body = mp.encode([
+    { name: "user",  value: "alice" },
+    { name: "msg",   value: "hello world this is a slightly longer field" },
+    { name: "photo", filename: "a.bin", content_type: "image/png",
+      body: "binary-bytes-here" }
+], boundary);
+
+var parts = [];
+var current = null;
+var current_body = "";
+
+var dec = mp.streaming_decode(boundary,
+    function (part) {
+        current = part;
+        current_body = "";
+    },
+    function (chunk) {
+        current_body = current_body + chunk;
+    },
+    function () {
+        current.body = current_body;
+        parts.push(current);
+        current = null;
+    }
+);
+
+// Feed the body in 7-byte slices — small enough that the boundary often
+// spans multiple feeds, which is exactly what the tail-buffering is for.
+var pos = 0;
+while (pos < body.byte_length) {
+    var end_pos = pos + 7;
+    if (end_pos > body.byte_length) { end_pos = body.byte_length; }
+    dec.feed(body.byte_slice(pos, end_pos));
+    pos = end_pos;
+}
+dec.end();
+
+print("parts:", parts.length);
+
+print("--- part 0 ---");
+print(parts[0].name);
+print(parts[0].filename);
+print(parts[0].body);
+
+print("--- part 1 ---");
+print(parts[1].name);
+print(parts[1].body);
+
+print("--- part 2 ---");
+print(parts[2].name);
+print(parts[2].filename);
+print(parts[2].content_type);
+print(parts[2].body);

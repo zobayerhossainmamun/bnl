@@ -60,6 +60,7 @@ add_bnl_test(lib_web_app          stdlib)
 add_bnl_test(lib_web_keepalive    stdlib)
 add_bnl_test(lib_web_timeouts     stdlib)
 add_bnl_test(lib_web_stream       stdlib)
+add_bnl_test(lib_web_chunked      stdlib)
 add_bnl_test(lib_request          stdlib)
 add_bnl_test(lib_request_axios    stdlib)
 add_bnl_test(lib_request_pool     stdlib)
@@ -81,6 +82,7 @@ add_bnl_test(lib_uuid             stdlib)
 add_bnl_test(lib_csv              stdlib)
 add_bnl_test(lib_zlib             stdlib)
 add_bnl_test(lib_multipart        stdlib)
+add_bnl_test(lib_multipart_stream stdlib)
 
 # ---------- integration tests that exercise FFI plugins -------------------
 # Skipped when BNL_ENABLE_FFI=OFF (the mathx sample plugin isn't built).

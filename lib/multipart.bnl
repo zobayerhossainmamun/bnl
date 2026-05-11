@@ -190,6 +190,155 @@ function _parse_part(raw) {
     return part;
 }
 
+// streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end)
+//
+// Returns { feed(chunk), end() } — a stateful decoder that walks a
+// multipart body byte-by-byte and routes each part's body slice through
+// `on_part_chunk` WITHOUT ever holding the whole part in memory. Pair
+// with web.serve_stream's body_stream.on_chunk to upload an HTML form
+// with multiple large files straight to disk.
+//
+// Callbacks:
+//   on_part_start(part)   — part has {name, filename, content_type, headers}
+//   on_part_chunk(chunk)  — body bytes for the current part
+//   on_part_end()         — boundary terminator for the current part
+//
+// v1 supports the standard form: each part is `\r\n--boundary\r\n` delimited;
+// the message ends at `\r\n--boundary--\r\n`. CRLF line endings only inside
+// part headers — the decoder is byte-accurate for body content.
+function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
+    var open_marker    = "--" + boundary;                 // first boundary
+    var body_marker    = "\r\n--" + boundary;             // between parts
+    var state          = "preamble";                       // preamble | headers | body | done
+    var buf            = "";
+    var current_part   = null;
+
+    function feed(chunk) {
+        buf = buf + chunk;
+        _process();
+    }
+
+    function end() {
+        if (state == "body" and current_part != null) {
+            // Premature end — flush whatever's in buf as the last chunk.
+            if (buf.byte_length > 0) { on_part_chunk(buf); buf = ""; }
+            on_part_end();
+            current_part = null;
+        }
+        state = "done";
+    }
+
+    function _process() {
+        var progressed = true;
+        while (progressed and state != "done") {
+            progressed = false;
+
+            if (state == "preamble") {
+                var idx = buf.index_of(open_marker);
+                if (idx < 0) {
+                    // Keep only the last (open_marker - 1) bytes in case the
+                    // marker is split across feed() boundaries.
+                    if (buf.byte_length >= open_marker.byte_length) {
+                        buf = buf.byte_slice(buf.byte_length - open_marker.byte_length + 1);
+                    }
+                    return;
+                }
+                buf = buf.byte_slice(idx + open_marker.byte_length);
+                state = "after_boundary";
+                progressed = true;
+            }
+
+            else if (state == "after_boundary") {
+                // We just consumed a boundary marker. The next 2 bytes tell
+                // us what's next: `--` = end of message, `\r\n` = another
+                // part follows. If we don't have 2 bytes yet, wait — and
+                // critically STAY in this state so the next feed picks up
+                // where we left off (avoids re-scanning for the boundary).
+                if (buf.byte_length < 2) { return; }
+                if (buf.byte_at(0) == 45 and buf.byte_at(1) == 45) {
+                    state = "done"; return;
+                }
+                if (buf.byte_at(0) == 13 and buf.byte_at(1) == 10) {
+                    buf = buf.byte_slice(2);
+                }
+                state = "headers";
+                progressed = true;
+            }
+
+            else if (state == "headers") {
+                var sep = buf.index_of("\r\n\r\n");
+                if (sep < 0) { return; }
+                var hdr_text = buf.byte_slice(0, sep);
+                buf = buf.byte_slice(sep + 4);
+                current_part = _parse_part_headers_only(hdr_text);
+                on_part_start(current_part);
+                state = "body";
+                progressed = true;
+            }
+
+            else if (state == "body") {
+                var bidx = buf.index_of(body_marker);
+                if (bidx < 0) {
+                    // No boundary yet. Emit everything except the last
+                    // (body_marker.length - 1) bytes — that tail could still
+                    // be the start of a boundary that finishes on the next
+                    // feed().
+                    var keep = body_marker.byte_length - 1;
+                    if (buf.byte_length > keep) {
+                        var emit_len = buf.byte_length - keep;
+                        on_part_chunk(buf.byte_slice(0, emit_len));
+                        buf = buf.byte_slice(emit_len);
+                    }
+                    return;
+                }
+                if (bidx > 0) { on_part_chunk(buf.byte_slice(0, bidx)); }
+                buf = buf.byte_slice(bidx + body_marker.byte_length);
+                on_part_end();
+                current_part = null;
+                state = "after_boundary";
+                progressed = true;
+            }
+        }
+    }
+
+    return { feed: feed, end: end };
+}
+
+// Shared helper — parses just the headers half of a part (no body bytes).
+// Mirrors `_parse_part` but takes the header text directly.
+function _parse_part_headers_only(hdr_text) {
+    var part = {
+        name:         null,
+        filename:     null,
+        content_type: null,
+        headers:      {}
+    };
+    var lines = hdr_text.split("\n");
+    var i = 0;
+    while (i < lines.length) {
+        var ln = lines[i];
+        if (ln.byte_length > 0 and ln.byte_at(ln.byte_length - 1) == 13) {
+            ln = ln.byte_slice(0, ln.byte_length - 1);
+        }
+        if (ln.byte_length > 0) {
+            var colon = ln.index_of(":");
+            if (colon > 0) {
+                var hname = ln.byte_slice(0, colon).trim().to_lower();
+                var hval  = ln.byte_slice(colon + 1).trim();
+                part.headers[hname] = hval;
+                if (hname == "content-disposition") {
+                    part.name     = _extract_param(hval, "name");
+                    part.filename = _extract_param(hval, "filename");
+                } else if (hname == "content-type") {
+                    part.content_type = hval;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return part;
+}
+
 // Extract `name=...` or `name="..."` from a header value like
 // `form-data; name="user"; filename="a.txt"`. Returns null if absent.
 function _extract_param(header, key) {

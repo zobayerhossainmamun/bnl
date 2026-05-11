@@ -1,0 +1,63 @@
+// Transfer-Encoding: chunked on the server side. Raw TCP client sends a
+// POST with chunked framing; serve_stream's chunked decoder routes each
+// data slice through on_body_chunk and fires on_body_end at the 0-size
+// terminator.
+import "web" as web;
+import "net" as net;
+import "io"  as io;
+import "http" as http;
+
+var tmp = "_web_chunked_dest.bin";
+
+var server = web.serve_stream({ port: 0 }, function (req) {
+    var sink = io.open_write(tmp);
+    var pending = 0;
+    var ended = false;
+    function maybe_done() {
+        if (ended and pending == 0) {
+            sink.close();
+            req.respond([200, "ok " + str(io.stat(tmp).bytes)]);
+        }
+    }
+    req.body_stream.on_chunk(function (chunk) {
+        pending = pending + 1;
+        sink.write(chunk, function (err) {
+            pending = pending - 1;
+            maybe_done();
+        });
+    });
+    req.body_stream.on_end(function () {
+        ended = true;
+        maybe_done();
+    });
+    return null;
+});
+
+print("port valid:", server.port > 0);
+
+net.tcp_connect("127.0.0.1", server.port, function (err, client) {
+    var resp_buf = "";
+    client.on_data(function (d) { resp_buf = resp_buf + d; });
+    client.on_end(function () {
+        var r = http.parse_response(resp_buf, true);
+        print("status:",   r.status);
+        print("body:",     r.body);
+        print("size:",     io.stat(tmp).bytes);
+        // We wrote "hello" + "0123456789" + "!" = 16 bytes
+        print("contents:", io.read_file(tmp));
+        io.remove(tmp);
+        server.close();
+    });
+
+    // POST /chunked with Transfer-Encoding: chunked. Three chunks, then 0
+    // (with a single trailer-less final CRLF).
+    var head = "POST /chunked HTTP/1.1\r\n"
+             + "Host: x\r\n"
+             + "Transfer-Encoding: chunked\r\n"
+             + "Connection: close\r\n\r\n";
+    var body = "5\r\nhello\r\n"           // 5-byte chunk
+             + "a\r\n0123456789\r\n"      // 0xa = 10-byte chunk
+             + "1\r\n!\r\n"               // 1-byte chunk
+             + "0\r\n\r\n";               // end + no trailers
+    client.write(head + body);
+});

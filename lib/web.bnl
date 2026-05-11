@@ -610,6 +610,12 @@ function _handle_streaming_connection(conn, handler, server_opts) {
     var on_body_end    = null;
     var current_req    = null;
 
+    // Chunked transfer-encoding state machine (only active when client sets
+    // Transfer-Encoding: chunked instead of Content-Length).
+    var chunked        = false;
+    var ch_state       = "size";   // size | data | after_data | trailer | done
+    var ch_remaining   = 0;
+
     function close_now() {
         if (conn_closed) { return; }
         conn_closed = true;
@@ -640,6 +646,9 @@ function _handle_streaming_connection(conn, handler, server_opts) {
         on_body_chunk  = null;
         on_body_end    = null;
         current_req    = null;
+        chunked        = false;
+        ch_state       = "size";
+        ch_remaining   = 0;
     }
 
     function send_canonical(resp) {
@@ -684,10 +693,17 @@ function _handle_streaming_connection(conn, handler, server_opts) {
                 if (chl.index_of("close") >= 0)           { keep_alive = false; }
                 else if (chl.index_of("keep-alive") >= 0) { keep_alive = true; }
             }
-            var cl = head.headers["content-length"];
-            if (cl != null) {
-                var n = to_number(cl);
-                if (n != null and n > 0) { body_remaining = n; }
+            // Body framing: Transfer-Encoding: chunked overrides Content-Length.
+            var te = head.headers["transfer-encoding"];
+            if (te != null and te.to_lower().index_of("chunked") >= 0) {
+                chunked  = true;
+                ch_state = "size";
+            } else {
+                var cl = head.headers["content-length"];
+                if (cl != null) {
+                    var n = to_number(cl);
+                    if (n != null and n > 0) { body_remaining = n; }
+                }
             }
 
             head.body        = null;
@@ -720,21 +736,106 @@ function _handle_streaming_connection(conn, handler, server_opts) {
         }
 
         if (phase == "body") {
-            if (body_remaining > 0 and buf.byte_length > 0) {
-                var take = buf.byte_length;
-                if (take > body_remaining) { take = body_remaining; }
-                var chunk = buf.byte_slice(0, take);
-                buf = buf.byte_slice(take);
-                body_remaining = body_remaining - take;
-                if (on_body_chunk != null) { on_body_chunk(chunk); }
-            }
-            if (body_remaining == 0) {
-                phase = "awaiting_respond";
-                if (on_body_end != null) { on_body_end(); }
+            if (chunked) {
+                drain_chunked();
+            } else {
+                if (body_remaining > 0 and buf.byte_length > 0) {
+                    var take = buf.byte_length;
+                    if (take > body_remaining) { take = body_remaining; }
+                    var chunk = buf.byte_slice(0, take);
+                    buf = buf.byte_slice(take);
+                    body_remaining = body_remaining - take;
+                    if (on_body_chunk != null) { on_body_chunk(chunk); }
+                }
+                if (body_remaining == 0) {
+                    phase = "awaiting_respond";
+                    if (on_body_end != null) { on_body_end(); }
+                }
             }
         }
         // "awaiting_respond" → no further work; user's respond() drives us.
     };
+
+    // Pump as many chunked-encoding bytes out of `buf` as we can. State
+    // machine per RFC 7230 §4.1:
+    //   size → "<hex>\r\n" (optionally with ;ext)
+    //   data → <size bytes> → after_data → "\r\n" → size
+    //   size = 0 ends data → trailer → optional headers → final "\r\n"
+    function drain_chunked() {
+        var progressed = true;
+        while (progressed and not conn_closed) {
+            progressed = false;
+            if (ch_state == "size") {
+                var nl = buf.index_of("\r\n");
+                if (nl < 0) { return; }
+                var size_line = buf.byte_slice(0, nl);
+                var semi = size_line.index_of(";");
+                if (semi >= 0) { size_line = size_line.byte_slice(0, semi); }
+                var n = _parse_hex(size_line.trim());
+                if (n == null) {
+                    if (phase != "awaiting_respond") { phase = "awaiting_respond"; }
+                    if (on_body_end != null) { on_body_end(); }
+                    return;
+                }
+                ch_remaining = n;
+                buf = buf.byte_slice(nl + 2);
+                if (n == 0) { ch_state = "trailer"; }
+                else        { ch_state = "data"; }
+                progressed = true;
+            } else if (ch_state == "data") {
+                if (buf.byte_length == 0) { return; }
+                var take = buf.byte_length;
+                if (take > ch_remaining) { take = ch_remaining; }
+                var chunk = buf.byte_slice(0, take);
+                buf = buf.byte_slice(take);
+                ch_remaining = ch_remaining - take;
+                if (on_body_chunk != null) { on_body_chunk(chunk); }
+                if (ch_remaining == 0) { ch_state = "after_data"; }
+                progressed = true;
+            } else if (ch_state == "after_data") {
+                if (buf.byte_length < 2) { return; }
+                buf = buf.byte_slice(2);
+                ch_state = "size";
+                progressed = true;
+            } else if (ch_state == "trailer") {
+                if (buf.byte_length < 2) { return; }
+                if (buf.byte_at(0) == 13 and buf.byte_at(1) == 10) {
+                    buf = buf.byte_slice(2);
+                    ch_state = "done";
+                    progressed = true;
+                } else {
+                    var trl = buf.index_of("\r\n");
+                    if (trl < 0) { return; }
+                    buf = buf.byte_slice(trl + 2);    // discard trailer line
+                    progressed = true;
+                }
+            } else if (ch_state == "done") {
+                phase = "awaiting_respond";
+                if (on_body_end != null) { on_body_end(); }
+                return;
+            }
+        }
+    }
+
+    // Hex-digit-only integer parser (uppercase + lowercase). Returns null on
+    // any non-hex character so callers can distinguish "0\r\n" (end-of-body)
+    // from a malformed line.
+    function _parse_hex(s) {
+        if (s.byte_length == 0) { return null; }
+        var n = 0;
+        var i = 0;
+        while (i < s.byte_length) {
+            var b = s.byte_at(i);
+            var d = -1;
+            if (b >= 48 and b <= 57)        { d = b - 48; }
+            else if (b >= 65 and b <= 70)   { d = b - 55; }
+            else if (b >= 97 and b <= 102)  { d = b - 87; }
+            else { return null; }
+            n = n * 16 + d;
+            i = i + 1;
+        }
+        return n;
+    }
 
     conn.on_data(function (chunk) {
         if (conn_closed) { return; }
