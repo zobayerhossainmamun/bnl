@@ -1,0 +1,73 @@
+// Connection pool — sequential requests through pool:true must reuse the
+// same TCP conn (accept_count stays at 1 while request_count climbs to 3).
+import "net"     as net;
+import "http"    as http;
+import "request" as r;
+
+var accept_count  = 0;
+var request_count = 0;
+
+// Hand-rolled HTTP/1.1 server so we can count TCP accepts and HTTP
+// requests separately. web.serve hides the conn boundary by design.
+var server = net.tcp_listen(0, function (conn) {
+    accept_count = accept_count + 1;
+    var buf = "";
+
+    var handle_next = function () {};
+    handle_next = function () {
+        var parsed = http.parse_request(buf);
+        if (not parsed.complete) { return; }
+        request_count = request_count + 1;
+        buf = buf.byte_slice(parsed.consumed);
+
+        // Echo back keep-alive if client asked, else close.
+        var conn_value = "keep-alive";
+        var ch = parsed.headers["connection"];
+        if (ch != null and ch.to_lower().index_of("close") >= 0) {
+            conn_value = "close";
+        }
+
+        var body = "n=" + str(request_count) + " path=" + parsed.url;
+        var resp = "HTTP/1.1 200 OK\r\n"
+                 + "Content-Type: text/plain\r\n"
+                 + "Content-Length: " + str(body.byte_length) + "\r\n"
+                 + "Connection: " + conn_value + "\r\n"
+                 + "\r\n"
+                 + body;
+        conn.write(resp, function (err) {
+            if (conn_value == "close") { conn.close(); }
+            else { handle_next(); }    // process any pipelined req from buf
+        });
+    };
+
+    conn.on_data(function (chunk) { buf = buf + chunk; handle_next(); });
+    conn.on_end(function () { conn.close(); });
+});
+
+var base = "http://127.0.0.1:" + str(server.port);
+print("port valid:", server.port > 0);
+
+// Make 3 sequential pool:true requests. Each completes before the next
+// starts, giving the pool a chance to hand the same conn back out.
+var done_count = 0;
+var fire = function () {};
+fire = function () {
+    r.request({ url: base + "/r", method: "GET", pool: true },
+        function (err, resp) {
+            done_count = done_count + 1;
+            print("req", done_count, ":", resp.status, resp.body);
+            if (done_count < 3) { fire(); return; }
+            print("requests served:", request_count);
+            print("tcp accepts:",     accept_count);
+            print("pool reused:",     accept_count < request_count);
+
+            // Final request with pool:false should open a fresh conn.
+            r.get(base + "/no-pool", function (e2, r2) {
+                print("no-pool body:",  r2.body);
+                print("accepts now:",   accept_count);
+                r.shutdown();
+                server.close();
+            });
+        });
+};
+fire();

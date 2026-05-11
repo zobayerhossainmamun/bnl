@@ -1,0 +1,56 @@
+// HTTP keep-alive — pipeline 3 GETs on one TCP connection. Server-side
+// counter increments per dispatch so we can verify the same handler ran
+// 3 times on the same conn (server reused, not 3 fresh ones).
+import "web"  as web;
+import "net"  as net;
+import "http" as http;
+
+var counter = 0;
+var server = web.serve({port: 0}, function (req) {
+    counter = counter + 1;
+    return { status: 200, body: "n=" + str(counter) + " path=" + req.path };
+});
+
+print("port valid:", server.port > 0);
+
+var responses = [];
+
+net.tcp_connect("127.0.0.1", server.port, function (err, conn) {
+    var buf = "";
+
+    var try_parse = function () {};
+    try_parse = function () {
+        if (buf.byte_length == 0) { return; }
+        var r = http.parse_response(buf);
+        if (not r.complete) { return; }
+        responses.push(r);
+        buf = buf.byte_slice(r.consumed);
+
+        if (responses.length == 3) {
+            print("count:",       responses.length);
+            print("r1.status:",   responses[0].status);
+            print("r1.body:",     responses[0].body);
+            print("r1.conn:",     responses[0].headers["connection"]);
+            print("r2.body:",     responses[1].body);
+            print("r2.conn:",     responses[1].headers["connection"]);
+            print("r3.body:",     responses[2].body);
+            print("r3.conn:",     responses[2].headers["connection"]);
+            print("server saw 3:", counter == 3);
+            conn.close();
+            server.close();
+            return;
+        }
+        try_parse();    // greedily drain any further responses already in buf
+    };
+
+    conn.on_data(function (d) {
+        buf = buf + d;
+        try_parse();
+    });
+    conn.on_end(function () { });
+
+    // 3 pipelined GETs on one TCP conn. First two keep-alive, last closes.
+    conn.write("GET /a HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"
+             + "GET /b HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"
+             + "GET /c HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+});

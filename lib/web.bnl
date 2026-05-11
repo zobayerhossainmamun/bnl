@@ -4,7 +4,13 @@ import "http"      as _http;
 import "url"       as _url;
 import "json"      as _json;
 import "io"        as _io;
+import "timers"    as _timers;
 import "multipart" as _mp;
+
+// Defaults applied to web.serve / app.listen opts when the caller doesn't
+// override. Hardening knobs only — connection logic doesn't depend on them.
+var DEFAULT_IDLE_TIMEOUT_MS = 30000;
+var DEFAULT_MAX_BODY_SIZE   = 10485760;   // 10 MB
 
 // ============================================================================
 // HTTP server.
@@ -195,12 +201,23 @@ function _coerce(value) {
 
 // ---------------- response sender ------------------------------------------
 
-// _send_response — takes the canonical shape from _coerce (or the raw shape
-// used by web.serve callers) and writes it to the conn. Handles three
-// flavors: buffered body, streamed file, and the no-body 204 case.
-function _send_response(conn, resp) {
+// Overwrite (or insert) a header by case-insensitive name match. bnl maps
+// can't delete keys, so we mutate the existing key in place when found —
+// avoids duplicate Connection / Content-Length entries on the wire.
+function _set_header(headers, name, value) {
+    var lower = name.to_lower();
+    for (var k of headers.keys()) {
+        if (k.to_lower() == lower) { headers[k] = value; return; }
+    }
+    headers[name] = value;
+}
+
+// _write_response(conn, resp, on_done) — write headers + body to conn,
+// then call on_done() when the bytes are flushed. Caller decides whether
+// to close the conn or process the next pipelined request.
+function _write_response(conn, resp, on_done) {
     if (resp._kind == "file") {
-        _send_file(conn, resp);
+        _write_file(conn, resp, on_done);
         return;
     }
     var status = resp.status;
@@ -216,9 +233,6 @@ function _send_response(conn, resp) {
     if (not _has_header(headers, "content-length")) {
         headers["Content-Length"] = str(body.byte_length);
     }
-    if (not _has_header(headers, "connection")) {
-        headers["Connection"] = "close";
-    }
 
     var out = "HTTP/1.1 " + str(status) + " " + _status_text(status) + "\r\n";
     for (var k of headers.keys()) {
@@ -226,21 +240,20 @@ function _send_response(conn, resp) {
     }
     out = out + "\r\n" + body;
 
-    conn.write(out, function (err) { conn.close(); });
+    conn.write(out, function (err) { on_done(); });
 }
 
-// Stream a file from disk to the connection. Headers go first (with
-// Content-Length from io.stat), then the file body in 64 KiB chunks with
-// backpressure via conn.write's callback.
-function _send_file(conn, resp) {
+// Stream a file from disk to the conn. Same on_done contract as
+// _write_response — fires after the last chunk's write callback.
+function _write_file(conn, resp, on_done) {
     var path = resp.path;
     if (not _io.exists(path)) {
-        _send_response(conn, error(404));
+        _write_response(conn, error(404), on_done);
         return;
     }
     var st = _io.stat(path);
     if (st.is_dir) {
-        _send_response(conn, error(403, "Forbidden"));
+        _write_response(conn, error(403, "Forbidden"), on_done);
         return;
     }
 
@@ -249,10 +262,7 @@ function _send_file(conn, resp) {
     if (not _has_header(headers, "content-type")) {
         headers["Content-Type"] = _content_type_for(path);
     }
-    headers["Content-Length"] = str(st.bytes);
-    if (not _has_header(headers, "connection")) {
-        headers["Connection"] = "close";
-    }
+    _set_header(headers, "Content-Length", str(st.bytes));
 
     var status = resp.status;
     if (status == null) { status = 200; }
@@ -264,20 +274,19 @@ function _send_file(conn, resp) {
     head = head + "\r\n";
 
     conn.write(head, function (err) {
-        if (err != null) { conn.close(); return; }
-        if (st.bytes == 0) { conn.close(); return; }
+        if (err != null) { on_done(); return; }
+        if (st.bytes == 0) { on_done(); return; }
         var src = _io.open_read(path);
         var pump = function () {};
         pump = function () {
             src.read(65536, function (rerr, chunk) {
-                // io.open_read signals EOF with chunk = null.
                 if (rerr != null or chunk == null) {
                     src.close();
-                    conn.close();
+                    on_done();
                     return;
                 }
                 conn.write(chunk, function (werr) {
-                    if (werr != null) { src.close(); conn.close(); return; }
+                    if (werr != null) { src.close(); on_done(); return; }
                     pump();
                 });
             });
@@ -288,7 +297,10 @@ function _send_file(conn, resp) {
 
 // ---------------- request enrichment ---------------------------------------
 
-function _enrich(parsed, conn) {
+// _enrich parses the URL into path + query. `respond` is installed by the
+// connection handler (which captures the keep-alive decision in its closure)
+// rather than here — that way req.respond honors the connection lifetime.
+function _enrich(parsed) {
     var qmark = parsed.url.index_of("?");
     if (qmark >= 0) {
         parsed.path  = parsed.url.byte_slice(0, qmark);
@@ -297,12 +309,6 @@ function _enrich(parsed, conn) {
         parsed.path  = parsed.url;
         parsed.query = {};
     }
-    var done = false;
-    parsed.respond = function (r) {
-        if (done) { return; }
-        done = true;
-        _send_response(conn, _coerce(r));
-    };
     return parsed;
 }
 
@@ -364,29 +370,134 @@ function _parse_multipart_cached(req) {
     return req._mp_cache;
 }
 
-// ---------------- core connection handler ---------------------------------
+// ---------------- core connection handler (keep-alive + limits) ----------
 
-function _handle_connection(conn, handler) {
-    var buf = "";
-    var dispatched = false;
-    conn.on_data(function (chunk) {
-        if (dispatched) { return; }
-        buf = buf + chunk;
-        var parsed = _http.parse_request(buf);
-        if (not parsed.complete) { return; }
+// One TCP connection may carry many HTTP/1.1 requests in sequence. The
+// handler stays in a "busy" state while one request is in flight so a
+// pipelined second request waits its turn. After each response is fully
+// flushed, the connection either continues (keep-alive) or closes per the
+// Connection header negotiation.
+//
+// Defensive limits:
+//   - max_body_size: refuses to buffer more than N bytes pre-dispatch
+//     (returns 413 if a request has started, hard-closes otherwise).
+//   - idle_timeout_ms: closes the conn if no on_data activity within the
+//     window. Resets on every chunk arrival and every response completion.
+function _handle_connection(conn, handler, server_opts) {
+    var max_body  = DEFAULT_MAX_BODY_SIZE;
+    var idle_ms   = DEFAULT_IDLE_TIMEOUT_MS;
+    if (server_opts != null) {
+        if (server_opts.max_body_size != null) { max_body = server_opts.max_body_size; }
+        if (server_opts.idle_timeout  != null) { idle_ms  = server_opts.idle_timeout; }
+    }
 
-        dispatched = true;
-        var req = _enrich(parsed, conn);
+    var buf         = "";
+    var busy        = false;
+    var conn_closed = false;
+    var idle_cancel = null;
 
-        var resp = null;
-        try {
-            resp = handler(req);
-        } catch (e) {
-            resp = { status: 500, body: "Internal Server Error" };
+    function close_now() {
+        if (conn_closed) { return; }
+        conn_closed = true;
+        if (idle_cancel != null) { idle_cancel(); idle_cancel = null; }
+        conn.close();
+    }
+
+    function reset_idle() {
+        if (conn_closed)        { return; }
+        if (idle_cancel != null) { idle_cancel(); }
+        if (idle_ms > 0) {
+            idle_cancel = _timers.set(idle_ms, function () {
+                close_now();
+            });
         }
-        if (resp != null) { _send_response(conn, _coerce(resp)); }
+    }
+
+    function dispatch_one() {}
+    dispatch_one = function () {
+        if (busy or conn_closed)  { return; }
+        if (buf.byte_length == 0) { return; }
+        var parsed = _http.parse_request(buf);
+        if (not parsed.complete)  { return; }
+
+        busy = true;
+        buf  = buf.byte_slice(parsed.consumed);
+
+        var keep_alive = (parsed.version == "1.1");
+        var ch = parsed.headers["connection"];
+        if (ch != null) {
+            var chl = ch.to_lower();
+            if (chl.index_of("close") >= 0)           { keep_alive = false; }
+            else if (chl.index_of("keep-alive") >= 0) { keep_alive = true; }
+        }
+
+        var req = _enrich(parsed);
+        var responded = false;
+
+        var send_canonical = function (resp) {
+            if (responded or conn_closed) { return; }
+            responded = true;
+            if (resp.headers == null) { resp.headers = {}; }
+            var conn_value = "close";
+            if (keep_alive) { conn_value = "keep-alive"; }
+            _set_header(resp.headers, "Connection", conn_value);
+            _write_response(conn, resp, function () {
+                busy = false;
+                if (not keep_alive) {
+                    close_now();
+                } else {
+                    reset_idle();   // new keep-alive window starts now
+                    dispatch_one();
+                }
+            });
+        };
+
+        req.respond = function (r) { send_canonical(_coerce(r)); };
+
+        var resp_value = null;
+        try {
+            resp_value = handler(req);
+        } catch (e) {
+            resp_value = { status: 500, body: "Internal Server Error" };
+        }
+        if (resp_value != null) {
+            send_canonical(_coerce(resp_value));
+        }
+        // else: handler will call req.respond async.
+    };
+
+    // Send a 413 with Connection: close, then hard-close. Used when the
+    // buffered request bytes exceed max_body_size before a complete
+    // request has been parsed.
+    function reject_too_large() {
+        if (conn_closed) { return; }
+        var body = "request payload too large";
+        var resp = "HTTP/1.1 413 Payload Too Large\r\n"
+                 + "Content-Type: text/plain; charset=utf-8\r\n"
+                 + "Content-Length: " + str(body.byte_length) + "\r\n"
+                 + "Connection: close\r\n\r\n"
+                 + body;
+        conn.write(resp, function (err) { close_now(); });
+    }
+
+    conn.on_data(function (chunk) {
+        if (conn_closed) { return; }
+        if (max_body > 0 and buf.byte_length + chunk.byte_length > max_body) {
+            // If a response is already in flight on this conn, we can't
+            // safely interleave a 413 — just hard-close. Pre-dispatch is
+            // the polite path: send 413 then close.
+            if (busy) { close_now(); }
+            else      { reject_too_large(); }
+            return;
+        }
+        buf = buf + chunk;
+        reset_idle();
+        dispatch_one();
     });
-    conn.on_end(function () { conn.close(); });
+
+    conn.on_end(function () { close_now(); });
+
+    reset_idle();   // start the idle window for the very first request
 }
 
 // ---------------- low-level serve (back-compat) ---------------------------
@@ -396,12 +507,249 @@ function serve(opts, handler) {
     if (port == null) { port = 0; }
     if (opts.tls != null) {
         return _tls.listen(port, opts.tls, function (conn) {
-            _handle_connection(conn, handler);
+            _handle_connection(conn, handler, opts);
         });
     }
     return _net.tcp_listen(port, function (conn) {
-        _handle_connection(conn, handler);
+        _handle_connection(conn, handler, opts);
     });
+}
+
+// ---------------- streaming server ----------------------------------------
+
+// web.serve_stream({port, tls?, ...}, handler) — handler is invoked as soon
+// as the request HEADERS are parsed (not after the body). The `req` arg has
+//   .method, .url, .path, .query, .version, .headers, .body=null
+//   .body_stream.on_chunk(fn)  — register a callback for each body slice
+//   .body_stream.on_end(fn)    — register the body-complete callback
+//   .respond(v)                — send response (after body, typically)
+//
+// Use this when bodies may be large. Inside on_chunk you can pipe each
+// slice to `io.open_write`'s stream and never buffer the full payload.
+//
+// v1 supports Content-Length-framed bodies only. Transfer-Encoding:
+// chunked + multipart streaming decoding are follow-ups.
+function serve_stream(opts, handler) {
+    var port = opts.port;
+    if (port == null) { port = 0; }
+    if (opts.tls != null) {
+        return _tls.listen(port, opts.tls, function (conn) {
+            _handle_streaming_connection(conn, handler, opts);
+        });
+    }
+    return _net.tcp_listen(port, function (conn) {
+        _handle_streaming_connection(conn, handler, opts);
+    });
+}
+
+// Pure-bnl request-line + headers parser. `http.parse_request` waits until
+// the whole message (incl. body) is available; we need a way to grab just
+// the head. Returns null if `\r\n\r\n` isn't in `buf` yet.
+function _parse_request_head(buf) {
+    var sep = buf.index_of("\r\n\r\n");
+    if (sep < 0) { return null; }
+    var head_text = buf.byte_slice(0, sep);
+    var lines = head_text.split("\r\n");
+    if (lines.length < 1) { return null; }
+
+    var first = lines[0];
+    var sp1 = first.index_of(" ");
+    if (sp1 < 0) { return null; }
+    var method = first.byte_slice(0, sp1);
+    var rest1  = first.byte_slice(sp1 + 1);
+    var sp2 = rest1.index_of(" ");
+    if (sp2 < 0) { return null; }
+    var url = rest1.byte_slice(0, sp2);
+    var vfull = rest1.byte_slice(sp2 + 1);
+    var version = "1.1";
+    var slash = vfull.index_of("/");
+    if (slash >= 0) { version = vfull.byte_slice(slash + 1); }
+
+    var headers = {};
+    var i = 1;
+    while (i < lines.length) {
+        var ln = lines[i];
+        var colon = ln.index_of(":");
+        if (colon > 0) {
+            var k = ln.byte_slice(0, colon).trim().to_lower();
+            var v = ln.byte_slice(colon + 1).trim();
+            headers[k] = v;
+        }
+        i = i + 1;
+    }
+
+    return {
+        method:   method,
+        url:      url,
+        version:  version,
+        headers:  headers,
+        head_end: sep + 4
+    };
+}
+
+// One streaming connection handler. Same keep-alive + idle + max-body
+// semantics as `_handle_connection`, but the dispatch is two-phase:
+// "headers" → call handler → "body" (drains body bytes to user callbacks
+// per chunk) → wait for `req.respond` → reset for the next pipelined req.
+function _handle_streaming_connection(conn, handler, server_opts) {
+    var max_body  = DEFAULT_MAX_BODY_SIZE;
+    var idle_ms   = DEFAULT_IDLE_TIMEOUT_MS;
+    if (server_opts != null) {
+        if (server_opts.max_body_size != null) { max_body = server_opts.max_body_size; }
+        if (server_opts.idle_timeout  != null) { idle_ms  = server_opts.idle_timeout; }
+    }
+
+    var buf            = "";
+    var phase          = "headers";  // headers | body | awaiting_respond
+    var conn_closed    = false;
+    var idle_cancel    = null;
+    var keep_alive     = true;
+    var responded      = false;
+    var body_remaining = 0;
+    var on_body_chunk  = null;
+    var on_body_end    = null;
+    var current_req    = null;
+
+    function close_now() {
+        if (conn_closed) { return; }
+        conn_closed = true;
+        if (idle_cancel != null) { idle_cancel(); idle_cancel = null; }
+        conn.close();
+    }
+    function reset_idle() {
+        if (conn_closed) { return; }
+        if (idle_cancel != null) { idle_cancel(); }
+        if (idle_ms > 0) {
+            idle_cancel = _timers.set(idle_ms, function () { close_now(); });
+        }
+    }
+    function reject_too_large() {
+        if (conn_closed) { return; }
+        var body = "request payload too large";
+        var resp = "HTTP/1.1 413 Payload Too Large\r\n"
+                 + "Content-Type: text/plain; charset=utf-8\r\n"
+                 + "Content-Length: " + str(body.byte_length) + "\r\n"
+                 + "Connection: close\r\n\r\n" + body;
+        conn.write(resp, function (err) { close_now(); });
+    }
+
+    function reset_for_next_request() {
+        phase          = "headers";
+        responded      = false;
+        body_remaining = 0;
+        on_body_chunk  = null;
+        on_body_end    = null;
+        current_req    = null;
+    }
+
+    function send_canonical(resp) {
+        if (responded or conn_closed) { return; }
+        responded = true;
+        if (resp.headers == null) { resp.headers = {}; }
+        var conn_value = "close";
+        if (keep_alive) { conn_value = "keep-alive"; }
+        _set_header(resp.headers, "Connection", conn_value);
+        _write_response(conn, resp, function () {
+            if (not keep_alive) {
+                close_now();
+            } else {
+                reset_idle();
+                reset_for_next_request();
+                dispatch();
+            }
+        });
+    }
+
+    function dispatch() {}
+    dispatch = function () {
+        if (conn_closed) { return; }
+
+        if (phase == "headers") {
+            var head = _parse_request_head(buf);
+            if (head == null) { return; }
+            buf = buf.byte_slice(head.head_end);
+
+            var qmark = head.url.index_of("?");
+            if (qmark >= 0) {
+                head.path  = head.url.byte_slice(0, qmark);
+                head.query = _url.parse_query(head.url.byte_slice(qmark + 1));
+            } else {
+                head.path  = head.url;
+                head.query = {};
+            }
+            keep_alive = (head.version == "1.1");
+            var ch = head.headers["connection"];
+            if (ch != null) {
+                var chl = ch.to_lower();
+                if (chl.index_of("close") >= 0)           { keep_alive = false; }
+                else if (chl.index_of("keep-alive") >= 0) { keep_alive = true; }
+            }
+            var cl = head.headers["content-length"];
+            if (cl != null) {
+                var n = to_number(cl);
+                if (n != null and n > 0) { body_remaining = n; }
+            }
+
+            head.body        = null;
+            head.body_stream = {
+                on_chunk: function (fn) { on_body_chunk = fn; },
+                on_end:   function (fn) { on_body_end   = fn; }
+            };
+            head.respond = function (r) { send_canonical(_coerce(r)); };
+            current_req  = head;
+
+            phase = "body";
+
+            var resp_value = null;
+            try {
+                resp_value = handler(head);
+            } catch (e) {
+                resp_value = { status: 500, body: "Internal Server Error" };
+            }
+            if (resp_value != null) {
+                // Handler returned a value synchronously — still drain the
+                // body off the wire (HTTP semantics) before responding.
+                if (on_body_chunk == null) { on_body_chunk = function (c) {}; }
+                var saved = resp_value;
+                if (on_body_end == null) {
+                    on_body_end = function () { send_canonical(_coerce(saved)); };
+                }
+            }
+            // else: handler async — will register on_body_chunk / on_body_end
+            // and eventually call respond.
+        }
+
+        if (phase == "body") {
+            if (body_remaining > 0 and buf.byte_length > 0) {
+                var take = buf.byte_length;
+                if (take > body_remaining) { take = body_remaining; }
+                var chunk = buf.byte_slice(0, take);
+                buf = buf.byte_slice(take);
+                body_remaining = body_remaining - take;
+                if (on_body_chunk != null) { on_body_chunk(chunk); }
+            }
+            if (body_remaining == 0) {
+                phase = "awaiting_respond";
+                if (on_body_end != null) { on_body_end(); }
+            }
+        }
+        // "awaiting_respond" → no further work; user's respond() drives us.
+    };
+
+    conn.on_data(function (chunk) {
+        if (conn_closed) { return; }
+        if (max_body > 0 and buf.byte_length + chunk.byte_length > max_body) {
+            if (phase == "awaiting_respond") { close_now(); }
+            else                              { reject_too_large(); }
+            return;
+        }
+        buf = buf + chunk;
+        reset_idle();
+        dispatch();
+    });
+
+    conn.on_end(function () { close_now(); });
+    reset_idle();
 }
 
 // ---------------- path routing ---------------------------------------------

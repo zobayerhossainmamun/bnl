@@ -1,0 +1,8 @@
+--- 1. client timeout fires on a never-responding server ---
+err is not null: true
+err mentions timeout: true
+resp is null: true
+--- 2. server returns 413 when body exceeds max_body_size ---
+413 status: 413
+413 conn: close
+413 body: request payload too large

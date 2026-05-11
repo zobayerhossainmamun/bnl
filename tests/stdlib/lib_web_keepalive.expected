@@ -1,0 +1,10 @@
+port valid: true
+count: 3
+r1.status: 200
+r1.body: n=1 path=/a
+r1.conn: keep-alive
+r2.body: n=2 path=/b
+r2.conn: keep-alive
+r3.body: n=3 path=/c
+r3.conn: close
+server saw 3: true

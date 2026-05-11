@@ -1,0 +1,9 @@
+port valid: true
+req 1 : 200 n=1 path=/r
+req 2 : 200 n=2 path=/r
+req 3 : 200 n=3 path=/r
+requests served: 3
+tcp accepts: 1
+pool reused: true
+no-pool body: n=4 path=/no-pool
+accepts now: 2

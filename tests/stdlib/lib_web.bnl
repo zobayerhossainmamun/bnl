@@ -34,7 +34,7 @@ function send(method, path, body, cb) {
         client.on_end(function () {
             cb(null, http.parse_response(buf, true));
         });
-        var req = method + " " + path + " HTTP/1.1\r\nHost: x\r\n";
+        var req = method + " " + path + " HTTP/1.1\r\nHost: x\r\nConnection: close\r\n";
         if (body != null and body.byte_length > 0) {
             req = req + "Content-Type: application/json\r\n";
             req = req + "Content-Length: " + str(body.byte_length) + "\r\n";

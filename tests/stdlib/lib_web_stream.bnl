@@ -1,0 +1,81 @@
+// Streaming request body — server uses serve_stream + io.open_write to
+// pipe an incoming POST body straight to disk. Client (raw net) writes the
+// body in several chunks so the streaming path actually exercises the
+// chunk callbacks (not just one big buf).
+import "web" as web;
+import "net" as net;
+import "io"  as io;
+import "http" as http;
+
+var tmp = "_web_stream_dest.bin";
+
+// Build a 50 KB deterministic payload.
+var payload = "";
+var ii = 0;
+while (ii < 5000) { payload = payload + "0123456789"; ii = ii + 1; }
+var total_size = payload.byte_length;
+
+var first_chunk_size = 0;
+var chunks_seen      = 0;
+
+var server = web.serve_stream({ port: 0 }, function (req) {
+    // Stream the body straight to disk. Backpressure: track pending writes
+    // and only respond once `on_end` fires AND every write has flushed.
+    var sink = io.open_write(tmp);
+    var pending = 0;
+    var ended   = false;
+
+    function maybe_done() {
+        if (ended and pending == 0) {
+            sink.close();
+            req.respond([200, "wrote " + str(io.stat(tmp).bytes) + " bytes"]);
+        }
+    }
+
+    req.body_stream.on_chunk(function (chunk) {
+        if (chunks_seen == 0) { first_chunk_size = chunk.byte_length; }
+        chunks_seen = chunks_seen + 1;
+        pending = pending + 1;
+        sink.write(chunk, function (err) {
+            pending = pending - 1;
+            maybe_done();
+        });
+    });
+    req.body_stream.on_end(function () {
+        ended = true;
+        maybe_done();
+    });
+    return null;
+});
+
+print("port valid:", server.port > 0);
+
+// Client — raw net.tcp_connect so we can split the body into discrete writes.
+net.tcp_connect("127.0.0.1", server.port, function (err, client) {
+    var resp_buf = "";
+    client.on_data(function (d) { resp_buf = resp_buf + d; });
+    client.on_end(function () {
+        var r = http.parse_response(resp_buf, true);
+        print("status:",      r.status);
+        print("resp body:",   r.body);
+        print("file size:",   io.stat(tmp).bytes);
+        print("file matches:", io.read_file(tmp) == payload);
+        print("chunks seen:", chunks_seen >= 1);   // on_chunk did fire (kernel may coalesce)
+        io.remove(tmp);
+        server.close();
+    });
+
+    var headers = "POST /upload HTTP/1.1\r\n"
+                + "Host: x\r\n"
+                + "Content-Length: " + str(total_size) + "\r\n"
+                + "Connection: close\r\n\r\n";
+    client.write(headers);
+
+    // Write the body as 4 separate writes — libuv treats each as a chunk
+    // arrival on the server side, so on_chunk fires more than once.
+    var quarter = total_size / 4;
+    client.write(payload.byte_slice(0,     quarter));
+    client.write(payload.byte_slice(quarter,     quarter * 2));
+    client.write(payload.byte_slice(quarter * 2, quarter * 3));
+    client.write(payload.byte_slice(quarter * 3, total_size));
+});

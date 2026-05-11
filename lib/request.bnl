@@ -4,6 +4,7 @@ import "http"      as _http;
 import "url"       as _url;
 import "json"      as _json;
 import "io"        as _io;
+import "timers"    as _timers;
 import "multipart" as _mp;
 
 // ============================================================================
@@ -123,7 +124,7 @@ function _encode_body(config) {
     return { body: "", content_type: null };
 }
 
-function _build_request_bytes(method, parsed_url, headers, body) {
+function _build_request_bytes(method, parsed_url, headers, body, use_pool) {
     if (not _has_header(headers, "host")) {
         if ((parsed_url.scheme == "http"  and parsed_url.port == 80)
          or (parsed_url.scheme == "https" and parsed_url.port == 443)) {
@@ -136,7 +137,9 @@ function _build_request_bytes(method, parsed_url, headers, body) {
         headers["Content-Length"] = str(body.byte_length);
     }
     if (not _has_header(headers, "connection")) {
-        headers["Connection"] = "close";
+        var conn_value = "close";
+        if (use_pool) { conn_value = "keep-alive"; }
+        headers["Connection"] = conn_value;
     }
     if (not _has_header(headers, "user-agent")) {
         headers["User-Agent"] = "bnl-request";
@@ -189,6 +192,8 @@ function _enrich_response(parsed) {
 }
 
 // Send the request bytes, collect the response into memory, then enrich + cb.
+// Used when we DON'T want to keep the conn alive — we wait for the server
+// to close (on_end) before parsing.
 function _send_buffered(conn, req_bytes, cb) {
     var buf  = "";
     var done = false;
@@ -202,9 +207,111 @@ function _send_buffered(conn, req_bytes, cb) {
     conn.write(req_bytes);
 }
 
-// Drive one request through the full pipeline.
+// Send the request bytes and parse the response incrementally — useful for
+// keep-alive conns where the server never closes. `parse_response.complete`
+// flips true once llhttp has consumed a full response; we callback at that
+// point regardless of any trailing bytes.
+function _send_buffered_keepalive(conn, req_bytes, cb) {
+    var buf  = "";
+    var done = false;
+    conn.on_data(function (d) {
+        if (done) { return; }
+        buf = buf + d;
+        var parsed = _http.parse_response(buf, false);
+        if (parsed.complete) {
+            done = true;
+            cb(null, _enrich_response(parsed));
+        }
+    });
+    conn.on_end(function () {
+        if (done) { return; }
+        done = true;
+        var parsed = _http.parse_response(buf, true);
+        cb(null, _enrich_response(parsed));
+    });
+    conn.write(req_bytes);
+}
+
+// ---------------- connection pool ------------------------------------------
+
+// _pool_by_key is a map of "scheme://host:port" → list of pool entries.
+// Each entry: { conn, idle_cancel, stale }. We pop the most-recently-used
+// entry off the back of the list (LIFO — likely to still be alive).
+var _pool_by_key = {};
+
+function _pool_key(scheme, host, port) {
+    return scheme + "://" + host + ":" + str(port);
+}
+
+function _pool_pop(key) {
+    var list = _pool_by_key[key];
+    if (list == null) { return null; }
+    while (list.length > 0) {
+        var entry = list.pop();
+        if (entry.idle_cancel != null) { entry.idle_cancel(); }
+        if (not entry.stale) { return entry.conn; }
+    }
+    return null;
+}
+
+function _pool_push(key, conn) {
+    var list = _pool_by_key[key];
+    if (list == null) {
+        list = [];
+        _pool_by_key[key] = list;
+    }
+    var entry = { conn: conn, stale: false, idle_cancel: null };
+    // 30 s idle TTL — server may close idle keep-alive conns earlier so
+    // there's no point holding them indefinitely.
+    entry.idle_cancel = _timers.set(30000, function () {
+        entry.stale = true;
+        conn.close();
+    });
+    list.push(entry);
+}
+
+// Open a fresh conn, or pop one off the pool if one is available for this
+// scheme://host:port.
+function _connect_or_pool(parsed_u, tls_opts, use_pool, on_done) {
+    if (use_pool) {
+        var key = _pool_key(parsed_u.scheme, parsed_u.host, parsed_u.port);
+        var conn = _pool_pop(key);
+        if (conn != null) { on_done(null, conn); return; }
+    }
+    _connect(parsed_u, tls_opts, on_done);
+}
+
+// shutdown() — close every pooled conn and cancel every idle timer.
+// Tests + graceful-shutdown paths should call this before exiting so the
+// libuv loop has no live handles holding it open.
+function shutdown() {
+    for (var k of _pool_by_key.keys()) {
+        var list = _pool_by_key[k];
+        var i = 0;
+        while (i < list.length) {
+            if (list[i].idle_cancel != null) { list[i].idle_cancel(); }
+            if (not list[i].stale)           { list[i].conn.close(); }
+            i = i + 1;
+        }
+    }
+    _pool_by_key = {};
+}
+
+// Determine whether `conn` may be returned to the pool after this response.
+// Honors the server's `Connection: close`. HTTP/1.0 default is close.
+function _is_reusable(resp) {
+    if (resp == null) { return false; }
+    var ch = resp.headers["connection"];
+    if (ch == null) { return resp.version == "1.1"; }
+    return ch.to_lower().index_of("close") < 0;
+}
+
+// Drive one request through the full pipeline, with optional timeout.
+//
+// timeout (ms) covers the WHOLE thing — DNS resolve + connect + write + read.
+// First fire of the timer wins: it cancels the live conn and calls cb with
+// a "timeout" error. Any subsequent response from the wire is ignored.
 function _do_request(config, before_fns, after_fns, cb) {
-    // before interceptors
     var i = 0;
     while (i < before_fns.length) {
         var maybe = before_fns[i](config);
@@ -222,14 +329,42 @@ function _do_request(config, before_fns, after_fns, cb) {
         config.headers["Content-Type"] = encoded.content_type;
     }
 
+    var use_pool  = (config.pool == true);
     var final_url = _resolve_url(config);
     var parsed_u  = _url.parse(final_url);
     var req_bytes = _build_request_bytes(method, parsed_u,
-                                         config.headers, encoded.body);
+                                         config.headers, encoded.body, use_pool);
 
-    _connect(parsed_u, config.tls, function (cerr, conn) {
-        if (cerr != null) { cb(cerr, null); return; }
-        _send_buffered(conn, req_bytes, function (err, resp) {
+    // Wrap the user's callback with a one-shot guard + timer cancel.
+    var done = false;
+    var timer_cancel = null;
+    var live_conn = null;
+
+    var finish = function (err, resp) {
+        if (done) { return; }
+        done = true;
+        if (timer_cancel != null) { timer_cancel(); timer_cancel = null; }
+        cb(err, resp);
+    };
+
+    if (config.timeout != null and config.timeout > 0) {
+        timer_cancel = _timers.set(config.timeout, function () {
+            if (live_conn != null) { live_conn.close(); }
+            finish("timeout after " + str(config.timeout) + "ms", null);
+        });
+    }
+
+    _connect_or_pool(parsed_u, config.tls, use_pool, function (cerr, conn) {
+        if (cerr != null) { finish(cerr, null); return; }
+        if (done) { conn.close(); return; }   // already timed out during connect
+        live_conn = conn;
+
+        // Pick the right receiver: keep-alive uses incremental parse,
+        // close-after uses on_end.
+        var send = _send_buffered;
+        if (use_pool) { send = _send_buffered_keepalive; }
+
+        send(conn, req_bytes, function (err, resp) {
             if (err == null and resp != null) {
                 var j = 0;
                 while (j < after_fns.length) {
@@ -237,8 +372,17 @@ function _do_request(config, before_fns, after_fns, cb) {
                     if (maybe2 != null) { resp = maybe2; }
                     j = j + 1;
                 }
+                // Return the conn to the pool iff still reusable.
+                if (use_pool and _is_reusable(resp)) {
+                    var key = _pool_key(parsed_u.scheme, parsed_u.host, parsed_u.port);
+                    _pool_push(key, conn);
+                } else {
+                    conn.close();
+                }
+            } else {
+                conn.close();
             }
-            cb(err, resp);
+            finish(err, resp);
         });
     });
 }
