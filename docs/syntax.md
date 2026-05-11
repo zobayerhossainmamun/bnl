@@ -31,7 +31,7 @@ Reserved in both forms.
 | `of` | `এর` | | |
 
 `print`, `str`, `type`, `to_number`, `chr`, `try_call` are **global functions**, not
-keywords. Their Bangla aliases are `লিখুন`, `লেখ`, `ধরণ` (others are English-only
+keywords. Their Bangla aliases are `লিখুন`, `ধরণ` (others are English-only
 for now).
 
 ## Identifiers
@@ -244,7 +244,7 @@ mod.exported           // module export
 | Name | Bangla | Signature | Notes |
 |---|---|---|---|
 | `print(...)` | `লিখুন` | varargs | Joins args with single space, then newline |
-| `str(v)` | `লেখ` | `(any) -> string` | Same as the display form `print` produces |
+| `str(v)` | — | `(any) -> string` | Same as the display form `print` produces |
 | `type(v)` | `ধরণ` | `(any) -> string` | See [Types](#types) |
 | `to_number(s)` | — | `(string\|number) -> number\|null` | `null` on parse failure |
 | `chr(n)` | — | `(number) -> string` | Single byte as a string |

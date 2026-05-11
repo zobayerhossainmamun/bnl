@@ -169,7 +169,6 @@ void Interpreter::register_builtins() {
             return Value{args[0].to_display()};
         });
     globals_->define("str", Value{str_fn});
-    globals_->define("\xe0\xa6\xb2\xe0\xa7\x87\xe0\xa6\x96", Value{str_fn});  // লেখ
 
     // type(x): return the type name as a string.
     auto type_fn = std::make_shared<NativeFunction>(

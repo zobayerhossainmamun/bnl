@@ -126,7 +126,10 @@
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --version)",
       "Bash(mkdir -p \"D:/bnlang/new-v/bnl-web/contents/docs/v1.0.0/modules\")",
       "Bash(mkdir -p sys-module io-module path-module timers-module time-module async-module log-module dotenv-module cli-module uuid-module json-module csv-module regex-module crypto-module random-module math-module zlib-module net-module dns-module tls-module url-module web-module request-module ws-module cookie-module session-module multipart-module template-module sqlite-module pg-module mysql-module mongo-module exec-module test-module)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(python3 *)",
+      "Bash(/c/Users/zobay/AppData/Local/Programs/Python/Python310/python.exe *)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_en.bnl; \"---\"; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_bn.bnl)"
     ]
   }
 }
