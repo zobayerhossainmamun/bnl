@@ -320,6 +320,7 @@ struct WriteStream {
 
 struct AsyncWriteChunk {
     WriteStream* stream = nullptr;
+    int64_t      offset = 0;   // reserved at queue time, captured per write
     std::string  data;
     std::string  error;
     CallablePtr  callback;
@@ -327,6 +328,11 @@ struct AsyncWriteChunk {
     std::shared_ptr<bool> stream_alive;
 };
 
+// Workers run on the libuv threadpool and may execute in any order. We
+// must NOT read stream->offset here — that would race with parallel
+// write_fn calls that have already queued. Each chunk got its slot
+// reserved at queue time (see write_fn below) and writes only at that
+// pre-assigned offset.
 void on_write_chunk_work(uv_work_t* req) {
     auto* w = static_cast<AsyncWriteChunk*>(req->data);
     if (!*w->stream_alive) { w->error = "stream is closed"; return; }
@@ -336,12 +342,13 @@ void on_write_chunk_work(uv_work_t* req) {
                                  static_cast<unsigned int>(w->data.size() - written));
         uv_fs_t  write_req;
         int n = uv_fs_write(w->stream->loop, &write_req, w->stream->fd,
-                            &b, 1, w->stream->offset, nullptr);
+                            &b, 1,
+                            w->offset + static_cast<int64_t>(written),
+                            nullptr);
         uv_fs_req_cleanup(&write_req);
         if (n < 0) { w->error = uv_strerror(n); return; }
         if (n == 0) break;
         written += static_cast<std::size_t>(n);
-        w->stream->offset += n;
     }
 }
 
@@ -368,6 +375,13 @@ ModulePtr build_write_stream_module(WriteStream* s) {
         auto* w = new AsyncWriteChunk{};
         w->stream       = s;
         w->data         = args[0].as_string();
+        // Reserve a slot in the file synchronously. Without this, two
+        // concurrent .write() calls would both run with offset = 0 on
+        // the threadpool, overwriting each other. macOS arm64 exposed
+        // this regularly; on Windows it happened to serialize most of
+        // the time and the race was invisible.
+        w->offset       = s->offset;
+        s->offset      += static_cast<int64_t>(w->data.size());
         w->callback     = std::move(cb);
         w->interp       = &interp;
         w->stream_alive = s->alive;
