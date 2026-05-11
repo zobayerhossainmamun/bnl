@@ -65,8 +65,10 @@ target_include_directories(bnl_core
         ${CMAKE_BINARY_DIR}/generated     # stdlib_embedded.h (baked lib/*.bnl)
 )
 
-# Make sure the embedded-stdlib header is regenerated before bnl_core builds.
-add_dependencies(bnl_core bnl_stdlib_embedded)
+# Make sure the embedded-stdlib header and CA bundle are regenerated before
+# bnl_core builds. Both live under ${CMAKE_BINARY_DIR}/generated/ and are
+# pulled in via the include path declared above.
+add_dependencies(bnl_core bnl_stdlib_embedded bnl_cacert_embedded)
 
 # libuv is in the public header surface (uv_loop_t* exposed via Interpreter).
 # Hosts that link bnl_core get libuv transitively. fmt stays PRIVATE.

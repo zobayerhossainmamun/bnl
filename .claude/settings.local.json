@@ -129,7 +129,16 @@
       "Bash(npm run *)",
       "Bash(python3 *)",
       "Bash(/c/Users/zobay/AppData/Local/Programs/Python/Python310/python.exe *)",
-      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_en.bnl; \"---\"; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_bn.bnl)"
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_en.bnl; \"---\"; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\hero_bn.bnl)",
+      "Bash(go build *)",
+      "Bash(./bpm.exe --help)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\https_smoke.bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe -e 'import \"url\" as url; var u = url.parse\\(\"https://www.google.com\"\\); print\\(\"path=\", \"[\", u.path, \"]\"\\); var u2 = url.parse\\(\"https://www.google.com/\"\\); print\\(\"path2=\", \"[\", u2.path, \"]\"\\);')",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\google_no_slash.bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\google_debug.bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe -e \"print\\([1, 2, 3]\\); print\\({a: 1, b: \"\"hello\"\", c: [10, 20, 30]}\\); print\\(\"\"scalar string\"\"\\); print\\(42, true, null\\);\")",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl)",
+      "PowerShell($env:BNL_PRINT_COLOR=1; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl | Out-String -Stream | ForEach-Object { \\($_ -replace \"`e\",\"ESC\"\\) })"
     ]
   }
 }

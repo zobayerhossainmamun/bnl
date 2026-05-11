@@ -192,17 +192,34 @@ function _enrich_response(parsed) {
 }
 
 // Send the request bytes, collect the response into memory, then enrich + cb.
-// Used when we DON'T want to keep the conn alive — we wait for the server
-// to close (on_end) before parsing.
+// Used when we DON'T want to keep the conn alive. We try an incremental
+// parse on every chunk — most responses (any with Content-Length or proper
+// chunked framing) will complete here and fire the callback before the
+// connection even closes. on_end is the fallback for the HTTP/1.0-style
+// case where the response body is delimited by EOF; if even that finalize
+// fails (truncated stream, half-closed TLS), surface a clean error rather
+// than letting the underlying llhttp exception escape into the loop.
 function _send_buffered(conn, req_bytes, cb) {
     var buf  = "";
     var done = false;
-    conn.on_data(function (d) { buf = buf + d; });
+    conn.on_data(function (d) {
+        if (done) { return; }
+        buf = buf + d;
+        var parsed = _http.parse_response(buf, false);
+        if (parsed.complete) {
+            done = true;
+            cb(null, _enrich_response(parsed));
+        }
+    });
     conn.on_end(function () {
         if (done) { return; }
         done = true;
-        var parsed = _http.parse_response(buf, true);
-        cb(null, _enrich_response(parsed));
+        try {
+            var parsed = _http.parse_response(buf, true);
+            cb(null, _enrich_response(parsed));
+        } catch (e) {
+            cb("connection closed before response was complete: " + str(e), null);
+        }
     });
     conn.write(req_bytes);
 }

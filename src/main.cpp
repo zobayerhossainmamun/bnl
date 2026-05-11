@@ -27,6 +27,21 @@ void enable_utf8_console() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+
+    // Modern Windows 10+ supports ANSI escape sequences (used by print's
+    // colored output for lists/maps), but only after enabling the VT100
+    // processing flag on the console handles. Best-effort: legacy consoles
+    // (Windows 7 etc.) just leave the flag unset and we never emit codes
+    // anyway because isatty()/the BNL_PRINT_COLOR env var govern that.
+    auto enable_vt = [](DWORD which) {
+        HANDLE h = GetStdHandle(which);
+        if (h == INVALID_HANDLE_VALUE) return;
+        DWORD mode = 0;
+        if (!GetConsoleMode(h, &mode)) return;
+        SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    };
+    enable_vt(STD_OUTPUT_HANDLE);
+    enable_vt(STD_ERROR_HANDLE);
 #endif
 }
 

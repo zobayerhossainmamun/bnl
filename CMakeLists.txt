@@ -50,6 +50,25 @@ add_custom_command(
 )
 add_custom_target(bnl_stdlib_embedded ALL DEPENDS ${BNL_STDLIB_EMBEDDED_HEADER})
 
+# Mozilla CA root bundle, embedded into bnl_core so HTTPS clients (request,
+# web client, tls, TLS-enabled DB drivers) have a trust store on platforms
+# where OpenSSL's default verify paths don't resolve anywhere useful — i.e.
+# Windows. Refresh by re-downloading resources/cacert.pem from curl.se and
+# rebuilding.
+set(BNL_CACERT_HEADER ${CMAKE_BINARY_DIR}/generated/bnl/cacert_pem.inc)
+set(BNL_CACERT_PEM    ${CMAKE_SOURCE_DIR}/resources/cacert.pem)
+add_custom_command(
+    OUTPUT  ${BNL_CACERT_HEADER}
+    COMMAND ${CMAKE_COMMAND}
+        -DINPUT=${BNL_CACERT_PEM}
+        -DOUTPUT=${BNL_CACERT_HEADER}
+        -P ${CMAKE_SOURCE_DIR}/cmake/embed_cacert.cmake
+    DEPENDS ${BNL_CACERT_PEM} ${CMAKE_SOURCE_DIR}/cmake/embed_cacert.cmake
+    COMMENT "Baking resources/cacert.pem into cacert_pem.inc"
+    VERBATIM
+)
+add_custom_target(bnl_cacert_embedded ALL DEPENDS ${BNL_CACERT_HEADER})
+
 add_subdirectory(src)
 
 add_subdirectory(examples/embed)

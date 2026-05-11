@@ -364,11 +364,22 @@ MYSQL* open_connection(const std::unordered_map<std::string, Value>& opts) {
         return it == opts.end() ? nullptr : &it->second;
     };
 
-    // `ssl: true` switches the connection to TLS with default server cert
-    // handling. Fine-grained config (CA/cert/key paths) would route through
-    // mysql_ssl_set's other args — left for v2.
-    if (auto* v = get("ssl"); v && v->is_bool() && v->as_bool()) {
-        mysql_ssl_set(m, nullptr, nullptr, nullptr, nullptr, nullptr);
+    // `ssl: true`  → enable TLS with default server-cert handling. Fine-grained
+    //                config (CA/cert/key paths) would route through mysql_ssl_set's
+    //                other args — left for v2.
+    // `ssl: false` → explicitly disable enforcement *and* server-cert verification
+    //                so the client connects unencrypted even when libmariadb's
+    //                build defaults or a user-level my.cnf would otherwise force
+    //                SSL ("SSL is required, but the server does not support it").
+    // (key absent)  → leave libmariadb defaults alone (typically PREFERRED).
+    if (auto* v = get("ssl"); v && v->is_bool()) {
+        if (v->as_bool()) {
+            mysql_ssl_set(m, nullptr, nullptr, nullptr, nullptr, nullptr);
+        } else {
+            my_bool off = 0;
+            mysql_options(m, MYSQL_OPT_SSL_ENFORCE,             &off);
+            mysql_options(m, MYSQL_OPT_SSL_VERIFY_SERVER_CERT,  &off);
+        }
     }
     if (auto* v = get("connect_timeout"); v && v->is_number()) {
         unsigned int t = static_cast<unsigned int>(v->as_number());
