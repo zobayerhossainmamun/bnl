@@ -1,0 +1,65 @@
+import "csv" as csv;
+
+print("--- basic parse ---");
+var r = csv.parse("a,b,c\n1,2,3\n");
+print(r.length);
+print(r[0][0]);
+print(r[0][1]);
+print(r[0][2]);
+print(r[1][0]);
+
+print("--- trailing comma → trailing empty cell ---");
+var t = csv.parse("a,b,\n");
+print(t[0].length);
+print(t[0][2]);    // empty string
+
+print("--- quoted cells with commas + newlines + embedded quotes ---");
+var q = csv.parse("\"hello, world\",\"line\nbreak\",\"he said \"\"hi\"\"\"\n");
+print(q[0].length);
+print(q[0][0]);
+print(q[0][1]);
+print(q[0][2]);
+
+print("--- CRLF lines ---");
+var c = csv.parse("a,b\r\n1,2\r\n");
+print(c.length);
+print(c[0][1]);
+print(c[1][1]);
+
+print("--- input without final newline ---");
+var nn = csv.parse("a,b\n1,2");
+print(nn.length);
+print(nn[1][1]);
+
+print("--- empty input ---");
+var e = csv.parse("");
+print(e.length);
+
+print("--- parse_records ---");
+var recs = csv.parse_records("name,age\nalice,30\nbob,25\n");
+print(recs.length);
+print(recs[0].name);
+print(recs[0].age);
+print(recs[1].name);
+print(recs[1].age);
+
+print("--- stringify roundtrip ---");
+var data = [
+    ["name", "note"],
+    ["alice", "plain"],
+    ["bob",   "has, comma"],
+    ["carol", "has \"quote\""],
+    ["dan",   "two\nlines"]
+];
+var encoded = csv.stringify(data);
+print(encoded.index_of("\"has, comma\"") >= 0);
+print(encoded.index_of("\"has \"\"quote\"\"\"") >= 0);
+print(encoded.index_of("\"two\nlines\"") >= 0);
+var decoded = csv.parse(encoded);
+print(decoded.length);
+print(decoded[3][1]);     // "has \"quote\""
+print(decoded[4][1]);     // "two\nlines"
+
+print("--- numbers stringify via str() ---");
+var ns = csv.stringify([["count", "ratio"], [42, 3.14]]);
+print(ns);

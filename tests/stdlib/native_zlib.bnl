@@ -1,0 +1,44 @@
+// Native zlib primitives — gzip / deflate roundtrips, level effects,
+// error path on bad input.
+import "_zlib" as zlib;
+
+print("--- version is a string ---");
+print(type(zlib.version()));
+
+print("--- gzip roundtrip ---");
+var msg = "the quick brown fox jumps over the lazy dog";
+var c = zlib.gzip_compress(msg, -1);
+print(c.byte_length > 0);
+var d = zlib.gzip_decompress(c);
+print(d == msg);
+
+print("--- highly compressible input shrinks ---");
+var big = "";
+var i = 0;
+while (i < 1000) { big = big + "abcdef"; i = i + 1; }
+var bc = zlib.gzip_compress(big, -1);
+print(big.byte_length);
+print(bc.byte_length < big.byte_length);   // gzip's overhead is dwarfed by repetition
+var bd = zlib.gzip_decompress(bc);
+print(bd == big);
+
+print("--- raw deflate roundtrip ---");
+var r = zlib.deflate_raw("hello hello hello", -1);
+print(zlib.inflate_raw(r));
+
+print("--- decompress garbage throws ---");
+try {
+    zlib.gzip_decompress("not gzip data");
+    print("FAIL");
+} catch (e) { print("threw"); }
+
+print("--- level argument ---");
+var lvl_default = zlib.gzip_compress(big, -1).byte_length;
+var lvl_0       = zlib.gzip_compress(big,  0).byte_length;
+var lvl_9       = zlib.gzip_compress(big,  9).byte_length;
+print(lvl_0 > lvl_default);       // no-compression should be larger
+print(lvl_9 <= lvl_default);      // max compression at least matches default
+
+print("--- bad level rejected ---");
+try { zlib.gzip_compress("x", 10);  print("FAIL"); } catch (e) { print("threw"); }
+try { zlib.gzip_compress("x", -2);  print("FAIL"); } catch (e) { print("threw"); }

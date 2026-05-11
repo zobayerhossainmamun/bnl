@@ -41,6 +41,8 @@ class Interpreter;
 //             to lib/random.bnl (int/float/choice/shuffle/sample helpers).
 //   _time   — system + monotonic clocks, tm-struct conversion. Public
 //             "time" belongs to lib/time.bnl (ISO 8601 + arithmetic).
+//   _zlib   — gzip + raw deflate/inflate via zlib (transitive dep of
+//             libpq, no new vcpkg port). Public "zlib" in lib/zlib.bnl.
 //
 // Anything else is delivered as a plugin by the separate package manager.
 void register_sys   (Interpreter& interp);
@@ -61,5 +63,6 @@ void register_mongo (Interpreter& interp);
 void register_math  (Interpreter& interp);
 void register_random(Interpreter& interp);
 void register_time  (Interpreter& interp);
+void register_zlib  (Interpreter& interp);
 
 }  // namespace bnl

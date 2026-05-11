@@ -1,0 +1,8 @@
+--- gzip / gunzip roundtrip ---
+true
+--- gzip_at lets the caller pick level ---
+true
+--- deflate / inflate raw ---
+true
+--- version is reachable through the lib ---
+string

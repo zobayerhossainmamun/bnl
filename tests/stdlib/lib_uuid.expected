@@ -1,0 +1,20 @@
+--- v4 shape ---
+36
+true
+true
+--- v4 version + variant bits are pinned ---
+true
+true
+--- v4 produces distinct values ---
+0
+--- nil ---
+00000000-0000-0000-0000-000000000000
+true
+false
+--- is_valid rejects bad shapes ---
+false
+false
+false
+false
+false
+false

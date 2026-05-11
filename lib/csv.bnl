@@ -1,0 +1,133 @@
+// RFC 4180 CSV parse + stringify, pure bnl.
+//
+// Conventions matching the reference RFC:
+//   - Comma is the only field separator.
+//   - Fields may be enclosed in double quotes; quotes inside a quoted
+//     field are escaped by doubling (`""`).
+//   - Lines end with LF or CRLF (CR alone is treated as ignored).
+//   - Empty lines parse to a one-cell `[""]` row (we don't silently drop
+//     them; filter on the caller side if you want to).
+//   - Unquoted fields can't contain `,`, `"`, `\n`, `\r` — anything else
+//     is taken literally.
+
+// parse(text) → list of rows, each row a list of string cells.
+function parse(text) {
+    var rows = [];
+    var row  = [];
+    var field = "";
+    var state = "unquoted";   // unquoted | quoted | after_quote
+    var i = 0;
+    while (i < text.byte_length) {
+        var b = text.byte_at(i);
+        if (state == "unquoted") {
+            if (b == 44) {                            // ','
+                row.push(field); field = "";
+            } else if (b == 10) {                     // '\n'
+                row.push(field); field = "";
+                rows.push(row); row = [];
+            } else if (b == 13) {                     // '\r' — eaten
+                // skip
+            } else if (b == 34 and field.byte_length == 0) {   // '"' at field start
+                state = "quoted";
+            } else {
+                field = field + chr(b);
+            }
+        } else if (state == "quoted") {
+            if (b == 34) {                            // '"'
+                state = "after_quote";
+            } else {
+                field = field + chr(b);
+            }
+        } else if (state == "after_quote") {
+            if (b == 34) {                            // '""' → literal '"'
+                field = field + "\"";
+                state = "quoted";
+            } else if (b == 44) {
+                row.push(field); field = "";
+                state = "unquoted";
+            } else if (b == 10) {
+                row.push(field); field = "";
+                rows.push(row); row = [];
+                state = "unquoted";
+            } else if (b == 13) {
+                // skip CR; the LF is what closes the row.
+            } else {
+                // Stray byte after closing quote — be lenient, treat as a
+                // continuation of the field in unquoted mode.
+                field = field + chr(b);
+                state = "unquoted";
+            }
+        }
+        i = i + 1;
+    }
+    // Flush trailing field/row if anything is pending.
+    if (field.byte_length > 0 or row.length > 0 or state != "unquoted") {
+        row.push(field);
+        rows.push(row);
+    }
+    return rows;
+}
+
+// parse_records(text) — parse and convert to a list of maps using the
+// FIRST row as field names. Skips the header row in the output.
+function parse_records(text) {
+    var rows = parse(text);
+    if (rows.length == 0) { return []; }
+    var headers = rows[0];
+    var out = [];
+    var i = 1;
+    while (i < rows.length) {
+        var rec = {};
+        var j = 0;
+        while (j < headers.length and j < rows[i].length) {
+            rec[headers[j]] = rows[i][j];
+            j = j + 1;
+        }
+        out.push(rec);
+        i = i + 1;
+    }
+    return out;
+}
+
+// stringify(rows) — encode a list of rows back to RFC 4180 text. Each row
+// is a list of cells; cells are str()'d if not already strings. Always
+// emits LF line endings (caller can transcode to CRLF if needed).
+function stringify(rows) {
+    var out = "";
+    var i = 0;
+    while (i < rows.length) {
+        var row = rows[i];
+        var parts = [];
+        var j = 0;
+        while (j < row.length) {
+            parts.push(_escape_cell(str(row[j])));
+            j = j + 1;
+        }
+        out = out + _join(parts, ",") + "\n";
+        i = i + 1;
+    }
+    return out;
+}
+
+function _needs_quote(s) {
+    return s.index_of(",")  >= 0
+        or s.index_of("\"") >= 0
+        or s.index_of("\n") >= 0
+        or s.index_of("\r") >= 0;
+}
+
+function _escape_cell(s) {
+    if (not _needs_quote(s)) { return s; }
+    return "\"" + s.replace("\"", "\"\"") + "\"";
+}
+
+function _join(parts, sep) {
+    if (parts.length == 0) { return ""; }
+    var out = parts[0];
+    var i = 1;
+    while (i < parts.length) {
+        out = out + sep + parts[i];
+        i = i + 1;
+    }
+    return out;
+}

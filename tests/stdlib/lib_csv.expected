@@ -1,0 +1,41 @@
+--- basic parse ---
+2
+a
+b
+c
+1
+--- trailing comma → trailing empty cell ---
+3
+
+--- quoted cells with commas + newlines + embedded quotes ---
+3
+hello, world
+line
+break
+he said "hi"
+--- CRLF lines ---
+2
+b
+2
+--- input without final newline ---
+2
+2
+--- empty input ---
+0
+--- parse_records ---
+2
+alice
+30
+bob
+25
+--- stringify roundtrip ---
+true
+true
+true
+5
+has "quote"
+two
+lines
+--- numbers stringify via str() ---
+count,ratio
+42,3.14

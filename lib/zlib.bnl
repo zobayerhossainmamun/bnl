@@ -1,0 +1,19 @@
+import "_zlib" as _zlib;
+
+function version() { return _zlib.version(); }
+
+// gzip(data) — gzip-compress at default level.
+function gzip(data)       { return _zlib.gzip_compress(data, -1); }
+
+// gzip_at(data, level) — gzip-compress at an explicit level (-1 default,
+// 0 = no compression, 1 = fastest, 9 = best).
+function gzip_at(data, level) { return _zlib.gzip_compress(data, level); }
+
+// gunzip(data) — decompress gzip OR zlib-framed input (auto-detected).
+function gunzip(data)     { return _zlib.gzip_decompress(data); }
+
+// Raw deflate / inflate — no zlib or gzip header, no checksum. Used by
+// WebSocket permessage-deflate and other framed protocols.
+function deflate(data)         { return _zlib.deflate_raw(data, -1); }
+function deflate_at(data, lvl) { return _zlib.deflate_raw(data, lvl); }
+function inflate(data)         { return _zlib.inflate_raw(data); }

@@ -1,0 +1,39 @@
+import "uuid" as uuid;
+
+print("--- v4 shape ---");
+var u = uuid.v4();
+print(u.length);
+print(uuid.is_valid(u));
+print(uuid.is_v4(u));
+
+print("--- v4 version + variant bits are pinned ---");
+// Position 14 must be '4' (version), position 19 must be 8/9/a/b (variant).
+print(u.byte_at(14) == 52);          // '4'
+var v = u.byte_at(19);
+print(v == 56 or v == 57 or v == 97 or v == 98);
+
+print("--- v4 produces distinct values ---");
+var n = 100;
+var seen = {};
+var i = 0;
+var dupes = 0;
+while (i < n) {
+    var k = uuid.v4();
+    if (seen[k] != null) { dupes = dupes + 1; }
+    seen[k] = true;
+    i = i + 1;
+}
+print(dupes);
+
+print("--- nil ---");
+print(uuid.nil());
+print(uuid.is_valid(uuid.nil()));
+print(uuid.is_v4(uuid.nil()));   // version digit is 0, not v4
+
+print("--- is_valid rejects bad shapes ---");
+print(uuid.is_valid(""));
+print(uuid.is_valid("not-a-uuid"));
+print(uuid.is_valid("00000000-0000-0000-0000-00000000000"));    // 35 chars
+print(uuid.is_valid("0000000000000000000000000000000000000"));  // 36 chars no dashes
+print(uuid.is_valid("zzzzzzzz-0000-0000-0000-000000000000"));   // non-hex
+print(uuid.is_valid(123));   // wrong type

@@ -99,6 +99,7 @@ Interpreter::Interpreter()
     register_math  (*this);
     register_random(*this);
     register_time  (*this);
+    register_zlib  (*this);
 }
 
 Interpreter::~Interpreter() {

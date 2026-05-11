@@ -1,0 +1,19 @@
+--- version is a string ---
+string
+--- gzip roundtrip ---
+true
+true
+--- highly compressible input shrinks ---
+6000
+true
+true
+--- raw deflate roundtrip ---
+hello hello hello
+--- decompress garbage throws ---
+threw
+--- level argument ---
+true
+true
+--- bad level rejected ---
+threw
+threw

@@ -1,0 +1,71 @@
+import "crypto" as crypto;
+
+// RFC 4122 UUIDv4 — 122 random bits + version/variant pinning.
+// Output format: 8-4-4-4-12 lowercase hex (36 chars total).
+function v4() {
+    var b = crypto.random_bytes(16);
+
+    // Version 4 marker: byte[6] high nibble = 0100 (binary).
+    //   bnl has no bitwise & / | so we use `% 16` to clear the top 4 bits
+    //   then `+ 64` to set the 0x40 mask. Equivalent to `(x & 0x0F) | 0x40`.
+    var b6 = (b.byte_at(6) % 16) + 64;
+
+    // Variant 10x: byte[8] top 2 bits = 10. `(x & 0x3F) | 0x80`.
+    var b8 = (b.byte_at(8) % 64) + 128;
+
+    // Reassemble the 16 bytes with the two patched positions.
+    var bytes = "";
+    var i = 0;
+    while (i < 16) {
+        if (i == 6)      { bytes = bytes + chr(b6); }
+        else if (i == 8) { bytes = bytes + chr(b8); }
+        else             { bytes = bytes + chr(b.byte_at(i)); }
+        i = i + 1;
+    }
+
+    var h = crypto.hex_encode(bytes);
+    return h.byte_slice(0, 8) + "-" + h.byte_slice(8, 12) + "-"
+         + h.byte_slice(12, 16) + "-" + h.byte_slice(16, 20) + "-"
+         + h.byte_slice(20, 32);
+}
+
+// nil — the all-zeros UUID. Useful as a sentinel.
+function nil() {
+    return "00000000-0000-0000-0000-000000000000";
+}
+
+// is_valid(s) — true if s is a syntactically valid UUID (any version).
+// Doesn't enforce v4-specific version/variant nibbles.
+function is_valid(s) {
+    if (type(s) != "string") { return false; }
+    if (s.byte_length != 36) { return false; }
+    var dashes = [8, 13, 18, 23];
+    var i = 0;
+    while (i < dashes.length) {
+        if (s.byte_at(dashes[i]) != 45) { return false; }   // '-'
+        i = i + 1;
+    }
+    var j = 0;
+    while (j < 36) {
+        var is_dash = (j == 8 or j == 13 or j == 18 or j == 23);
+        if (not is_dash) {
+            var b = s.byte_at(j);
+            var is_hex = (b >= 48 and b <= 57)        // 0-9
+                      or (b >= 97 and b <= 102)       // a-f
+                      or (b >= 65 and b <= 70);       // A-F
+            if (not is_hex) { return false; }
+        }
+        j = j + 1;
+    }
+    return true;
+}
+
+// is_v4(s) — stricter: requires version=4 + RFC 4122 variant.
+function is_v4(s) {
+    if (not is_valid(s)) { return false; }
+    if (s.byte_at(14) != 52) { return false; }   // '4' at position 14
+    var v = s.byte_at(19);
+    // variant must be 8, 9, a, or b
+    return v == 56 or v == 57 or v == 97 or v == 98     // '8','9','a','b'
+        or v == 65 or v == 66;                            // 'A','B' (tolerant)
+}

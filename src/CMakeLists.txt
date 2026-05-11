@@ -44,6 +44,7 @@ add_library(bnl_core ${_BNL_CORE_TYPE}
     stdlib/math.cpp
     stdlib/random.cpp
     stdlib/time.cpp
+    stdlib/zlib.cpp
 )
 
 # FFI plugin loader is only needed when BNL_ENABLE_FFI=ON. On Linux the
@@ -81,6 +82,7 @@ target_link_libraries(bnl_core
         PostgreSQL::PostgreSQL          # stdlib/pg.cpp
         unofficial::libmariadb          # stdlib/mysql.cpp
         $<IF:$<TARGET_EXISTS:mongoc::shared>,mongoc::shared,mongoc::static>  # stdlib/mongo.cpp
+        ZLIB::ZLIB                      # stdlib/zlib.cpp
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
 

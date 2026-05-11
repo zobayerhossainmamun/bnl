@@ -1,0 +1,17 @@
+import "zlib" as zlib;
+
+print("--- gzip / gunzip roundtrip ---");
+var s = "compress me, then bring me back";
+print(zlib.gunzip(zlib.gzip(s)) == s);
+
+print("--- gzip_at lets the caller pick level ---");
+var big = "";
+var i = 0;
+while (i < 500) { big = big + "abc"; i = i + 1; }
+print(zlib.gunzip(zlib.gzip_at(big, 9)) == big);
+
+print("--- deflate / inflate raw ---");
+print(zlib.inflate(zlib.deflate("hello world")) == "hello world");
+
+print("--- version is reachable through the lib ---");
+print(type(zlib.version()));
