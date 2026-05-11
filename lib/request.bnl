@@ -472,11 +472,46 @@ function download_with(opts, cb) {
     _connect(parsed_u, cfg.tls, function (cerr, conn) {
         if (cerr != null) { cb(cerr, null); return; }
 
-        var headers_buf = "";
+        var headers_buf  = "";
         var headers_done = false;
-        var sink = null;
+        var sink         = null;
         var bytes_in_body = 0;
-        var resp_meta = null;
+        var resp_meta    = null;
+
+        // Track in-flight async writes so we only close + callback after
+        // every byte is durable. Without this, on Linux (and any platform
+        // where file writes complete out of order with the TCP on_end
+        // event) the file gets closed mid-flush and io.read_file returns
+        // empty. Hit it the first time bnl was run on Linux x86.
+        var pending_writes = 0;
+        var ended          = false;
+        var finished       = false;
+
+        function maybe_finish() {
+            if (finished) { return; }
+            if (not ended) { return; }
+            if (pending_writes > 0) { return; }
+            finished = true;
+            if (sink != null) { sink.close(); sink = null; }
+            if (resp_meta == null) {
+                cb("download: response headers never arrived", null);
+                return;
+            }
+            resp_meta.dest          = opts.dest;
+            resp_meta.bytes_written = bytes_in_body;
+            resp_meta.ok            = resp_meta.status >= 200
+                                  and resp_meta.status <  300;
+            cb(null, resp_meta);
+        }
+
+        function pump_write(chunk) {
+            pending_writes = pending_writes + 1;
+            sink.write(chunk, function (err) {
+                pending_writes = pending_writes - 1;
+                if (opts.on_progress != null) { opts.on_progress(bytes_in_body); }
+                maybe_finish();
+            });
+        }
 
         conn.on_data(function (chunk) {
             if (not headers_done) {
@@ -491,28 +526,17 @@ function download_with(opts, cb) {
                 var leftover = headers_buf.byte_slice(sep + 4);
                 if (leftover.byte_length > 0) {
                     bytes_in_body = bytes_in_body + leftover.byte_length;
-                    sink.write(leftover, function (err) {
-                        if (opts.on_progress != null) { opts.on_progress(bytes_in_body); }
-                    });
+                    pump_write(leftover);
                 }
             } else {
                 bytes_in_body = bytes_in_body + chunk.byte_length;
-                sink.write(chunk, function (err) {
-                    if (opts.on_progress != null) { opts.on_progress(bytes_in_body); }
-                });
+                pump_write(chunk);
             }
         });
 
         conn.on_end(function () {
-            if (sink != null) { sink.close(); }
-            if (resp_meta == null) {
-                cb("download: response headers never arrived", null);
-                return;
-            }
-            resp_meta.dest          = opts.dest;
-            resp_meta.bytes_written = bytes_in_body;
-            resp_meta.ok            = resp_meta.status >= 200 and resp_meta.status < 300;
-            cb(null, resp_meta);
+            ended = true;
+            maybe_finish();
         });
 
         conn.write(req_bytes);
