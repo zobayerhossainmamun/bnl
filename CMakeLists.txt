@@ -4,7 +4,7 @@ project(bnl
     VERSION 1.0.0
     DESCRIPTION "Bangla programming language (Bnlang)"
     HOMEPAGE_URL "https://bnlang.dev"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -68,6 +68,12 @@ add_custom_command(
 add_custom_target(bnl_cacert_embedded ALL DEPENDS ${BNL_CACERT_HEADER})
 
 add_subdirectory(src)
+
+# Sample C plugin — gated so a release distribution can skip it.
+option(BNL_BUILD_SAMPLE_PLUGIN "Build the sample C plugin under examples/" ON)
+if(BNL_BUILD_SAMPLE_PLUGIN)
+    add_subdirectory(examples/plugin_c)
+endif()
 
 enable_testing()
 add_subdirectory(tests)

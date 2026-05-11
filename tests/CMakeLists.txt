@@ -92,3 +92,27 @@ add_bnl_test(lib_test             stdlib)
 add_bnl_test(lib_cookie_session   stdlib)
 add_bnl_test(lib_async            stdlib)
 
+# ---------- C-ABI plugin integration --------------------------------------
+if(BNL_BUILD_SAMPLE_PLUGIN)
+    # The plugin path is build-time-generated so this works on all 3 OSes
+    # without baking the per-platform filename into the .bnl source.
+    set(_DIRECT_PLUGIN_BNL ${CMAKE_BINARY_DIR}/test_fixtures/direct_plugin.bnl)
+    file(GENERATE
+        OUTPUT  ${_DIRECT_PLUGIN_BNL}
+        CONTENT
+"import \"${CMAKE_BINARY_DIR}/bin/$<TARGET_FILE_NAME:mathx>\" as m;
+print(\"cube:\", m.cube(4));
+print(\"hypot:\", m.hypot(3, 4));
+print(\"greeting:\", m.greeting);
+"
+    )
+    add_test(NAME direct_plugin
+        COMMAND ${CMAKE_COMMAND}
+            -DBNL=$<TARGET_FILE:bnl>
+            -DSCRIPT=${_DIRECT_PLUGIN_BNL}
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/lang/direct_plugin.expected
+            -P ${BNL_TEST_DRIVER}
+    )
+    set_tests_properties(direct_plugin PROPERTIES DEPENDS mathx)
+endif()
+

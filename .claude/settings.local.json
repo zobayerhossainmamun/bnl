@@ -139,7 +139,15 @@
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe -e \"print\\([1, 2, 3]\\); print\\({a: 1, b: \"\"hello\"\", c: [10, 20, 30]}\\); print\\(\"\"scalar string\"\"\\); print\\(42, true, null\\);\")",
       "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl)",
       "PowerShell($env:BNL_PRINT_COLOR=1; D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\_smoke\\\\print_pretty.bnl | Out-String -Stream | ForEach-Object { \\($_ -replace \"`e\",\"ESC\"\\) })",
-      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows-release\\\\bin\\\\bnl.exe -e \"print\\('hello from static bnl', 1 + 2\\);\")"
+      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows-release\\\\bin\\\\bnl.exe -e \"print\\('hello from static bnl', 1 + 2\\);\")",
+      "PowerShell(Get-Content D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\test_fixtures\\\\direct_plugin.bnl; Write-Host \"---\"; & D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\test_fixtures\\\\direct_plugin.bnl)",
+      "Bash(mkdir -p D:/bnlang/new-v/my-test-lib/bnl)",
+      "Bash(cp D:/bnlang/new-v/bnl/include/bnl/plugin.h D:/bnlang/new-v/my-test-lib/bnl/plugin.h)",
+      "PowerShell(. D:\\\\bnlang\\\\new-v\\\\bnl\\\\dev.ps1; cmd /c \"dumpbin /dependents D:\\\\bnlang\\\\new-v\\\\my-test-lib\\\\mytest.dll 2>&1\" | Select-Object -Skip 6 -First 12)",
+      "Bash(mkdir -p D:/bnlang/new-v/my-test-app/deps/my-plugin)",
+      "Bash(cp D:/bnlang/new-v/my-test-lib/mytest.dll D:/bnlang/new-v/my-test-app/deps/my-plugin/mytest.dll)",
+      "Bash(echo '{\"name\": \"my-plugin\", \"native\": \"mytest.dll\"}')",
+      "Bash(echo '{}')"
     ]
   }
 }

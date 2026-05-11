@@ -5,12 +5,16 @@
 
 #include <cstdlib>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 
 #include "runtime/environment.h"
 #include "bnl/interpreter.h"
+#include "ffi/dynamic_library.h"
+#include "ffi/plugin_api.h"
 #include "frontend/lexer.h"
 #include "frontend/parser.h"
 #include "stdlib_embedded.h"
@@ -41,10 +45,34 @@ bool starts_with_relative_or_absolute(const std::string& s) {
     return false;
 }
 
+// True if the path's extension marks it as a native shared library on any
+// of our target OSes. Checked OS-independently so a script can name a `.dll`
+// on Linux (the actual load failure surfaces from DynamicLibrary).
+bool is_native_library_path(const std::filesystem::path& p) {
+    std::string ext = p.extension().string();
+    for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return ext == ".dll" || ext == ".so" || ext == ".dylib";
+}
+
+// Process-wide library + module cache. The DynamicLibrary must outlive every
+// Module/Callable that closes over its function pointers — `std::function`
+// destructors call back into the plugin's text segment. Meyer's singleton
+// gives us static-storage duration that survives until after main() returns,
+// by which point every Interpreter / Module chain has already unwound.
+struct LoadedLibrary {
+    std::unique_ptr<DynamicLibrary> lib;
+    ModulePtr                       module;
+};
+std::unordered_map<std::string, LoadedLibrary>& process_libraries() {
+    static std::unordered_map<std::string, LoadedLibrary> libs;
+    return libs;
+}
+
 // Resolve a dep dir's entry point. Tries in order:
-//   1. bnl.json `main` field   -> .bnl source file
-//   2. index.bnl               -> .bnl source file (Node-style fallback)
-//   3. <dep_name>.bnl          -> .bnl source file (single-file dep)
+//   1. bnl.json `native` field -> .dll/.so/.dylib (C-ABI plugin)
+//   2. bnl.json `main`   field -> .bnl source file
+//   3. index.bnl               -> .bnl source file (Node-style fallback)
+//   4. <dep_name>.bnl          -> .bnl source file (single-file dep)
 //
 // Lenient: malformed json or missing fields are warnings, not errors.
 std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
@@ -60,6 +88,12 @@ std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
             try {
                 auto j = nlohmann::json::parse(buf.str());
                 if (j.is_object()) {
+                    if (auto it = j.find("native"); it != j.end() && it->is_string()) {
+                        fs::path entry = (dep_dir / it->get<std::string>()).lexically_normal();
+                        if (fs::exists(entry, ec)) {
+                            return fs::weakly_canonical(entry, ec);
+                        }
+                    }
                     if (auto it = j.find("main"); it != j.end() && it->is_string()) {
                         fs::path entry = (dep_dir / it->get<std::string>()).lexically_normal();
                         if (fs::exists(entry, ec)) {
@@ -187,12 +221,47 @@ ModulePtr ModuleLoader::load_canonical_file(const fs::path& canonical,
     return m;
 }
 
+ModulePtr ModuleLoader::load_native_library(const fs::path& canonical,
+                                             const Token&    import_token) {
+    std::string key = "<native:" + canonical.string() + ">";
+
+    if (auto it = cache_.find(key); it != cache_.end()) return it->second;
+
+    // Process-wide cache: a second Interpreter (or a previous run) reusing
+    // the same plugin gets the same HMODULE + Module.
+    auto& procs = process_libraries();
+    if (auto it = procs.find(key); it != procs.end()) {
+        cache_[key] = it->second.module;
+        return it->second.module;
+    }
+
+    std::unique_ptr<DynamicLibrary> lib;
+    try {
+        lib = std::make_unique<DynamicLibrary>(canonical);
+    } catch (const std::exception& e) {
+        throw ModuleError(import_token, e.what());
+    }
+
+    ModulePtr m;
+    try {
+        m = load_c_plugin_module(*lib, canonical, interp_);
+    } catch (const std::exception& e) {
+        throw ModuleError(import_token, e.what());
+    }
+
+    procs.emplace(key, LoadedLibrary{std::move(lib), m});
+    cache_[key] = m;
+    return m;
+}
+
 ModulePtr ModuleLoader::load(const std::string&            path_string,
                               const fs::path&               requesting_dir,
                               const Token&                  import_token) {
     if (starts_with_relative_or_absolute(path_string)) {
         fs::path canonical = resolve_file(path_string, requesting_dir, import_token);
-        return load_canonical_file(canonical, import_token);
+        return is_native_library_path(canonical)
+            ? load_native_library(canonical, import_token)
+            : load_canonical_file(canonical, import_token);
     }
 
     // Bare-name resolution chain:
@@ -228,11 +297,13 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
 
     if (auto dep_dir = find_dep_in_walk(requesting_dir, path_string)) {
         if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
-            return load_canonical_file(*entry, import_token);
+            return is_native_library_path(*entry)
+                ? load_native_library(*entry, import_token)
+                : load_canonical_file(*entry, import_token);
         }
         throw ModuleError(import_token, fmt::format(
             "dep '{}' found at {} but has no entry point "
-            "(no bnl.json with 'main', no index.bnl, no {}.bnl)",
+            "(no bnl.json with 'native' or 'main', no index.bnl, no {}.bnl)",
             path_string, dep_dir->string(), path_string));
     }
 
@@ -240,7 +311,9 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
     if (!in_project) {
         if (auto dep_dir = find_global_dep(path_string)) {
             if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
-                return load_canonical_file(*entry, import_token);
+                return is_native_library_path(*entry)
+                    ? load_native_library(*entry, import_token)
+                    : load_canonical_file(*entry, import_token);
             }
             throw ModuleError(import_token, fmt::format(
                 "global dep '{}' at {} has no entry point",

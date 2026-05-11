@@ -36,6 +36,10 @@ add_library(bnl_core STATIC
     stdlib/random.cpp
     stdlib/time.cpp
     stdlib/zlib.cpp
+
+    # C-ABI plugin loader (`import "foo.dll"`).
+    ffi/dynamic_library.cpp
+    ffi/plugin_api.cpp
 )
 
 target_include_directories(bnl_core
@@ -79,3 +83,12 @@ target_include_directories(bnl
 set_target_properties(bnl PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin
 )
+
+# Plugins resolve their bnl symbols against the running bnl process. On Linux
+# `dl` is needed for dlopen; bnl itself doesn't currently consume the libdl
+# entry points (DynamicLibrary lives in bnl_core), but plugin authors using
+# uv async hooks routinely will. Keep it linked even though some libcs roll
+# dlopen into libc — explicit dep is portable.
+if(UNIX AND NOT APPLE)
+    target_link_libraries(bnl_core PRIVATE ${CMAKE_DL_LIBS})
+endif()
