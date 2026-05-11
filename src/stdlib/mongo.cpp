@@ -24,7 +24,9 @@ namespace {
 
 // ===========================================================================
 // MongoDB via mongo-c-driver (Apache-2.0). Collection-shaped API rather than
-// SQL: connect → client → db → collection → {insert_one / find / ...}.
+// SQL: connect → client → db → collection → {insertOne / find / ...}.
+// Method names mirror the official MongoDB drivers (camelCase) so users
+// familiar with the Node.js / Python drivers feel at home.
 //
 // Lifetime model:
 //   ClientState  — shared_ptr; holds mongoc_client_t*.
@@ -290,38 +292,107 @@ ModulePtr build_collection_module(std::shared_ptr<ClientState> client,
                 std::string("collection.") + fn + ": client is closed");
     };
 
+    // If the document has no `_id`, prepend a freshly generated ObjectId
+    // (BSON convention: `_id` should be the first field). `in` is consumed
+    // and its memory replaced with a new bson_t* either way. Captures the
+    // _id back as a 24-char hex Value for the reply payload.
+    auto ensure_id = [](bson_t* in, Value* out_id) -> bson_t* {
+        if (bson_has_field(in, "_id")) {
+            if (out_id) {
+                bson_iter_t it;
+                if (bson_iter_init_find(&it, in, "_id"))
+                    *out_id = bson_iter_to_value(&it);
+            }
+            return in;
+        }
+        bson_oid_t oid;
+        bson_oid_init(&oid, nullptr);
+        bson_t* fresh = bson_new();
+        bson_append_oid(fresh, "_id", 3, &oid);
+        bson_concat(fresh, in);
+        bson_destroy(in);
+        if (out_id) {
+            char buf[25] = {0};
+            bson_oid_to_string(&oid, buf);
+            *out_id = Value{std::string(buf, 24)};
+        }
+        return fresh;
+    };
+
     return NativeModule("collection")
 
-        // col.insert_one(doc) — inserts a single document. If `_id` is
-        // absent, mongoc adds an ObjectId (we read it back and return it).
-        // Returns the inserted document with the final `_id` populated.
-        .add_function("insert_one", 1,
-            [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
-                require_open(st, "insert_one");
-                bson_t* doc = map_to_new_bson(args[0]);
-
-                // Pre-generate _id if missing so caller can read it back.
-                if (!bson_has_field(doc, "_id")) {
-                    bson_oid_t oid;
-                    bson_oid_init(&oid, nullptr);
-                    // Need _id at the START — easiest: rebuild with _id first.
-                    bson_t* doc2 = bson_new();
-                    bson_append_oid(doc2, "_id", 3, &oid);
-                    bson_concat(doc2, doc);
-                    bson_destroy(doc);
-                    doc = doc2;
-                }
+        // col.insertOne(doc) — single-doc insert. If `_id` is missing,
+        // we generate an ObjectId client-side and report it back in the
+        // result map so the caller can reference it without a re-fetch.
+        // Returns {acknowledged: true, insertedId: <id>}.
+        .add_function("insertOne", 1,
+            [st, require_open, ensure_id](Interpreter&, std::vector<Value> args) -> Value {
+                require_open(st, "insertOne");
+                Value   inserted_id;
+                bson_t* doc = ensure_id(map_to_new_bson(args[0]), &inserted_id);
 
                 bson_error_t err;
                 bool ok = mongoc_collection_insert_one(
                     st->col, doc, nullptr, nullptr, &err);
-                if (!ok) {
-                    bson_destroy(doc);
-                    throw_bson_err(err, "insert_one");
-                }
-                Value out = bson_doc_to_map(doc);
                 bson_destroy(doc);
-                return out;
+                if (!ok) throw_bson_err(err, "insertOne");
+
+                auto out = std::make_shared<std::unordered_map<std::string, Value>>();
+                (*out)["acknowledged"] = Value{true};
+                (*out)["insertedId"]   = inserted_id;
+                return Value{out};
+            })
+
+        // col.insertMany([doc, doc, ...]) — bulk insert. Each doc gets an
+        // `_id` injected client-side if missing, so `insertedIds` lines up
+        // with the input list 1:1.
+        // Returns {acknowledged, insertedCount, insertedIds: [...]}.
+        .add_function("insertMany", 1,
+            [st, require_open, ensure_id](Interpreter&, std::vector<Value> args) -> Value {
+                require_open(st, "insertMany");
+                if (!args[0].is_list())
+                    throw std::runtime_error(
+                        "collection.insertMany: expected a list of documents");
+                const auto& docs = *args[0].as_list();
+                if (docs.empty())
+                    throw std::runtime_error(
+                        "collection.insertMany: list is empty");
+
+                std::vector<bson_t*> bdocs;
+                bdocs.reserve(docs.size());
+                std::vector<Value> ids;
+                ids.reserve(docs.size());
+
+                try {
+                    for (const auto& d : docs) {
+                        Value id;
+                        bdocs.push_back(ensure_id(map_to_new_bson(d), &id));
+                        ids.push_back(std::move(id));
+                    }
+                } catch (...) {
+                    for (auto* b : bdocs) bson_destroy(b);
+                    throw;
+                }
+
+                std::vector<const bson_t*> ptrs;
+                ptrs.reserve(bdocs.size());
+                for (auto* b : bdocs) ptrs.push_back(b);
+
+                bson_t       reply = BSON_INITIALIZER;
+                bson_error_t err;
+                bool ok = mongoc_collection_insert_many(
+                    st->col, ptrs.data(), ptrs.size(),
+                    nullptr, &reply, &err);
+                for (auto* b : bdocs) bson_destroy(b);
+                bson_destroy(&reply);
+                if (!ok) throw_bson_err(err, "insertMany");
+
+                auto out = std::make_shared<std::unordered_map<std::string, Value>>();
+                (*out)["acknowledged"]  = Value{true};
+                (*out)["insertedCount"] = Value{static_cast<double>(docs.size())};
+                auto id_list = std::make_shared<std::vector<Value>>(std::move(ids));
+                (*out)["insertedIds"]   = Value{id_list};
+                return Value{out};
             })
 
         // col.find(filter, opts?) — returns list of matching documents.
@@ -330,41 +401,35 @@ ModulePtr build_collection_module(std::shared_ptr<ClientState> client,
             [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
                 require_open(st, "find");
                 if (args.empty() || args.size() > 2)
-                    throw std::runtime_error("collection.find(filter, opts?): wrong arity");
+                    throw std::runtime_error(
+                        "collection.find(filter, opts?): wrong arity");
 
                 bson_t* filter = map_to_new_bson(args[0]);
                 bson_t* opts   = nullptr;
-                if (args.size() == 2 && !args[1].is_null()) {
+                if (args.size() == 2 && !args[1].is_null())
                     opts = map_to_new_bson(args[1]);
-                }
 
                 mongoc_cursor_t* cursor = mongoc_collection_find_with_opts(
                     st->col, filter, opts, nullptr);
 
                 auto out = std::make_shared<std::vector<Value>>();
                 const bson_t* doc = nullptr;
-                while (mongoc_cursor_next(cursor, &doc)) {
+                while (mongoc_cursor_next(cursor, &doc))
                     out->push_back(bson_doc_to_map(doc));
-                }
 
                 bson_error_t err;
-                if (mongoc_cursor_error(cursor, &err)) {
-                    mongoc_cursor_destroy(cursor);
-                    if (opts)   bson_destroy(opts);
-                    bson_destroy(filter);
-                    throw_bson_err(err, "find");
-                }
-
+                bool failed = mongoc_cursor_error(cursor, &err);
                 mongoc_cursor_destroy(cursor);
-                if (opts)   bson_destroy(opts);
+                if (opts) bson_destroy(opts);
                 bson_destroy(filter);
+                if (failed) throw_bson_err(err, "find");
                 return Value{out};
             })
 
-        // col.find_one(filter) — first match or null.
-        .add_function("find_one", 1,
+        // col.findOne(filter) — first match or null.
+        .add_function("findOne", 1,
             [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
-                require_open(st, "find_one");
+                require_open(st, "findOne");
                 bson_t* filter = map_to_new_bson(args[0]);
                 bson_t  opts   = BSON_INITIALIZER;
                 BSON_APPEND_INT32(&opts, "limit", 1);
@@ -372,31 +437,25 @@ ModulePtr build_collection_module(std::shared_ptr<ClientState> client,
                 mongoc_cursor_t* cursor = mongoc_collection_find_with_opts(
                     st->col, filter, &opts, nullptr);
 
-                Value         result = Value{};
-                const bson_t* doc    = nullptr;
-                if (mongoc_cursor_next(cursor, &doc)) {
+                Value         result;
+                const bson_t* doc = nullptr;
+                if (mongoc_cursor_next(cursor, &doc))
                     result = bson_doc_to_map(doc);
-                }
 
                 bson_error_t err;
-                if (mongoc_cursor_error(cursor, &err)) {
-                    mongoc_cursor_destroy(cursor);
-                    bson_destroy(&opts);
-                    bson_destroy(filter);
-                    throw_bson_err(err, "find_one");
-                }
-
+                bool failed = mongoc_cursor_error(cursor, &err);
                 mongoc_cursor_destroy(cursor);
                 bson_destroy(&opts);
                 bson_destroy(filter);
+                if (failed) throw_bson_err(err, "findOne");
                 return result;
             })
 
-        // col.update_one(filter, update) — returns
-        // {matched, modified, upserted_id?}.
-        .add_function("update_one", 2,
+        // col.updateOne(filter, update) — returns mongoc's reply
+        // (matchedCount / modifiedCount / upsertedId when relevant).
+        .add_function("updateOne", 2,
             [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
-                require_open(st, "update_one");
+                require_open(st, "updateOne");
                 bson_t* filter = map_to_new_bson(args[0]);
                 bson_t* update = map_to_new_bson(args[1]);
 
@@ -408,18 +467,17 @@ ModulePtr build_collection_module(std::shared_ptr<ClientState> client,
                 bson_destroy(update);
                 if (!ok) {
                     bson_destroy(&reply);
-                    throw_bson_err(err, "update_one");
+                    throw_bson_err(err, "updateOne");
                 }
                 Value out = bson_doc_to_map(&reply);
                 bson_destroy(&reply);
                 return out;
             })
 
-        // col.delete_one(filter) — returns {deletedCount} (mongoc's
-        // standard reply shape).
-        .add_function("delete_one", 1,
+        // col.deleteOne(filter) — returns {deletedCount}.
+        .add_function("deleteOne", 1,
             [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
-                require_open(st, "delete_one");
+                require_open(st, "deleteOne");
                 bson_t* filter = map_to_new_bson(args[0]);
 
                 bson_t       reply = BSON_INITIALIZER;
@@ -429,35 +487,160 @@ ModulePtr build_collection_module(std::shared_ptr<ClientState> client,
                 bson_destroy(filter);
                 if (!ok) {
                     bson_destroy(&reply);
-                    throw_bson_err(err, "delete_one");
+                    throw_bson_err(err, "deleteOne");
                 }
                 Value out = bson_doc_to_map(&reply);
                 bson_destroy(&reply);
                 return out;
             })
 
-        // col.count(filter?) — server-side count_documents. Filter defaults
-        // to {} (count all).
-        .add_function("count", -1,
+        // col.deleteMany(filter) — returns {deletedCount}. Pass `{}` to
+        // delete every document in the collection.
+        .add_function("deleteMany", 1,
             [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
-                require_open(st, "count");
+                require_open(st, "deleteMany");
+                bson_t* filter = map_to_new_bson(args[0]);
+
+                bson_t       reply = BSON_INITIALIZER;
+                bson_error_t err;
+                bool ok = mongoc_collection_delete_many(
+                    st->col, filter, nullptr, &reply, &err);
+                bson_destroy(filter);
+                if (!ok) {
+                    bson_destroy(&reply);
+                    throw_bson_err(err, "deleteMany");
+                }
+                Value out = bson_doc_to_map(&reply);
+                bson_destroy(&reply);
+                return out;
+            })
+
+        // col.countDocuments(filter?) — server-side count. Filter
+        // defaults to {} (count all). Slower than estimatedDocumentCount
+        // but accurate under concurrent writes.
+        .add_function("countDocuments", -1,
+            [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
+                require_open(st, "countDocuments");
                 if (args.size() > 1)
-                    throw std::runtime_error("collection.count(filter?): wrong arity");
+                    throw std::runtime_error(
+                        "collection.countDocuments(filter?): wrong arity");
 
                 bson_t  empty  = BSON_INITIALIZER;
                 bson_t* filter = nullptr;
-                if (!args.empty() && !args[0].is_null()) {
+                if (!args.empty() && !args[0].is_null())
                     filter = map_to_new_bson(args[0]);
-                }
 
                 bson_error_t err;
                 std::int64_t n = mongoc_collection_count_documents(
-                    st->col, filter ? filter : &empty, nullptr, nullptr, nullptr, &err);
+                    st->col, filter ? filter : &empty,
+                    nullptr, nullptr, nullptr, &err);
                 if (filter) bson_destroy(filter);
                 bson_destroy(&empty);
 
-                if (n < 0) throw_bson_err(err, "count");
+                if (n < 0) throw_bson_err(err, "countDocuments");
                 return Value{static_cast<double>(n)};
+            })
+
+        // col.distinct(field, filter?) — unique values of `field` across
+        // documents matching `filter` (defaults to all). Runs the
+        // `distinct` admin command on the owning db and unwraps the
+        // `values` array from the reply.
+        .add_function("distinct", -1,
+            [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
+                require_open(st, "distinct");
+                if (args.empty() || args.size() > 2)
+                    throw std::runtime_error(
+                        "collection.distinct(field, filter?): wrong arity");
+                if (!args[0].is_string())
+                    throw std::runtime_error(
+                        "collection.distinct: field must be a string");
+                const std::string& field = args[0].as_string();
+
+                bson_t cmd = BSON_INITIALIZER;
+                BSON_APPEND_UTF8(&cmd, "distinct", st->col_name.c_str());
+                BSON_APPEND_UTF8(&cmd, "key", field.c_str());
+                if (args.size() == 2 && !args[1].is_null()) {
+                    if (!args[1].is_map()) {
+                        bson_destroy(&cmd);
+                        throw std::runtime_error(
+                            "collection.distinct: filter must be a map");
+                    }
+                    bson_t query;
+                    BSON_APPEND_DOCUMENT_BEGIN(&cmd, "query", &query);
+                    map_to_bson_doc(&query, *args[1].as_map());
+                    bson_append_document_end(&cmd, &query);
+                }
+
+                bson_t       reply = BSON_INITIALIZER;
+                bson_error_t err;
+                bool ok = mongoc_client_command_simple(
+                    st->client->client, st->db_name.c_str(),
+                    &cmd, nullptr, &reply, &err);
+                bson_destroy(&cmd);
+                if (!ok) {
+                    bson_destroy(&reply);
+                    throw_bson_err(err, "distinct");
+                }
+
+                auto out = std::make_shared<std::vector<Value>>();
+                bson_iter_t it;
+                if (bson_iter_init_find(&it, &reply, "values")
+                    && BSON_ITER_HOLDS_ARRAY(&it)) {
+                    std::uint32_t       len  = 0;
+                    const std::uint8_t* data = nullptr;
+                    bson_iter_array(&it, &len, &data);
+                    bson_t arr;
+                    if (bson_init_static(&arr, data, len)) {
+                        bson_iter_t arr_it;
+                        if (bson_iter_init(&arr_it, &arr)) {
+                            while (bson_iter_next(&arr_it))
+                                out->push_back(bson_iter_to_value(&arr_it));
+                        }
+                    }
+                }
+                bson_destroy(&reply);
+                return Value{out};
+            })
+
+        // col.aggregate(pipeline, opts?) — pipeline is a list of stage
+        // maps, e.g. `[{"$match": {...}}, {"$group": {...}}]`. Returns
+        // the resulting documents as a list. mongoc's API takes the
+        // pipeline wrapped as {pipeline: [...]} so we re-wrap here.
+        .add_function("aggregate", -1,
+            [st, require_open](Interpreter&, std::vector<Value> args) -> Value {
+                require_open(st, "aggregate");
+                if (args.empty() || args.size() > 2)
+                    throw std::runtime_error(
+                        "collection.aggregate(pipeline, opts?): wrong arity");
+                if (!args[0].is_list())
+                    throw std::runtime_error(
+                        "collection.aggregate: pipeline must be a list of stages");
+
+                bson_t* pipeline = bson_new();
+                bson_t  arr;
+                BSON_APPEND_ARRAY_BEGIN(pipeline, "pipeline", &arr);
+                list_to_bson_array(&arr, *args[0].as_list());
+                bson_append_array_end(pipeline, &arr);
+
+                bson_t* opts = nullptr;
+                if (args.size() == 2 && !args[1].is_null())
+                    opts = map_to_new_bson(args[1]);
+
+                mongoc_cursor_t* cursor = mongoc_collection_aggregate(
+                    st->col, MONGOC_QUERY_NONE, pipeline, opts, nullptr);
+
+                auto out = std::make_shared<std::vector<Value>>();
+                const bson_t* doc = nullptr;
+                while (mongoc_cursor_next(cursor, &doc))
+                    out->push_back(bson_doc_to_map(doc));
+
+                bson_error_t err;
+                bool failed = mongoc_cursor_error(cursor, &err);
+                mongoc_cursor_destroy(cursor);
+                if (opts) bson_destroy(opts);
+                bson_destroy(pipeline);
+                if (failed) throw_bson_err(err, "aggregate");
+                return Value{out};
             })
 
         // col.drop() — drop the collection.
