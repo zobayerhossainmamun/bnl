@@ -47,14 +47,18 @@ bnl hello.bnl
 
 CLI flags:
 
-- `--quiet` — suppress the banner
 - `-e '<code>'` — run a code string instead of a file
-- `--ast` — print the parsed AST and exit (debugging)
-- `--tokens` — print the lexer's token stream and exit (debugging)
+- `-v`, `--version` — print version and exit
+- `-h`, `--help` — print help and exit
 
 ```sh
 bnl -e 'print(2 + 2)'
 ```
+
+Compiler-debugging flags (undocumented in `--help`; for working on the interpreter itself):
+
+- `--ast` — print the parsed AST and exit
+- `--tokens` — print the lexer's token stream and exit
 
 ## Project layout
 

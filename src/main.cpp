@@ -285,9 +285,7 @@ void print_usage() {
         "\n"
         "Flags:\n"
         "  -v, --version               print version and exit\n"
-        "  -h, --help                  print this help and exit\n"
-        "      --tokens                dump the lexer's token stream\n"
-        "      --ast                   dump the parsed AST\n",
+        "  -h, --help                  print this help and exit\n",
         bnl::kVersion, bnl::kPlatform);
 }
 
@@ -310,7 +308,6 @@ int main(int argc, char** argv) {
             else if (a == "-h" || a == "--help")    { print_usage();   return 0; }
             else if (a == "--tokens")               show_tokens = true;
             else if (a == "--ast")                  show_ast    = true;
-            else if (a == "--quiet")                /* legacy no-op — banner is gone */ ;
             else if (a == "-e" || a == "--eval") {
                 if (++i >= argc) {
                     fmt::print(stderr, "error: {} requires a code argument\n", a);

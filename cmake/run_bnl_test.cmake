@@ -5,7 +5,7 @@ endif()
 get_filename_component(SCRIPT_DIR "${SCRIPT}" DIRECTORY)
 
 execute_process(
-    COMMAND "${BNL}" --quiet "${SCRIPT}"
+    COMMAND "${BNL}" "${SCRIPT}"
     WORKING_DIRECTORY "${SCRIPT_DIR}"
     OUTPUT_VARIABLE actual
     ERROR_VARIABLE  err
