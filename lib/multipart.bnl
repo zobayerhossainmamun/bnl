@@ -1,21 +1,8 @@
 import "crypto" as crypto;
 
-// multipart/form-data encoder + decoder (RFC 7578-ish).
-//
-// Part shape — for encode():
-//   text field: { name: "user",  value: "alice" }
-//   file part:  { name: "photo", filename: "p.jpg",
-//                 content_type: "image/jpeg", body: <bytes> }
-//
-// Decoded part shape — what decode() returns for each part:
-//   { name, filename, content_type, body, headers }
-// filename / content_type are null on parts that didn't have them.
-
 function generate_boundary() {
     return "----bnlBoundary" + crypto.random_hex(16);
 }
-
-// ---------- encode -----------------------------------------------------------
 
 function encode(parts, boundary) {
     var out = "";
@@ -44,9 +31,6 @@ function encode(parts, boundary) {
     return out;
 }
 
-// Streaming helpers — return individual pieces so a caller can interleave
-// reads from disk with conn.write() without ever holding the full body in
-// memory. Used by request.upload().
 function build_field_part(boundary, name, value) {
     return "--" + boundary + "\r\n"
          + "Content-Disposition: form-data; name=\"" + name + "\"\r\n"
@@ -67,16 +51,10 @@ function build_epilogue(boundary) {
     return "\r\n--" + boundary + "--\r\n";
 }
 
-// ---------- decode -----------------------------------------------------------
-
-// decode(body, boundary) → list of part maps. Tolerant of LF-only line
-// endings produced by some buggy clients. Stops at the closing
-// "--<boundary>--" delimiter.
 function decode(body, boundary) {
     var parts = [];
     var delim = "--" + boundary;
 
-    // Find the opening delimiter.
     var first = body.index_of(delim);
     if (first < 0) { return parts; }
     var pos = first + delim.byte_length;
@@ -84,8 +62,6 @@ function decode(body, boundary) {
 
     var done = false;
     while (not done) {
-        // Locate the next boundary (delimited from current part body by
-        // CRLF or LF + dashes).
         var next_crlf = _find_from(body, "\r\n" + delim, pos);
         var next_lf   = _find_from(body, "\n"   + delim, pos);
         var next_idx  = -1;
@@ -107,9 +83,8 @@ function decode(body, boundary) {
 
             pos = next_idx + prefix_len + delim.byte_length;
 
-            // End-of-multipart marker: two dashes follow.
             if (pos + 1 < body.byte_length
-                and body.byte_at(pos)     == 45     // '-'
+                and body.byte_at(pos)     == 45
                 and body.byte_at(pos + 1) == 45) {
                 done = true;
             } else {
@@ -133,8 +108,6 @@ function _skip_newline(s, pos) {
     return pos;
 }
 
-// `string.index_of` doesn't take a start offset in the bnl intrinsics, so
-// we slice + re-add. Cheap byte-slice on a moderate-sized multipart body.
 function _find_from(s, needle, from) {
     if (from >= s.byte_length) { return -1; }
     var idx = s.byte_slice(from).index_of(needle);
@@ -143,7 +116,6 @@ function _find_from(s, needle, from) {
 }
 
 function _parse_part(raw) {
-    // Split headers from body on the first blank-line separator.
     var hdr_end = raw.index_of("\r\n\r\n");
     var sep_len = 4;
     if (hdr_end < 0) {
@@ -167,7 +139,6 @@ function _parse_part(raw) {
     var i = 0;
     while (i < lines.length) {
         var ln = lines[i];
-        // strip trailing CR if any
         if (ln.byte_length > 0 and ln.byte_at(ln.byte_length - 1) == 13) {
             ln = ln.byte_slice(0, ln.byte_length - 1);
         }
@@ -190,26 +161,10 @@ function _parse_part(raw) {
     return part;
 }
 
-// streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end)
-//
-// Returns { feed(chunk), end() } — a stateful decoder that walks a
-// multipart body byte-by-byte and routes each part's body slice through
-// `on_part_chunk` WITHOUT ever holding the whole part in memory. Pair
-// with web.serve_stream's body_stream.on_chunk to upload an HTML form
-// with multiple large files straight to disk.
-//
-// Callbacks:
-//   on_part_start(part)   — part has {name, filename, content_type, headers}
-//   on_part_chunk(chunk)  — body bytes for the current part
-//   on_part_end()         — boundary terminator for the current part
-//
-// v1 supports the standard form: each part is `\r\n--boundary\r\n` delimited;
-// the message ends at `\r\n--boundary--\r\n`. CRLF line endings only inside
-// part headers — the decoder is byte-accurate for body content.
 function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
-    var open_marker    = "--" + boundary;                 // first boundary
-    var body_marker    = "\r\n--" + boundary;             // between parts
-    var state          = "preamble";                       // preamble | headers | body | done
+    var open_marker    = "--" + boundary;
+    var body_marker    = "\r\n--" + boundary;
+    var state          = "preamble";
     var buf            = "";
     var current_part   = null;
 
@@ -220,7 +175,6 @@ function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
 
     function end() {
         if (state == "body" and current_part != null) {
-            // Premature end — flush whatever's in buf as the last chunk.
             if (buf.byte_length > 0) { on_part_chunk(buf); buf = ""; }
             on_part_end();
             current_part = null;
@@ -236,8 +190,6 @@ function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
             if (state == "preamble") {
                 var idx = buf.index_of(open_marker);
                 if (idx < 0) {
-                    // Keep only the last (open_marker - 1) bytes in case the
-                    // marker is split across feed() boundaries.
                     if (buf.byte_length >= open_marker.byte_length) {
                         buf = buf.byte_slice(buf.byte_length - open_marker.byte_length + 1);
                     }
@@ -249,11 +201,6 @@ function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
             }
 
             else if (state == "after_boundary") {
-                // We just consumed a boundary marker. The next 2 bytes tell
-                // us what's next: `--` = end of message, `\r\n` = another
-                // part follows. If we don't have 2 bytes yet, wait — and
-                // critically STAY in this state so the next feed picks up
-                // where we left off (avoids re-scanning for the boundary).
                 if (buf.byte_length < 2) { return; }
                 if (buf.byte_at(0) == 45 and buf.byte_at(1) == 45) {
                     state = "done"; return;
@@ -279,10 +226,6 @@ function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
             else if (state == "body") {
                 var bidx = buf.index_of(body_marker);
                 if (bidx < 0) {
-                    // No boundary yet. Emit everything except the last
-                    // (body_marker.length - 1) bytes — that tail could still
-                    // be the start of a boundary that finishes on the next
-                    // feed().
                     var keep = body_marker.byte_length - 1;
                     if (buf.byte_length > keep) {
                         var emit_len = buf.byte_length - keep;
@@ -304,8 +247,6 @@ function streaming_decode(boundary, on_part_start, on_part_chunk, on_part_end) {
     return { feed: feed, end: end };
 }
 
-// Shared helper — parses just the headers half of a part (no body bytes).
-// Mirrors `_parse_part` but takes the header text directly.
 function _parse_part_headers_only(hdr_text) {
     var part = {
         name:         null,
@@ -339,20 +280,17 @@ function _parse_part_headers_only(hdr_text) {
     return part;
 }
 
-// Extract `name=...` or `name="..."` from a header value like
-// `form-data; name="user"; filename="a.txt"`. Returns null if absent.
 function _extract_param(header, key) {
     var needle = key + "=";
     var i = header.index_of(needle);
     if (i < 0) { return null; }
     var start = i + needle.byte_length;
     if (start >= header.byte_length) { return ""; }
-    if (header.byte_at(start) == 34) {                  // '"'
+    if (header.byte_at(start) == 34) {
         var end_q = header.byte_slice(start + 1).index_of("\"");
         if (end_q < 0) { return header.byte_slice(start + 1); }
         return header.byte_slice(start + 1, start + 1 + end_q);
     }
-    // unquoted — read until ';' or end-of-string
     var rest = header.byte_slice(start);
     var semi = rest.index_of(";");
     if (semi < 0) { return rest.trim(); }

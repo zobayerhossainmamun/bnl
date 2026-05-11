@@ -7,44 +7,6 @@ import "io"        as _io;
 import "timers"    as _timers;
 import "multipart" as _mp;
 
-// ============================================================================
-// HTTP client with an axios-style surface.
-//
-// Top-level convenience uses a shared default instance:
-//     request.get(url, cb)
-//     request.post(url, data, cb)    -- data auto-encoded (JSON for maps/lists,
-//                                       text/plain for strings)
-//     request.put(url, data, cb)
-//     request.patch(url, data, cb)
-//     request.delete(url, cb)
-//     request.head(url, cb)
-//     request.request(opts, cb)      -- universal escape hatch
-//     request.send(opts, cb)         -- legacy alias for request()
-//     request.post_form(url, fields, cb)
-//     request.upload(url, file_path, cb)
-//     request.upload_with(opts, cb)
-//     request.download(url, dest_path, cb)
-//
-// For per-app defaults / shared headers / interceptors:
-//     var api = request.create({base_url, headers, timeout?});
-//     api.before(function (config) { config.headers["X-..."] = "..."; });
-//     api.after (function (resp)   { ... });
-//     api.get("/users", cb);
-//
-// `opts` accepts (any subset of):
-//     url, method, base_url, params, headers, timeout,
-//     json | form | body | data,             -- pick one body shape
-//     tls                                    -- forwarded to tls.connect
-//
-// Callback shape:
-//     cb(err, resp)
-//   resp.status, resp.headers (lowercase keys), resp.body, resp.ok (2xx),
-//   resp.data (lazy auto-parse — JSON parsed when content-type matches).
-// ============================================================================
-
-
-// ---------------- private helpers ------------------------------------------
-
 function _has_header(h, name_lower) {
     for (var k of h.keys()) {
         if (k.to_lower() == name_lower) { return true; }
@@ -59,7 +21,6 @@ function _copy_map(src) {
     return out;
 }
 
-// Merge defaults into opts (opts wins). Headers and params get a shallow merge.
 function _merge_config(defaults, opts) {
     var cfg = _copy_map(defaults);
     for (var k of opts.keys()) {
@@ -79,7 +40,6 @@ function _merge_config(defaults, opts) {
     return cfg;
 }
 
-// Resolve relative URL against base_url, append params as query string.
 function _resolve_url(config) {
     var u = config.url;
     if (config.base_url != null and u.byte_length > 0
@@ -99,8 +59,6 @@ function _resolve_url(config) {
     return u;
 }
 
-// Encode the body based on which "shape" key is set in config.
-// Returns {body, content_type?}. Sets content_type only when we know it.
 function _encode_body(config) {
     if (config.json != null) {
         return { body: _json.stringify(config.json),
@@ -156,7 +114,6 @@ function _build_request_bytes(method, parsed_url, headers, body, use_pool) {
     return out;
 }
 
-// Connect (TCP or TLS) — calls done(err, conn).
 function _connect(parsed_url, tls_opts, done) {
     _net.resolve(parsed_url.host, function (rerr, ip) {
         if (rerr != null) { done("resolve: " + rerr, null); return; }
@@ -177,7 +134,6 @@ function _connect(parsed_url, tls_opts, done) {
     });
 }
 
-// Enrich a raw http.parse_response result with axios-ish conveniences.
 function _enrich_response(parsed) {
     parsed.ok = parsed.status >= 200 and parsed.status < 300;
     var ct = parsed.headers["content-type"];
@@ -191,14 +147,6 @@ function _enrich_response(parsed) {
     return parsed;
 }
 
-// Send the request bytes, collect the response into memory, then enrich + cb.
-// Used when we DON'T want to keep the conn alive. We try an incremental
-// parse on every chunk — most responses (any with Content-Length or proper
-// chunked framing) will complete here and fire the callback before the
-// connection even closes. on_end is the fallback for the HTTP/1.0-style
-// case where the response body is delimited by EOF; if even that finalize
-// fails (truncated stream, half-closed TLS), surface a clean error rather
-// than letting the underlying llhttp exception escape into the loop.
 function _send_buffered(conn, req_bytes, cb) {
     var buf  = "";
     var done = false;
@@ -224,10 +172,6 @@ function _send_buffered(conn, req_bytes, cb) {
     conn.write(req_bytes);
 }
 
-// Send the request bytes and parse the response incrementally — useful for
-// keep-alive conns where the server never closes. `parse_response.complete`
-// flips true once llhttp has consumed a full response; we callback at that
-// point regardless of any trailing bytes.
 function _send_buffered_keepalive(conn, req_bytes, cb) {
     var buf  = "";
     var done = false;
@@ -249,11 +193,6 @@ function _send_buffered_keepalive(conn, req_bytes, cb) {
     conn.write(req_bytes);
 }
 
-// ---------------- connection pool ------------------------------------------
-
-// _pool_by_key is a map of "scheme://host:port" → list of pool entries.
-// Each entry: { conn, idle_cancel, stale }. We pop the most-recently-used
-// entry off the back of the list (LIFO — likely to still be alive).
 var _pool_by_key = {};
 
 function _pool_key(scheme, host, port) {
@@ -278,8 +217,6 @@ function _pool_push(key, conn) {
         _pool_by_key[key] = list;
     }
     var entry = { conn: conn, stale: false, idle_cancel: null };
-    // 30 s idle TTL — server may close idle keep-alive conns earlier so
-    // there's no point holding them indefinitely.
     entry.idle_cancel = _timers.set(30000, function () {
         entry.stale = true;
         conn.close();
@@ -287,8 +224,6 @@ function _pool_push(key, conn) {
     list.push(entry);
 }
 
-// Open a fresh conn, or pop one off the pool if one is available for this
-// scheme://host:port.
 function _connect_or_pool(parsed_u, tls_opts, use_pool, on_done) {
     if (use_pool) {
         var key = _pool_key(parsed_u.scheme, parsed_u.host, parsed_u.port);
@@ -298,9 +233,6 @@ function _connect_or_pool(parsed_u, tls_opts, use_pool, on_done) {
     _connect(parsed_u, tls_opts, on_done);
 }
 
-// shutdown() — close every pooled conn and cancel every idle timer.
-// Tests + graceful-shutdown paths should call this before exiting so the
-// libuv loop has no live handles holding it open.
 function shutdown() {
     for (var k of _pool_by_key.keys()) {
         var list = _pool_by_key[k];
@@ -314,8 +246,6 @@ function shutdown() {
     _pool_by_key = {};
 }
 
-// Determine whether `conn` may be returned to the pool after this response.
-// Honors the server's `Connection: close`. HTTP/1.0 default is close.
 function _is_reusable(resp) {
     if (resp == null) { return false; }
     var ch = resp.headers["connection"];
@@ -323,11 +253,6 @@ function _is_reusable(resp) {
     return ch.to_lower().index_of("close") < 0;
 }
 
-// Drive one request through the full pipeline, with optional timeout.
-//
-// timeout (ms) covers the WHOLE thing — DNS resolve + connect + write + read.
-// First fire of the timer wins: it cancels the live conn and calls cb with
-// a "timeout" error. Any subsequent response from the wire is ignored.
 function _do_request(config, before_fns, after_fns, cb) {
     var i = 0;
     while (i < before_fns.length) {
@@ -352,7 +277,6 @@ function _do_request(config, before_fns, after_fns, cb) {
     var req_bytes = _build_request_bytes(method, parsed_u,
                                          config.headers, encoded.body, use_pool);
 
-    // Wrap the user's callback with a one-shot guard + timer cancel.
     var done = false;
     var timer_cancel = null;
     var live_conn = null;
@@ -373,11 +297,9 @@ function _do_request(config, before_fns, after_fns, cb) {
 
     _connect_or_pool(parsed_u, config.tls, use_pool, function (cerr, conn) {
         if (cerr != null) { finish(cerr, null); return; }
-        if (done) { conn.close(); return; }   // already timed out during connect
+        if (done) { conn.close(); return; }
         live_conn = conn;
 
-        // Pick the right receiver: keep-alive uses incremental parse,
-        // close-after uses on_end.
         var send = _send_buffered;
         if (use_pool) { send = _send_buffered_keepalive; }
 
@@ -389,7 +311,6 @@ function _do_request(config, before_fns, after_fns, cb) {
                     if (maybe2 != null) { resp = maybe2; }
                     j = j + 1;
                 }
-                // Return the conn to the pool iff still reusable.
                 if (use_pool and _is_reusable(resp)) {
                     var key = _pool_key(parsed_u.scheme, parsed_u.host, parsed_u.port);
                     _pool_push(key, conn);
@@ -403,8 +324,6 @@ function _do_request(config, before_fns, after_fns, cb) {
         });
     });
 }
-
-// ---------------- create() — instance factory ------------------------------
 
 function create(defaults) {
     if (defaults == null) { defaults = {}; }
@@ -435,8 +354,6 @@ function create(defaults) {
     return inst;
 }
 
-// ---------------- shared default instance + top-level helpers --------------
-
 var _default = create({});
 
 function get(url, cb)         { _default.get(url, cb); }
@@ -446,22 +363,17 @@ function post(url, data, cb)  { _default.post(url, data, cb); }
 function put(url, data, cb)   { _default.put(url, data, cb); }
 function patch(url, data, cb) { _default.patch(url, data, cb); }
 function request(opts, cb)    { _default.request(opts, cb); }
-function send(opts, cb)       { _default.request(opts, cb); }   // legacy alias
+function send(opts, cb)       { _default.request(opts, cb); }
 
 function post_form(url, fields, cb) { _default.post_form(url, fields, cb); }
 
-// Top-level interceptor registration on the default instance.
 function before(fn) { _default.before(fn); }
-function after(fn)  { _default.after(fn); }
-
-// ---------------- download — stream response body to a file ----------------
+function after(fn)  { _default.after(fn);  }
 
 function download(url, dest, cb) {
     download_with({ url: url, dest: dest }, cb);
 }
 
-// download_with(opts, cb) — opts: {url, dest, headers?, on_progress?, tls?}
-// on_progress(received_bytes) fires after each chunk.
 function download_with(opts, cb) {
     var cfg = _merge_config(_default.defaults, opts);
     if (cfg.headers == null) { cfg.headers = {}; }
@@ -495,11 +407,6 @@ function download_with(opts, cb) {
         var bytes_in_body = 0;
         var resp_meta    = null;
 
-        // Track in-flight async writes so we only close + callback after
-        // every byte is durable. Without this, on Linux (and any platform
-        // where file writes complete out of order with the TCP on_end
-        // event) the file gets closed mid-flush and io.read_file returns
-        // empty. Hit it the first time bnl was run on Linux x86.
         var pending_writes = 0;
         var ended          = false;
         var finished       = false;
@@ -560,18 +467,10 @@ function download_with(opts, cb) {
     });
 }
 
-// ---------------- upload — streaming multipart from a file -----------------
-
-// upload(url, file_path, cb) — single-file upload under field name "file".
 function upload(url, file_path, cb) {
     upload_with({ url: url, file: file_path }, cb);
 }
 
-// upload_with(opts, cb)
-// opts:
-//   url, method? (default POST), headers?, tls?
-//   file:     path string OR {path, name?, filename?, content_type?}
-//   fields:   {k: v, ...} extra form fields
 function upload_with(opts, cb) {
     var spec = _normalize_file_spec(opts.file);
     var fields = opts.fields;
@@ -620,8 +519,6 @@ function upload_with(opts, cb) {
     _connect(parsed_u, cfg.tls, function (cerr, conn) {
         if (cerr != null) { cb(cerr, null); return; }
 
-        // Collect response body in parallel — server may start responding
-        // before we finish uploading, so we install handlers up front.
         var resp_buf = "";
         var ended = false;
         var fired = false;
@@ -641,7 +538,6 @@ function upload_with(opts, cb) {
                     if (perr != null) { cb(perr, null); return; }
                     conn.write(epilogue, function (e3) {
                         if (e3 != null) { cb("write epilogue: " + e3, null); return; }
-                        // response will arrive via on_data/on_end above.
                     });
                 });
             });
@@ -680,14 +576,12 @@ function _basename(p) {
     return p;
 }
 
-// Pull file in 64 KiB chunks, write each, wait for ack before the next read.
 function _pump_file(conn, path, done) {
     var src = _io.open_read(path);
     var pump = function () {};
     pump = function () {
         src.read(65536, function (rerr, chunk) {
             if (rerr != null) { src.close(); done("read: " + rerr); return; }
-            // EOF: chunk is null (matches the io.open_read contract).
             if (chunk == null) { src.close(); done(null); return; }
             conn.write(chunk, function (werr) {
                 if (werr != null) { src.close(); done("write: " + werr); return; }

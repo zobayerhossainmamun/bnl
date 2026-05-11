@@ -1,26 +1,5 @@
 import "sys" as sys;
 
-// Declarative CLI args parser.
-//
-// Usage shape:
-//   var p = cli.parser("myapp");
-//   p.description = "Does the thing";
-//   cli.flag(p,       {name: "verbose", short: "v", help: "Enable verbose"});
-//   cli.option(p,     {name: "output",  short: "o", help: "Output file",
-//                      default: "out.txt"});
-//   cli.positional(p, {name: "input",   help: "Input file"});
-//   var args = cli.parse(p);                 // reads sys.arg(*)
-//   var args = cli.parse_argv(p, ["a","b"]); // for tests / synthetic input
-//
-// args is a map:
-//   - one entry per flag    (bool, default false)
-//   - one entry per option  (string, default per `default` field)
-//   - one entry per positional (string, default per `default` field)
-//   - `_rest` — any extra positional args past the declared positionals.
-//
-// `cli.usage(p)` returns the auto-generated help string. Help-flag handling
-// is left to the caller (e.g. add a `--help` flag and check args.help).
-
 function parser(name) {
     return {
         name:        name,
@@ -72,7 +51,6 @@ function parse(p) {
 function parse_argv(p, argv) {
     var out = {};
 
-    // Initialize defaults.
     var i = 0;
     while (i < p.flags.length)       { out[p.flags[i].name]       = false;                  i = i + 1; }
     i = 0;
@@ -87,7 +65,6 @@ function parse_argv(p, argv) {
         var a = argv[k];
 
         if (a.starts_with("--")) {
-            // Long form: --name OR --name=value OR --name <value>
             var body = a.byte_slice(2);
             var eq = body.index_of("=");
             var key = body;
@@ -101,13 +78,11 @@ function parse_argv(p, argv) {
 
         } else if (a.starts_with("-") and a.byte_length > 1
                    and not _is_negative_number(a)) {
-            // Short form: -x (flag) or -x value (option).
             var short_key = a.byte_slice(1);
             var consumed_next = _apply_short(p, out, short_key, argv, k);
             k = k + consumed_next;
 
         } else {
-            // Positional.
             if (pos_idx < p.positionals.length) {
                 out[p.positionals[pos_idx].name] = a;
                 pos_idx = pos_idx + 1;
@@ -122,9 +97,6 @@ function parse_argv(p, argv) {
     return out;
 }
 
-// Returns the number of EXTRA argv slots consumed past `k` (0 or 1 for v1
-// — long options with inline `=value` consume 0, separate-value forms
-// consume 1). The outer loop adds its own +1 step.
 function _apply_long(p, out, key, inline_val, argv, k) {
     var i = 0;
     while (i < p.flags.length) {
@@ -178,14 +150,12 @@ function _apply_short(p, out, short_key, argv, k) {
     throw "cli: unknown short option -" + short_key;
 }
 
-// `-3.14` looks like a short option but should pass through as a positional.
 function _is_negative_number(s) {
     if (s.byte_length < 2) { return false; }
     var b = s.byte_at(1);
-    return (b >= 48 and b <= 57) or b == 46;   // digit or '.'
+    return (b >= 48 and b <= 57) or b == 46;
 }
 
-// usage(p) — auto-generated help string. Does not print; caller decides.
 function usage(p) {
     var u = "usage: " + p.name;
     var i = 0;

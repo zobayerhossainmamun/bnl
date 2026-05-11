@@ -1,16 +1,10 @@
 import "sys" as sys;
 
-// Pure-bnl path utilities. Accept both `/` and `\` as separators on input
-// regardless of platform — emit `/` (works on Windows for filesystem APIs
-// too). Use path.sep when you need the platform-native string.
 var sep = "/";
 if (sys.platform == "windows") { sep = "\\"; }
 
-// Internal: is byte b a separator?
-function _is_sep(b) { return b == 47 or b == 92; }    // '/' or '\\'
+function _is_sep(b) { return b == 47 or b == 92; }
 
-// is_absolute(p) — true for POSIX-absolute paths (start with /), Windows
-// drive paths (C:/... or C:\...), and Windows UNC paths (\\server).
 function is_absolute(p) {
     if (p.byte_length == 0) { return false; }
     if (_is_sep(p.byte_at(0))) { return true; }
@@ -19,12 +13,11 @@ function is_absolute(p) {
         var b1 = p.byte_at(1);
         var b2 = p.byte_at(2);
         var is_letter = (b0 >= 65 and b0 <= 90) or (b0 >= 97 and b0 <= 122);
-        if (is_letter and b1 == 58 and _is_sep(b2)) { return true; }   // C:/  or  C:\
+        if (is_letter and b1 == 58 and _is_sep(b2)) { return true; }
     }
     return false;
 }
 
-// _last_sep_index(p) → last separator index, or -1 if none.
 function _last_sep_index(p) {
     var i = p.byte_length - 1;
     while (i >= 0) {
@@ -34,19 +27,14 @@ function _last_sep_index(p) {
     return -1;
 }
 
-// dirname("/foo/bar/baz") → "/foo/bar"
-// dirname("/foo")         → "/"
-// dirname("foo")          → "."
-// dirname("")             → "."
 function dirname(p) {
     if (p.byte_length == 0) { return "."; }
     var idx = _last_sep_index(p);
     if (idx < 0) { return "."; }
-    if (idx == 0) { return p.byte_slice(0, 1); }   // root "/" stays "/"
+    if (idx == 0) { return p.byte_slice(0, 1); }
     return p.byte_slice(0, idx);
 }
 
-// basename(p) → last component, extension included.
 function basename(p) {
     if (p.byte_length == 0) { return ""; }
     var idx = _last_sep_index(p);
@@ -54,8 +42,6 @@ function basename(p) {
     return p.byte_slice(idx + 1);
 }
 
-// stem(p) → last component with its extension stripped (matches Python's
-// pathlib.Path.stem). "foo.tar.gz" → "foo.tar"; ".gitignore" → ".gitignore".
 function stem(p) {
     var b = basename(p);
     var e = extname(b);
@@ -63,17 +49,12 @@ function stem(p) {
     return b.byte_slice(0, b.byte_length - e.byte_length);
 }
 
-// extname("foo.tar.gz") → ".gz"
-// extname("foo")        → ""
-// extname(".foo")       → ""  (leading-dot filenames are NOT extensions)
-// extname("foo.")       → "."
 function extname(p) {
     var base = basename(p);
     if (base.byte_length == 0) { return ""; }
-    // Find the LAST dot in base, but only if it's not the very first byte.
     var i = base.byte_length - 1;
     while (i > 0) {
-        if (base.byte_at(i) == 46) {       // '.'
+        if (base.byte_at(i) == 46) {
             return base.byte_slice(i);
         }
         i = i - 1;
@@ -81,10 +62,6 @@ function extname(p) {
     return "";
 }
 
-// join(parts) — concatenate a list of path segments with `/`. Skips empty
-// segments. Doesn't normalize — call normalize() yourself if you want `..`
-// collapsing. An absolute later-segment resets to that segment (matches
-// Node.js path.join semantics).
 function join(parts) {
     if (parts.length == 0) { return ""; }
     var out = "";
@@ -95,7 +72,6 @@ function join(parts) {
             if (out.byte_length == 0) {
                 out = seg;
             } else {
-                // Trim trailing sep from out, leading sep from seg, then "/" join.
                 var l = out;
                 while (l.byte_length > 0 and _is_sep(l.byte_at(l.byte_length - 1))) {
                     l = l.byte_slice(0, l.byte_length - 1);
@@ -112,15 +88,11 @@ function join(parts) {
     return out;
 }
 
-// normalize(p) — collapse `./`, `..`, and double-separators. Preserves
-// leading `/` (absolute) and trailing `/` semantics. Does NOT resolve to
-// the filesystem (no symlink follow).
 function normalize(p) {
     if (p.byte_length == 0) { return "."; }
     var leading_sep  = _is_sep(p.byte_at(0));
     var trailing_sep = p.byte_length > 1 and _is_sep(p.byte_at(p.byte_length - 1));
 
-    // Tokenize on either separator.
     var parts = [];
     var start = 0;
     var i = 0;
@@ -133,27 +105,23 @@ function normalize(p) {
     }
     if (start < p.byte_length) { parts.push(p.byte_slice(start)); }
 
-    // Walk + resolve.
     var stack = [];
     var j = 0;
     while (j < parts.length) {
         var seg = parts[j];
         if (seg == ".") {
-            // skip
         } else if (seg == "..") {
             if (stack.length > 0 and stack[stack.length - 1] != "..") {
                 stack.pop();
             } else if (not leading_sep) {
                 stack.push("..");
             }
-            // for absolute paths, `..` past the root is a no-op
         } else {
             stack.push(seg);
         }
         j = j + 1;
     }
 
-    // Reassemble.
     var out = "";
     var k = 0;
     while (k < stack.length) {

@@ -2,10 +2,6 @@ import "_mysql" as _mysql;
 
 function version() { return _mysql.version(); }
 
-// connect(url_or_opts)
-//   - string: a `mysql://[user[:pass]@]host[:port][/db][?ssl=true&...]` URL.
-//   - map:    keys host, port, user, password, database, ssl,
-//             connect_timeout. Passed straight to the native primitive.
 function connect(arg) {
     if (type(arg) == "string") {
         return _mysql.connect(parse_url(arg));
@@ -16,10 +12,6 @@ function connect(arg) {
     throw "mysql.connect: expected URL string or options map";
 }
 
-// Minimal mysql:// URL → opts map parser. Doesn't percent-decode (passwords
-// with weird chars should use the map form). Recognised query params:
-// `ssl=true|false`, `connect_timeout=<seconds>`; anything else passes
-// through as a raw string and is ignored by the native primitive.
 function parse_url(url) {
     if (not url.starts_with("mysql://")) {
         throw "mysql.parse_url: URL must start with mysql://";
@@ -105,8 +97,6 @@ function migrate(db, statements) {
     });
 }
 
-// insert(db, table, row) — auto-build INSERT with `?` placeholders. Returns
-// the auto-increment id from db.last_insert_id() (mirrors sqlite.insert).
 function insert(db, table, row) {
     var keys = row.keys();
     if (keys.length == 0) {

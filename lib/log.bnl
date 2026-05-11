@@ -1,22 +1,16 @@
 import "time" as time;
 
-// Numeric levels — exposed as module-level vars so user code can compare
-// `log.level >= log.WARN` or pass them to set_level().
 var DEBUG = 10;
 var INFO  = 20;
 var WARN  = 30;
 var ERROR = 40;
 
-// Module state. Mutable via set_* functions. Imports share one logger
-// across the whole process (module loader canonical-path caching).
 var _level     = INFO;
 var _formatter = function (num, name, msg) {
     return "[" + time.iso(time.now()) + "] " + name + " " + msg;
 };
 var _sink = function (formatted) { print(formatted); };
 
-// set_level(level) — accepts numeric level OR string name ("debug" / "info"
-// / "warn" / "error"). Anything below this level is filtered out.
 function set_level(level) {
     if (type(level) == "string") {
         if      (level == "debug") { _level = DEBUG; }
@@ -31,13 +25,8 @@ function set_level(level) {
     }
 }
 
-// set_formatter(fn) — fn(level_num, level_name, msg) → string.
 function set_formatter(fn) { _formatter = fn; }
-
-// set_sink(fn) — fn(formatted_string). Defaults to print().
-// For file output: log.set_sink(function (s) { io.append_file("app.log", s + "\n"); }).
-// For stderr you'd need a native primitive — not exposed in v1.
-function set_sink(fn) { _sink = fn; }
+function set_sink(fn)      { _sink = fn; }
 
 function _emit(level_num, level_name, msg) {
     if (level_num < _level) { return; }

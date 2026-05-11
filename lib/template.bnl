@@ -1,43 +1,5 @@
 import "io" as _io;
 
-// Liquid/Jinja-flavored template engine.
-//
-// Syntax:
-//   {{ expr }}                              output, HTML-auto-escaped
-//   {{= expr }}                             output, NOT escaped (trusted HTML)
-//   {{ expr | filter | filter(args) }}      filter chain on output
-//   {% if cond %} ... {% else %} ... {% end %}
-//   {% for x in xs %} ... {% end %}         exposes `loop`:
-//                                             .index (1-based), .index0,
-//                                             .first, .last, .length
-//   {% include "partial.html" %}            file partial
-//   {% extends "base.html" %}               inherit from a base template
-//   {% block name %} ... {% end %}          named slot, override-able by child
-//   {# comment #}                           discarded at tokenize-time
-//
-// Whitespace control: `{%- ... -%}` and `{{- ... -}}` trim adjacent
-// whitespace (left and/or right of the tag). `{%- ... %}` strips left only,
-// `{% ... -%}` strips right only.
-//
-// Expressions:
-//   null, true, false, numbers, "double-quoted strings"
-//   identifier paths:  user.name.first  (null-safe)
-//   comparisons:       == != < > <= >=
-//   logical:           and or not
-//   precedence:        not < cmp < and < or
-// No arithmetic, no function calls — keep computation in the handler.
-//
-// Built-in filters: upper, lower, capitalize, length, default(v), trim,
-// replace(from, to), join(sep), truncate(n), escape, safe.
-// Register your own: tpl.register_filter("date", function(v, args) {...});
-//
-// API:
-//   tpl.set_views(dir)                      default "views"
-//   tpl.render(path, ctx)                   file-based, cached compile
-//   tpl.render_string(text, ctx)            inline, no cache
-//   tpl.register_filter(name, fn)           fn(value, args_list) -> new value
-//   tpl.clear_cache()                       bust the cache (dev mode)
-
 var _views_dir = "views";
 var _cache     = {};
 var _filters   = {};
@@ -58,8 +20,6 @@ function render_string(text, ctx) {
     return _render_template(compiled, ctx, {});
 }
 
-// ---------------- loader + cache ------------------------------------------
-
 function _compile(path) {
     var full = _views_dir + "/" + path;
     if (_cache[full] != null) { return _cache[full]; }
@@ -69,8 +29,6 @@ function _compile(path) {
     _cache[full] = compiled;
     return compiled;
 }
-
-// ---------------- tokenizer -----------------------------------------------
 
 function _tokenize(src) {
     var tokens = [];
@@ -100,7 +58,6 @@ function _tokenize(src) {
     return tokens;
 }
 
-// Consume one `{{ ... }}` or `{{= ... }}` tag. Returns next position.
 function _scan_output(src, nt, tokens) {
     var inner_start = nt + 2;
     var strip_left = false;
@@ -135,7 +92,6 @@ function _scan_output(src, nt, tokens) {
     return close + 2;
 }
 
-// Consume one `{% ... %}` tag. Returns next position.
 function _scan_block(src, nt, tokens) {
     var inner_start = nt + 2;
     var strip_left = false;
@@ -214,9 +170,6 @@ function _unquote(s) {
     return s;
 }
 
-// After tokenizing, apply `-` whitespace-control flags: tags marked
-// strip_left trim trailing whitespace from the previous TEXT token;
-// strip_right trim leading whitespace from the next TEXT token.
 function _apply_whitespace_control(tokens) {
     var i = 0;
     while (i < tokens.length) {
@@ -254,12 +207,8 @@ function _ltrim_ws(s) {
     return s.byte_slice(i);
 }
 
-// ---------------- filter parsing (for OUTPUT/RAW inner) -------------------
-
-// Split `expr | f1 | f2(arg, arg)` into { expr, filters: [{name, args}] }.
-// `|` inside string literals or parens is honored — top-level only.
 function _parse_output_expr(inner) {
-    var parts = _split_top_level(inner, 124);     // 124 = '|'
+    var parts = _split_top_level(inner, 124);
     var expr = parts[0].trim();
     var filters = [];
     var k = 1;
@@ -270,7 +219,6 @@ function _parse_output_expr(inner) {
         if (p_idx < 0) {
             filters.push({ name: f, args: [] });
         } else {
-            // strip trailing ')'
             var close = -1;
             var i = f.byte_length - 1;
             var go = true;
@@ -281,7 +229,7 @@ function _parse_output_expr(inner) {
             if (close < 0) { throw "template: filter missing ')': " + f; }
             var name = f.byte_slice(0, p_idx).trim();
             var args_src = f.byte_slice(p_idx + 1, close);
-            var args = _split_top_level(args_src, 44);  // 44 = ','
+            var args = _split_top_level(args_src, 44);
             var args_out = [];
             var j = 0;
             while (j < args.length) {
@@ -296,8 +244,6 @@ function _parse_output_expr(inner) {
     return { expr: expr, filters: filters };
 }
 
-// Split `s` at every top-level occurrence of byte `sep_byte`, respecting
-// "double-quoted" strings and nested parens.
 function _split_top_level(s, sep_byte) {
     var parts = [];
     var start = 0;
@@ -321,15 +267,11 @@ function _split_top_level(s, sep_byte) {
     return parts;
 }
 
-// ---------------- parser (token list -> compiled template) ----------------
-
-// Returns { extends: <path or null>, blocks: {name: nodes}, body: nodes }.
 function _parse(tokens) {
     var extends_path = null;
     var blocks = {};
     var i = 0;
 
-    // First non-text token can be EXTENDS — if so, capture and skip.
     while (i < tokens.length and tokens[i].type == "TEXT") { i = i + 1; }
     if (i < tokens.length and tokens[i].type == "EXTENDS") {
         extends_path = tokens[i].path;
@@ -345,8 +287,6 @@ function _parse(tokens) {
     return { extends_path: extends_path, blocks: blocks, body: r.nodes };
 }
 
-// Collect nodes until we hit any token whose type is in `end_types`. As a
-// side effect, records every BLOCK definition into `blocks`.
 function _parse_nodes(tokens, start, end_types, blocks) {
     var nodes = [];
     var pos   = start;
@@ -360,7 +300,6 @@ function _parse_nodes(tokens, start, end_types, blocks) {
             nodes.push(t);
             pos = pos + 1;
         } else if (t.type == "EXTENDS") {
-            // Already consumed if at top; nested extends is an error.
             throw "template: extends must be the first tag";
         } else if (t.type == "IF") {
             var then_r = _parse_nodes(tokens, pos + 1, ["ELSE", "END"], blocks);
@@ -393,7 +332,7 @@ function _parse_nodes(tokens, start, end_types, blocks) {
                 throw "template: unclosed block";
             }
             var block_node = { type: "BLOCK", name: t.name, body: blk_r.nodes };
-            blocks[t.name] = blk_r.nodes;          // register for inheritance
+            blocks[t.name] = blk_r.nodes;
             nodes.push(block_node);
             pos = blk_r.next_pos + 1;
         } else {
@@ -412,11 +351,6 @@ function _includes(list, val) {
     return false;
 }
 
-// ---------------- renderer ------------------------------------------------
-
-// Render a compiled template. If it extends another, recurse into the
-// parent with the child's block definitions merged on top of any prior
-// overrides — that's how multi-level inheritance chains resolve.
 function _render_template(compiled, ctx, blocks_override) {
     var merged = {};
     for (var k of compiled.blocks.keys())     { merged[k] = compiled.blocks[k]; }
@@ -471,7 +405,6 @@ function _render_nodes(nodes, ctx, blocks_override) {
                 }
             }
         } else if (n.type == "INCLUDE") {
-            // Includes render as a template (no extends; we use body+blocks).
             var sub = _compile(n.path);
             out = out + _render_template(sub, ctx, blocks_override);
         } else if (n.type == "BLOCK") {
@@ -484,8 +417,6 @@ function _render_nodes(nodes, ctx, blocks_override) {
     }
     return out;
 }
-
-// ---------------- filter dispatch + builtins ------------------------------
 
 function _apply_filters(value, filter_chain, ctx) {
     var v = value;
@@ -506,7 +437,6 @@ function _apply_filters(value, filter_chain, ctx) {
     return v;
 }
 
-// Register the built-in filters. Called once at module load.
 function _install_builtin_filters() {
     _filters["upper"] = function (v, args) { return _to_string(v).to_upper(); };
     _filters["lower"] = function (v, args) { return _to_string(v).to_lower(); };
@@ -553,13 +483,10 @@ function _install_builtin_filters() {
         return _escape_html(_to_string(v));
     };
     _filters["safe"] = function (v, args) {
-        // Wrap so the OUTPUT renderer skips its auto-escape step.
         return { __safe: true, value: v };
     };
 }
 _install_builtin_filters();
-
-// ---------------- shared helpers ------------------------------------------
 
 function _extend(parent, var_name, value, index, length) {
     var sub = {};
@@ -598,8 +525,6 @@ function _escape_html(s) {
     s = s.replace("'", "&#39;");
     return s;
 }
-
-// ---------------- expression evaluator ------------------------------------
 
 function _eval(src, ctx) {
     var p = { src: src, pos: 0 };

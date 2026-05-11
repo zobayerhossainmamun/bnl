@@ -1,12 +1,10 @@
 import "_math" as _math;
 
-// ---- Constants (re-exported as bnl-level values) ----
 var pi  = _math.pi;
 var e   = _math.e;
 var inf = _math.inf;
 var nan = _math.nan;
 
-// ---- Direct passthroughs (one-line wrappers so users only import "math") ----
 function sqrt(x)     { return _math.sqrt(x); }
 function exp(x)      { return _math.exp(x); }
 function log(x)      { return _math.log(x); }
@@ -28,7 +26,6 @@ function abs(x)      { return _math.abs(x); }
 function is_nan(x)    { return _math.is_nan(x); }
 function is_finite(x) { return _math.is_finite(x); }
 
-// ---- bnl-level helpers (composition that doesn't need C++) ----
 function sign(x) {
     if (x > 0) { return 1; }
     if (x < 0) { return -1; }
@@ -45,32 +42,25 @@ function max(a, b) {
     return b;
 }
 
-// clamp(x, lo, hi) — pin x into [lo, hi].
 function clamp(x, lo, hi) {
     if (x < lo) { return lo; }
     if (x > hi) { return hi; }
     return x;
 }
 
-// Linear interpolation. t=0 returns a, t=1 returns b.
 function lerp(a, b, t) {
     return a + (b - a) * t;
 }
 
-// Degrees <-> radians convenience.
 function to_radians(deg) { return deg * pi / 180; }
 function to_degrees(rad) { return rad * 180 / pi; }
 
-// Integer-mod that always returns a non-negative result. `%` in bnl is
-// fmod, which follows the sign of the dividend (so -1 % 5 == -1). For
-// array-indexing math you usually want -1 mod 5 == 4.
 function mod(a, b) {
     var r = a % b;
     if (r < 0) { r = r + b; }
     return r;
 }
 
-// Sum / product / mean of a list. Empty list returns identity / 0 / nan.
 function sum(xs) {
     var total = 0;
     var i = 0;

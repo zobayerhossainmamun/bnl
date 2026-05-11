@@ -2,11 +2,6 @@ import "_pg" as _pg;
 
 function version() { return _pg.version(); }
 
-// connect(conninfo_or_opts)
-//   - string: passed straight to libpq as conninfo or postgresql:// URI.
-//   - map:    keyword=value pairs (host, port, user, password, dbname,
-//             sslmode, connect_timeout, ...). Values are quoted + escaped
-//             for libpq conninfo. Use a URI string if you have weird chars.
 function connect(arg) {
     if (type(arg) == "string") {
         return _pg.connect(arg);
@@ -40,8 +35,6 @@ function _build_conninfo(opts) {
     return out;
 }
 
-// libpq conninfo quoting: single-quote the value, backslash-escape any
-// literal backslash or single-quote inside it.
 function _quote_value(s) {
     var out = "'";
     var i = 0;
@@ -73,11 +66,6 @@ function migrate(db, statements) {
     });
 }
 
-// insert(db, table, row) — auto-build INSERT with $1..$N placeholders and
-// "RETURNING *". Returns the inserted row as a map (so server-side defaults
-// like auto-increment ids and timestamps are visible to the caller).
-//
-// Postgres has no global last_insert_id; this is the idiomatic replacement.
 function insert(db, table, row) {
     var keys = row.keys();
     if (keys.length == 0) {

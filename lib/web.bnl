@@ -10,48 +10,8 @@ import "template"  as _tpl;
 import "ws"        as _ws;
 import "cookie"   as _cookie;
 
-// Defaults applied to web.serve / app.listen opts when the caller doesn't
-// override. Hardening knobs only — connection logic doesn't depend on them.
 var DEFAULT_IDLE_TIMEOUT_MS = 30000;
-var DEFAULT_MAX_BODY_SIZE   = 10485760;   // 10 MB
-
-// ============================================================================
-// HTTP server.
-//
-// Python-flavored high-level API (recommended):
-//
-//     var app = web.app();
-//     app.get("/users/:id", function (req) { return {id: req.params.id}; });
-//     app.post("/users",    function (req) { return [201, req.json()]; });
-//     app.before(function (req) { ... });
-//     app.after (function (resp, req) { resp.headers["X-Foo"] = "bar"; return resp; });
-//     app.static("/assets", "./public");
-//     app.on_404(function (req) { return [404, "nope"]; });
-//     app.on_error(function (req, err) { return [500, str(err)]; });
-//     app.listen(3000);                       // or app.listen({port, tls})
-//
-// Handlers can return whatever — the framework coerces to a real response:
-//
-//     "hi"                  → 200 text/plain
-//     {users: [...]}        → 200 application/json
-//     [{...}, {...}]        → 200 application/json (list of maps)
-//     [201, body]           → status + body (body re-coerced)
-//     [201, body, {h: ...}] → status + body + extra headers
-//     {status, body, ...}   → raw response (as-is)
-//     null                  → 204 No Content
-//     web.file("path")      → streamed from disk
-//
-// Request shorthand (populated by the framework):
-//     req.path, req.query (map), req.params (path params), req.method, req.headers
-//     req.body, req.json(), req.form()
-//     req.file(name), req.files(), req.fields()
-//
-// Low-level API (still here, used internally by app.listen + back-compat):
-//     web.serve({port, tls?}, function (req) { return {status, body, headers?}; })
-// ============================================================================
-
-
-// ---------------- response builders (also usable from handlers) -----------
+var DEFAULT_MAX_BODY_SIZE   = 10485760;
 
 function text(s)     {
     return { status: 200, headers: { "Content-Type": "text/plain; charset=utf-8" }, body: s };
@@ -77,14 +37,10 @@ function error(status, msg) {
              body: msg };
 }
 
-// web.file(path) — return a streaming response that reads from disk.
 function file(path) {
     return { _kind: "file", path: path };
 }
 
-// web.view(path, ctx) — render a template (resolved against the configured
-// views directory) and wrap it in a 200 text/html response. Use
-// web.set_views(dir) to point at your templates dir.
 function view(path, ctx) {
     return { status:  200,
              headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -94,14 +50,6 @@ function view(path, ctx) {
 function set_views(dir)       { _tpl.set_views(dir); }
 function clear_views_cache()  { _tpl.clear_cache(); }
 
-// web.upgrade(req) — perform a WebSocket upgrade handshake on req's
-// underlying TCP conn and hand back the WS conn object (see lib/ws.bnl
-// for the API). Sets req._upgraded so the server skips its response /
-// keep-alive / close logic — the WS layer now owns the socket.
-//
-// Throws if the request headers don't look like a valid Upgrade. Catch
-// and respond with 400 if you want to keep serving the same TCP conn
-// as plain HTTP afterwards (rare).
 function upgrade(req) {
     if (req._conn == null) {
         throw "web.upgrade: req has no underlying conn";
@@ -111,12 +59,8 @@ function upgrade(req) {
     return ws_conn;
 }
 
-// ---------------- legacy request-body helpers ------------------------------
-
 function parse_form(req) { return _url.parse_query(req.body); }
 function parse_json(req) { return _json.parse(req.body); }
-
-// ---------------- HTTP status text -----------------------------------------
 
 function _status_text(s) {
     if (s == 200) { return "OK"; }
@@ -135,8 +79,6 @@ function _status_text(s) {
     if (s == 503) { return "Service Unavailable"; }
     return "OK";
 }
-
-// ---------------- header helpers -------------------------------------------
 
 function _has_header(h, name_lower) {
     for (var k of h.keys()) {
@@ -170,11 +112,6 @@ function _content_type_for(path) {
     return "application/octet-stream";
 }
 
-// ---------------- response coercion ---------------------------------------
-
-// _coerce(value) → canonical { status, headers, body, _kind? } shape that
-// _send_response understands. Recursive: lists with [status, body] re-coerce
-// the body part to handle [201, {x: 1}] (status + auto-JSON).
 function _coerce(value) {
     if (value == null) {
         return { status: 204, headers: {}, body: "" };
@@ -212,7 +149,6 @@ function _coerce(value) {
     }
     if (t == "map") {
         if (value._kind == "file") {
-            // Ensure .headers exists so after hooks can always mutate it.
             if (value.headers == null) { value.headers = {}; }
             return value;
         }
@@ -237,11 +173,6 @@ function _coerce(value) {
              body: str(value) };
 }
 
-// ---------------- response sender ------------------------------------------
-
-// Overwrite (or insert) a header by case-insensitive name match. bnl maps
-// can't delete keys, so we mutate the existing key in place when found —
-// avoids duplicate Connection / Content-Length entries on the wire.
 function _set_header(headers, name, value) {
     var lower = name.to_lower();
     for (var k of headers.keys()) {
@@ -250,9 +181,6 @@ function _set_header(headers, name, value) {
     headers[name] = value;
 }
 
-// _write_response(conn, resp, on_done) — write headers + body to conn,
-// then call on_done() when the bytes are flushed. Caller decides whether
-// to close the conn or process the next pipelined request.
 function _write_response(conn, resp, on_done) {
     if (resp._kind == "file") {
         _write_file(conn, resp, on_done);
@@ -276,9 +204,6 @@ function _write_response(conn, resp, on_done) {
     for (var k of headers.keys()) {
         out = out + k + ": " + str(headers[k]) + "\r\n";
     }
-    // Multiple Set-Cookie headers need a distinct wire line each — bnl
-    // maps disallow duplicate keys, so the response carries them in a
-    // separate `cookies: [...]` list which we serialise here.
     if (resp.cookies != null and type(resp.cookies) == "list") {
         var ci = 0;
         while (ci < resp.cookies.length) {
@@ -291,8 +216,6 @@ function _write_response(conn, resp, on_done) {
     conn.write(out, function (err) { on_done(); });
 }
 
-// Stream a file from disk to the conn. Same on_done contract as
-// _write_response — fires after the last chunk's write callback.
 function _write_file(conn, resp, on_done) {
     var path = resp.path;
     if (not _io.exists(path)) {
@@ -343,11 +266,6 @@ function _write_file(conn, resp, on_done) {
     });
 }
 
-// ---------------- request enrichment ---------------------------------------
-
-// _enrich parses the URL into path + query. `respond` is installed by the
-// connection handler (which captures the keep-alive decision in its closure)
-// rather than here — that way req.respond honors the connection lifetime.
 function _enrich(parsed) {
     var qmark = parsed.url.index_of("?");
     if (qmark >= 0) {
@@ -360,9 +278,6 @@ function _enrich(parsed) {
     return parsed;
 }
 
-// Add the high-level conveniences (json/form/file/files/fields/params) to
-// the already-enriched req. Called only from app dispatch — low-level
-// web.serve handlers don't get these so they don't pay the cost.
 function _enrich_for_app(req, params) {
     req.params = params;
     req.json   = function () { return _json.parse(req.body); };
@@ -407,7 +322,6 @@ function _parse_multipart_cached(req) {
     var bidx = ct.index_of("boundary=");
     if (bidx < 0)  { req._mp_cache = []; return req._mp_cache; }
     var boundary = ct.byte_slice(bidx + 9).trim();
-    // Strip trailing `;param` or quotes
     var semi = boundary.index_of(";");
     if (semi >= 0) { boundary = boundary.byte_slice(0, semi).trim(); }
     if (boundary.byte_length >= 2
@@ -419,19 +333,6 @@ function _parse_multipart_cached(req) {
     return req._mp_cache;
 }
 
-// ---------------- core connection handler (keep-alive + limits) ----------
-
-// One TCP connection may carry many HTTP/1.1 requests in sequence. The
-// handler stays in a "busy" state while one request is in flight so a
-// pipelined second request waits its turn. After each response is fully
-// flushed, the connection either continues (keep-alive) or closes per the
-// Connection header negotiation.
-//
-// Defensive limits:
-//   - max_body_size: refuses to buffer more than N bytes pre-dispatch
-//     (returns 413 if a request has started, hard-closes otherwise).
-//   - idle_timeout_ms: closes the conn if no on_data activity within the
-//     window. Resets on every chunk arrival and every response completion.
 function _handle_connection(conn, handler, server_opts) {
     var max_body  = DEFAULT_MAX_BODY_SIZE;
     var idle_ms   = DEFAULT_IDLE_TIMEOUT_MS;
@@ -481,9 +382,6 @@ function _handle_connection(conn, handler, server_opts) {
         }
 
         var req = _enrich(parsed);
-        // Stash the raw conn so feature add-ons (web.upgrade for WebSocket,
-        // future SSE, etc.) can take it over. Plain HTTP handlers should
-        // ignore this field — it's not part of the documented surface.
         req._conn     = conn;
         req._upgraded = false;
         var responded = false;
@@ -500,7 +398,7 @@ function _handle_connection(conn, handler, server_opts) {
                 if (not keep_alive) {
                     close_now();
                 } else {
-                    reset_idle();   // new keep-alive window starts now
+                    reset_idle();
                     dispatch_one();
                 }
             });
@@ -517,10 +415,6 @@ function _handle_connection(conn, handler, server_opts) {
         } catch (e) {
             resp_value = { status: 500, body: "Internal Server Error" };
         }
-        // If the handler hijacked the conn (web.upgrade), it now owns the
-        // socket — don't send a response, don't recurse, don't close.
-        // Crucially, cancel the HTTP idle timer; otherwise it keeps the
-        // libuv loop alive for the full idle window after the WS conn ends.
         if (req._upgraded) {
             if (idle_cancel != null) { idle_cancel(); idle_cancel = null; }
             return;
@@ -528,12 +422,8 @@ function _handle_connection(conn, handler, server_opts) {
         if (resp_value != null) {
             send_canonical(_coerce(resp_value));
         }
-        // else: handler will call req.respond async.
     };
 
-    // Send a 413 with Connection: close, then hard-close. Used when the
-    // buffered request bytes exceed max_body_size before a complete
-    // request has been parsed.
     function reject_too_large() {
         if (conn_closed) { return; }
         var body = "request payload too large";
@@ -548,9 +438,6 @@ function _handle_connection(conn, handler, server_opts) {
     conn.on_data(function (chunk) {
         if (conn_closed) { return; }
         if (max_body > 0 and buf.byte_length + chunk.byte_length > max_body) {
-            // If a response is already in flight on this conn, we can't
-            // safely interleave a 413 — just hard-close. Pre-dispatch is
-            // the polite path: send 413 then close.
             if (busy) { close_now(); }
             else      { reject_too_large(); }
             return;
@@ -562,10 +449,8 @@ function _handle_connection(conn, handler, server_opts) {
 
     conn.on_end(function () { close_now(); });
 
-    reset_idle();   // start the idle window for the very first request
+    reset_idle();
 }
-
-// ---------------- low-level serve (back-compat) ---------------------------
 
 function serve(opts, handler) {
     var port = opts.port;
@@ -580,20 +465,6 @@ function serve(opts, handler) {
     });
 }
 
-// ---------------- streaming server ----------------------------------------
-
-// web.serve_stream({port, tls?, ...}, handler) — handler is invoked as soon
-// as the request HEADERS are parsed (not after the body). The `req` arg has
-//   .method, .url, .path, .query, .version, .headers, .body=null
-//   .body_stream.on_chunk(fn)  — register a callback for each body slice
-//   .body_stream.on_end(fn)    — register the body-complete callback
-//   .respond(v)                — send response (after body, typically)
-//
-// Use this when bodies may be large. Inside on_chunk you can pipe each
-// slice to `io.open_write`'s stream and never buffer the full payload.
-//
-// v1 supports Content-Length-framed bodies only. Transfer-Encoding:
-// chunked + multipart streaming decoding are follow-ups.
 function serve_stream(opts, handler) {
     var port = opts.port;
     if (port == null) { port = 0; }
@@ -607,9 +478,6 @@ function serve_stream(opts, handler) {
     });
 }
 
-// Pure-bnl request-line + headers parser. `http.parse_request` waits until
-// the whole message (incl. body) is available; we need a way to grab just
-// the head. Returns null if `\r\n\r\n` isn't in `buf` yet.
 function _parse_request_head(buf) {
     var sep = buf.index_of("\r\n\r\n");
     if (sep < 0) { return null; }
@@ -652,10 +520,6 @@ function _parse_request_head(buf) {
     };
 }
 
-// One streaming connection handler. Same keep-alive + idle + max-body
-// semantics as `_handle_connection`, but the dispatch is two-phase:
-// "headers" → call handler → "body" (drains body bytes to user callbacks
-// per chunk) → wait for `req.respond` → reset for the next pipelined req.
 function _handle_streaming_connection(conn, handler, server_opts) {
     var max_body  = DEFAULT_MAX_BODY_SIZE;
     var idle_ms   = DEFAULT_IDLE_TIMEOUT_MS;
@@ -665,7 +529,7 @@ function _handle_streaming_connection(conn, handler, server_opts) {
     }
 
     var buf            = "";
-    var phase          = "headers";  // headers | body | awaiting_respond
+    var phase          = "headers";
     var conn_closed    = false;
     var idle_cancel    = null;
     var keep_alive     = true;
@@ -675,10 +539,8 @@ function _handle_streaming_connection(conn, handler, server_opts) {
     var on_body_end    = null;
     var current_req    = null;
 
-    // Chunked transfer-encoding state machine (only active when client sets
-    // Transfer-Encoding: chunked instead of Content-Length).
     var chunked        = false;
-    var ch_state       = "size";   // size | data | after_data | trailer | done
+    var ch_state       = "size";
     var ch_remaining   = 0;
 
     function close_now() {
@@ -758,7 +620,6 @@ function _handle_streaming_connection(conn, handler, server_opts) {
                 if (chl.index_of("close") >= 0)           { keep_alive = false; }
                 else if (chl.index_of("keep-alive") >= 0) { keep_alive = true; }
             }
-            // Body framing: Transfer-Encoding: chunked overrides Content-Length.
             var te = head.headers["transfer-encoding"];
             if (te != null and te.to_lower().index_of("chunked") >= 0) {
                 chunked  = true;
@@ -788,16 +649,12 @@ function _handle_streaming_connection(conn, handler, server_opts) {
                 resp_value = { status: 500, body: "Internal Server Error" };
             }
             if (resp_value != null) {
-                // Handler returned a value synchronously — still drain the
-                // body off the wire (HTTP semantics) before responding.
                 if (on_body_chunk == null) { on_body_chunk = function (c) {}; }
                 var saved = resp_value;
                 if (on_body_end == null) {
                     on_body_end = function () { send_canonical(_coerce(saved)); };
                 }
             }
-            // else: handler async — will register on_body_chunk / on_body_end
-            // and eventually call respond.
         }
 
         if (phase == "body") {
@@ -818,14 +675,8 @@ function _handle_streaming_connection(conn, handler, server_opts) {
                 }
             }
         }
-        // "awaiting_respond" → no further work; user's respond() drives us.
     };
 
-    // Pump as many chunked-encoding bytes out of `buf` as we can. State
-    // machine per RFC 7230 §4.1:
-    //   size → "<hex>\r\n" (optionally with ;ext)
-    //   data → <size bytes> → after_data → "\r\n" → size
-    //   size = 0 ends data → trailer → optional headers → final "\r\n"
     function drain_chunked() {
         var progressed = true;
         while (progressed and not conn_closed) {
@@ -871,7 +722,7 @@ function _handle_streaming_connection(conn, handler, server_opts) {
                 } else {
                     var trl = buf.index_of("\r\n");
                     if (trl < 0) { return; }
-                    buf = buf.byte_slice(trl + 2);    // discard trailer line
+                    buf = buf.byte_slice(trl + 2);
                     progressed = true;
                 }
             } else if (ch_state == "done") {
@@ -882,9 +733,6 @@ function _handle_streaming_connection(conn, handler, server_opts) {
         }
     }
 
-    // Hex-digit-only integer parser (uppercase + lowercase). Returns null on
-    // any non-hex character so callers can distinguish "0\r\n" (end-of-body)
-    // from a malformed line.
     function _parse_hex(s) {
         if (s.byte_length == 0) { return null; }
         var n = 0;
@@ -917,8 +765,6 @@ function _handle_streaming_connection(conn, handler, server_opts) {
     conn.on_end(function () { close_now(); });
     reset_idle();
 }
-
-// ---------------- path routing ---------------------------------------------
 
 function _split_path(p) {
     var raw = p.split("/");
@@ -977,10 +823,8 @@ function _match_pattern(pattern, req_segs) {
     return params;
 }
 
-// ---------------- app() ----------------------------------------------------
-
 function app() {
-    var routes        = [];        // [{method, pattern, fn}]
+    var routes        = [];
     var before_fns    = [];
     var after_fns     = [];
     var on_404_fns    = [];
@@ -1006,7 +850,6 @@ function app() {
     a.on_404   = function (fn) { on_404_fns.push(fn);   return a; };
     a.on_error = function (fn) { on_error_fns.push(fn); return a; };
 
-    // app.static(prefix, dir) — serve files from `dir` under `prefix`.
     a.static = function (prefix, dir) {
         add_route("GET", prefix + "/*", function (req) {
             return _serve_static(req, dir);
@@ -1029,7 +872,6 @@ function _dispatch(req, routes, before_fns, after_fns, on_404_fns, on_error_fns)
     var resp_value = null;
     var short_circuited = false;
 
-    // before hooks — first non-null short-circuits the routing.
     var i = 0;
     while (i < before_fns.length and not short_circuited) {
         var maybe = before_fns[i](req);
@@ -1065,13 +907,8 @@ function _dispatch(req, routes, before_fns, after_fns, on_404_fns, on_error_fns)
         }
     }
 
-    // If the handler hijacked the conn (web.upgrade for WebSocket), skip
-    // the entire response pipeline — there's nothing to send.
     if (req._upgraded) { return null; }
 
-    // Coerce ONCE up front so after hooks operate on the canonical
-    // {status, headers, body} shape — they can always do `resp.headers[...]`
-    // without worrying about whether the handler returned a string or a map.
     var canonical = _coerce(resp_value);
     var k = 0;
     while (k < after_fns.length) {
@@ -1092,12 +929,9 @@ function _run_error(on_error_fns, req, err) {
     return on_error_fns[0](req, err);
 }
 
-// ---------------- static serving ------------------------------------------
-
 function _serve_static(req, dir) {
     var rel = req.params._wild;
     if (rel == null) { rel = ""; }
-    // Reject path traversal — any `..` segment in the resolved tail.
     var segs = rel.split("/");
     var i = 0;
     while (i < segs.length) {

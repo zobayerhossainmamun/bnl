@@ -28,12 +28,12 @@ function is_ipv6(s) {
     var i = 0;
     while (i < s.byte_length) {
         var b = s.byte_at(i);
-        if (b == 58) {                       // ':'
+        if (b == 58) {
             colons = colons + 1;
         } else {
-            var hex = (b >= 48 and b <= 57)  // 0-9
-                   or (b >= 65 and b <= 70)  // A-F
-                   or (b >= 97 and b <= 102);// a-f
+            var hex = (b >= 48 and b <= 57)
+                   or (b >= 65 and b <= 70)
+                   or (b >= 97 and b <= 102);
             if (not hex) { return false; }
         }
         i = i + 1;

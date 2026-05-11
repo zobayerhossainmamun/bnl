@@ -1,35 +1,27 @@
 import "_random" as _random;
 
-// Re-export the engine.
 function seed(n)  { _random.seed(n); }
 function next()   { return _random.next(); }
 function bytes(n) { return _random.bytes(n); }
 
-// int(min, max) — uniform integer in the closed range [min, max].
 function int(min, max) {
     if (max < min) { throw "random.int: max < min"; }
     return min + _random.next_int(max - min + 1);
 }
 
-// float() — uniform double in [0, 1).
 function float() { return _random.next(); }
 
-// range(lo, hi) — uniform double in [lo, hi).
 function range(lo, hi) { return lo + (hi - lo) * _random.next(); }
 
-// bool() — fair coin flip.
 function bool() { return _random.next() < 0.5; }
 
-// probability(p) — returns true with probability p (p must be in [0, 1]).
 function probability(p) { return _random.next() < p; }
 
-// choice(xs) — pick a uniformly random element. Throws on empty list.
 function choice(xs) {
     if (xs.length == 0) { throw "random.choice: empty list"; }
     return xs[_random.next_int(xs.length)];
 }
 
-// shuffle(xs) — Fisher-Yates, in-place. Returns xs for chaining.
 function shuffle(xs) {
     var i = xs.length - 1;
     while (i > 0) {
@@ -42,13 +34,10 @@ function shuffle(xs) {
     return xs;
 }
 
-// sample(xs, k) — k distinct elements drawn without replacement. Doesn't
-// mutate xs. k must be in [0, xs.length].
 function sample(xs, k) {
     if (k < 0 or k > xs.length) {
         throw "random.sample: k out of range";
     }
-    // Copy by push so we can shuffle without touching the caller's list.
     var copy = [];
     var i = 0;
     while (i < xs.length) { copy.push(xs[i]); i = i + 1; }

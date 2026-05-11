@@ -1,45 +1,31 @@
-// RFC 4180 CSV parse + stringify, pure bnl.
-//
-// Conventions matching the reference RFC:
-//   - Comma is the only field separator.
-//   - Fields may be enclosed in double quotes; quotes inside a quoted
-//     field are escaped by doubling (`""`).
-//   - Lines end with LF or CRLF (CR alone is treated as ignored).
-//   - Empty lines parse to a one-cell `[""]` row (we don't silently drop
-//     them; filter on the caller side if you want to).
-//   - Unquoted fields can't contain `,`, `"`, `\n`, `\r` — anything else
-//     is taken literally.
-
-// parse(text) → list of rows, each row a list of string cells.
 function parse(text) {
     var rows = [];
     var row  = [];
     var field = "";
-    var state = "unquoted";   // unquoted | quoted | after_quote
+    var state = "unquoted";
     var i = 0;
     while (i < text.byte_length) {
         var b = text.byte_at(i);
         if (state == "unquoted") {
-            if (b == 44) {                            // ','
+            if (b == 44) {
                 row.push(field); field = "";
-            } else if (b == 10) {                     // '\n'
+            } else if (b == 10) {
                 row.push(field); field = "";
                 rows.push(row); row = [];
-            } else if (b == 13) {                     // '\r' — eaten
-                // skip
-            } else if (b == 34 and field.byte_length == 0) {   // '"' at field start
+            } else if (b == 13) {
+            } else if (b == 34 and field.byte_length == 0) {
                 state = "quoted";
             } else {
                 field = field + chr(b);
             }
         } else if (state == "quoted") {
-            if (b == 34) {                            // '"'
+            if (b == 34) {
                 state = "after_quote";
             } else {
                 field = field + chr(b);
             }
         } else if (state == "after_quote") {
-            if (b == 34) {                            // '""' → literal '"'
+            if (b == 34) {
                 field = field + "\"";
                 state = "quoted";
             } else if (b == 44) {
@@ -50,17 +36,13 @@ function parse(text) {
                 rows.push(row); row = [];
                 state = "unquoted";
             } else if (b == 13) {
-                // skip CR; the LF is what closes the row.
             } else {
-                // Stray byte after closing quote — be lenient, treat as a
-                // continuation of the field in unquoted mode.
                 field = field + chr(b);
                 state = "unquoted";
             }
         }
         i = i + 1;
     }
-    // Flush trailing field/row if anything is pending.
     if (field.byte_length > 0 or row.length > 0 or state != "unquoted") {
         row.push(field);
         rows.push(row);
@@ -68,8 +50,6 @@ function parse(text) {
     return rows;
 }
 
-// parse_records(text) — parse and convert to a list of maps using the
-// FIRST row as field names. Skips the header row in the output.
 function parse_records(text) {
     var rows = parse(text);
     if (rows.length == 0) { return []; }
@@ -89,9 +69,6 @@ function parse_records(text) {
     return out;
 }
 
-// stringify(rows) — encode a list of rows back to RFC 4180 text. Each row
-// is a list of cells; cells are str()'d if not already strings. Always
-// emits LF line endings (caller can transcode to CRLF if needed).
 function stringify(rows) {
     var out = "";
     var i = 0;

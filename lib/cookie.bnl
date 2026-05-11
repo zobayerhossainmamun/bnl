@@ -1,27 +1,3 @@
-// HTTP cookie helpers — header parsing + Set-Cookie value builder.
-//
-// Usage with the web module:
-//
-//   app.get("/", function (req) {
-//       var theme = req.cookies().theme;
-//       if (theme == null) { theme = "light"; }
-//       return [200, "ok", {
-//           "Set-Cookie": cookie.build("theme", "dark",
-//               { http_only: true, max_age: 2592000 })
-//       }];
-//   });
-//
-// Multiple Set-Cookie headers on one response: bnl maps don't allow
-// duplicate keys, so for >1 cookie use cookie.build for each and the
-// `cookies` shorthand on the web response shape:
-//   return { status: 200, body: "...", cookies: [
-//       cookie.build("a", "1"),
-//       cookie.build("b", "2", { max_age: 3600 }) ]
-//   };
-// (See web.bnl for how that's wired into the canonical response.)
-
-// parse(cookie_header_value) — `"a=1; b=2"` → `{a: "1", b: "2"}`. Values
-// are NOT percent-decoded; the user can call url.decode if they need that.
 function parse(header) {
     var out = {};
     if (header == null or header.byte_length == 0) { return out; }
@@ -40,15 +16,6 @@ function parse(header) {
     return out;
 }
 
-// build(name, value [, opts]) — produce a Set-Cookie header VALUE (just
-// the value, not "Set-Cookie: ..."). opts keys:
-//   path:       "/"
-//   domain:     "example.com"
-//   max_age:    seconds-from-now (number)
-//   expires:    RFC 1123 date string
-//   http_only:  true / false
-//   secure:     true / false
-//   same_site:  "Strict" / "Lax" / "None"
 function build(name, value, opts) {
     var s = name + "=" + str(value);
     if (opts == null) { return s; }
@@ -62,9 +29,6 @@ function build(name, value, opts) {
     return s;
 }
 
-// delete_(name [, opts]) — convenience for invalidating a cookie. Sets
-// Max-Age=0 + matching Path/Domain so the browser drops it. (Named with
-// trailing underscore to avoid the very-common identifier `delete`.)
 function delete_(name, opts) {
     if (opts == null) { opts = {}; }
     opts.max_age = 0;

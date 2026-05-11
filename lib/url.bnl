@@ -1,12 +1,12 @@
 function _hex_nibble(n) {
-    if (n < 10) { return chr(48 + n); }            // 0-9
-    return chr(65 + n - 10);                        // A-F
+    if (n < 10) { return chr(48 + n); }
+    return chr(65 + n - 10);
 }
 
 function _nibble_val(b) {
     if (b >= 48 and b <= 57)  { return b - 48; }
-    if (b >= 65 and b <= 70)  { return b - 55; }   // A-F  -> 10..15
-    if (b >= 97 and b <= 102) { return b - 87; }   // a-f
+    if (b >= 65 and b <= 70)  { return b - 55; }
+    if (b >= 97 and b <= 102) { return b - 87; }
     return -1;
 }
 
@@ -30,7 +30,6 @@ function parse(s) {
 
     var rest = s.byte_slice(ci + 3);
 
-    // Compute boundaries within `rest`.
     var len = rest.byte_length;
     var ps = rest.index_of("/");
     var qs = rest.index_of("?");
@@ -56,7 +55,6 @@ function parse(s) {
 
     rest = rest.byte_slice(host_end);
 
-    // path
     if (rest.byte_length == 0 or rest.starts_with("?") or rest.starts_with("#")) {
         url.path = "/";
     } else {
@@ -69,7 +67,6 @@ function parse(s) {
         rest = rest.byte_slice(pe);
     }
 
-    // query
     if (rest.starts_with("?")) {
         var qe = rest.byte_length;
         var ff2 = rest.index_of("#");
@@ -78,13 +75,11 @@ function parse(s) {
         rest = rest.byte_slice(qe);
     }
 
-    // fragment
     if (rest.starts_with("#")) { url.fragment = rest.byte_slice(1); }
 
     return url;
 }
 
-// RFC 3986 percent-encoding. Unreserved set: A-Z a-z 0-9 - _ . ~
 function encode(s) {
     var out = "";
     var i = 0;
@@ -101,7 +96,6 @@ function encode(s) {
     return out;
 }
 
-// Decode percent-encoded bytes. `+` becomes a space (form-encoding compatible).
 function decode(s) {
     var out = "";
     var i = 0;
@@ -126,7 +120,6 @@ function decode(s) {
     return out;
 }
 
-// Encode a {k: v, ...} map to k=v&k2=v2 (values are str()-ified, null → "").
 function build_query(params) {
     var parts = [];
     for (var k of params.keys()) {
@@ -137,7 +130,6 @@ function build_query(params) {
     return _join(parts, "&");
 }
 
-// Decode k=v&k2=v2 into a map. Bare keys (no `=`) get "".
 function parse_query(s) {
     var out = {};
     if (s.byte_length == 0) { return out; }

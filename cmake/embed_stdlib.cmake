@@ -16,11 +16,16 @@ string(APPEND content
 string(APPEND content
     "    static const std::unordered_map<std::string, std::string> table = {\n")
 
-# MSVC's per-literal limit is 16,380 bytes. We chunk well under that so the
-# adjacent raw-string literals concatenate cleanly at compile time. The
-# `BNL_EMBED` delimiter is unique enough that no bnl source contains the
-# closing `)BNL_EMBED"` sequence.
-set(CHUNK_SIZE 8000)
+# MSVC's per-literal limit is 16,380 bytes; our `R"BNL_EMBED(...)BNL_EMBED"`
+# delimiter is 23 bytes of overhead, so usable payload is 16,357. We chunk
+# at 16,000 to leave a small margin. Adjacent raw-string literals concatenate
+# at compile time. The BNL_EMBED delimiter is unique enough that no bnl
+# source contains the closing `)BNL_EMBED"` sequence.
+#
+# With this size, every lib/*.bnl file except the three largest (web,
+# template, request) fits in a single literal — the inner substring loop
+# below runs at most twice for the big three and not at all for the rest.
+set(CHUNK_SIZE 16000)
 
 foreach(file ${lib_files})
     get_filename_component(name "${file}" NAME_WE)
