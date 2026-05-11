@@ -1,0 +1,33 @@
+--- while + break ---
+0
+1
+2
+3
+4
+after break i= 5
+--- while + continue ---
+odd j= 1
+odd j= 3
+odd j= 5
+--- C-style for + break ---
+for k= 0
+for k= 1
+for k= 2
+--- C-style for + continue ---
+for m= 0
+for m= 1
+for m= 3
+for m= 4
+--- for-of + break ---
+a
+b
+--- for-of + continue ---
+1
+3
+4
+--- switch + continue in outer loop ---
+kept: 1
+kept: 3
+--- Bangla break/continue ---
+bn p= 1
+bn p= 3

@@ -324,6 +324,47 @@ public:
         out_ += ')';
     }
 
+    void visit(SwitchStmt& s) override {
+        indent();
+        out_ += "(switch ";
+        s.subject->accept(*this);
+        depth_++;
+        for (const auto& c : s.cases) {
+            out_ += '\n';
+            indent();
+            out_ += "(case";
+            for (const auto& v : c.values) {
+                out_ += ' ';
+                v->accept(*this);
+            }
+            depth_++;
+            for (const auto& st : c.body) { out_ += '\n'; st->accept(*this); }
+            depth_--;
+            out_ += ')';
+        }
+        if (s.has_default) {
+            out_ += '\n';
+            indent();
+            out_ += "(default";
+            depth_++;
+            for (const auto& st : s.default_body) { out_ += '\n'; st->accept(*this); }
+            depth_--;
+            out_ += ')';
+        }
+        depth_--;
+        out_ += ')';
+    }
+
+    void visit(BreakStmt&) override {
+        indent();
+        out_ += "(break)";
+    }
+
+    void visit(ContinueStmt&) override {
+        indent();
+        out_ += "(continue)";
+    }
+
 private:
     void indent() {
         for (int i = 0; i < depth_; ++i) out_ += "  ";

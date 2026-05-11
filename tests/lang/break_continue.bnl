@@ -1,0 +1,67 @@
+// break / continue in while, C-style for, and for-of.
+
+// ---- while + break ----
+print("--- while + break ---");
+var i = 0;
+while (i < 10) {
+    if (i == 5) { break; }
+    print(i);
+    i = i + 1;
+}
+print("after break i=", i);
+
+// ---- while + continue ----
+print("--- while + continue ---");
+var j = 0;
+while (j < 5) {
+    j = j + 1;
+    if (j % 2 == 0) { continue; }
+    print("odd j=", j);
+}
+
+// ---- C-style for + break ----
+print("--- C-style for + break ---");
+for (var k = 0; k < 10; k = k + 1) {
+    if (k == 3) { break; }
+    print("for k=", k);
+}
+
+// ---- C-style for + continue (update still runs) ----
+print("--- C-style for + continue ---");
+for (var m = 0; m < 5; m = m + 1) {
+    if (m == 2) { continue; }
+    print("for m=", m);
+}
+
+// ---- for-of + break ----
+print("--- for-of + break ---");
+for (var x of ["a", "b", "c", "d"]) {
+    if (x == "c") { break; }
+    print(x);
+}
+
+// ---- for-of + continue ----
+print("--- for-of + continue ---");
+for (var y of [1, 2, 3, 4]) {
+    if (y == 2) { continue; }
+    print(y);
+}
+
+// ---- continue inside switch passes through to enclosing loop ----
+print("--- switch + continue in outer loop ---");
+for (var n of [1, 2, 3]) {
+    switch (n) {
+        case 2: { continue; }
+        default: { print("kept:", n); }
+    }
+}
+
+// ---- Bangla: থামুন / চলুন ----
+print("--- Bangla break/continue ---");
+চলক p = 0;
+যতক্ষণ (p < 5) {
+    p = p + 1;
+    যদি (p == 2) { চলুন; }
+    যদি (p == 4) { থামুন; }
+    print("bn p=", p);
+}

@@ -50,6 +50,16 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"throw",     TokenType::Throw},   {"\xe0\xa6\xa8\xe0\xa6\xbf\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa7\x87\xe0\xa6\xaa",         TokenType::Throw},     // নিক্ষেপ
         {"finally",   TokenType::Finally}, {"\xe0\xa6\x85\xe0\xa6\xac\xe0\xa6\xb6\xe0\xa7\x87\xe0\xa6\xb7\xe0\xa7\x87",                     TokenType::Finally},   // অবশেষে
 
+        // Switch / multi-way branching
+        {"switch",    TokenType::Switch},  {"\xe0\xa6\xac\xe0\xa6\xbf\xe0\xa6\x95\xe0\xa6\xb2\xe0\xa7\x8d\xe0\xa6\xaa",                     TokenType::Switch},    // বিকল্প
+        {"case",      TokenType::Case},    {"\xe0\xa6\x85\xe0\xa6\xac\xe0\xa6\xb8\xe0\xa7\x8d\xe0\xa6\xa5\xe0\xa6\xbe",                     TokenType::Case},      // অবস্থা
+        {"default",   TokenType::Default}, {"\xe0\xa6\x85\xe0\xa6\xa8\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xa5\xe0\xa6\xbe\xe0\xa7\x9f",                 TokenType::Default},   // অন্যথায় (NFC: য় = U+09DF)
+        {"\xe0\xa6\x85\xe0\xa6\xa8\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xa5\xe0\xa6\xbe\xe0\xa6\xaf\xe0\xa6\xbc", TokenType::Default},   // অন্যথায় (NFD: য + ◌়)
+
+        // Loop / switch flow
+        {"break",     TokenType::Break},   {"\xe0\xa6\xa5\xe0\xa6\xbe\xe0\xa6\xae\xe0\xa7\x81\xe0\xa6\xa8",                                 TokenType::Break},     // থামুন
+        {"continue",  TokenType::Continue},{"\xe0\xa6\x9a\xe0\xa6\xb2\xe0\xa7\x81\xe0\xa6\xa8",                                             TokenType::Continue},  // চলুন
+
         // Note: `print` / `লিখুন` are deliberately NOT keywords. They are ordinary
         // identifiers that the runtime registers as builtin functions in the
         // global scope (with both Bangla and English names aliased to one impl).
@@ -396,6 +406,11 @@ const char* token_type_name(TokenType type) {
         case TokenType::Throw:      return "Throw";
         case TokenType::Finally:    return "Finally";
         case TokenType::Of:         return "Of";
+        case TokenType::Switch:     return "Switch";
+        case TokenType::Case:       return "Case";
+        case TokenType::Default:    return "Default";
+        case TokenType::Break:      return "Break";
+        case TokenType::Continue:   return "Continue";
         case TokenType::LParen:     return "LParen";
         case TokenType::RParen:     return "RParen";
         case TokenType::LBrace:     return "LBrace";

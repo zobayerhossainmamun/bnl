@@ -1,0 +1,70 @@
+// switch / case / default — Rust-style (no fall-through).
+
+function describe(n) {
+    switch (n) {
+        case 1: { return "one"; }
+        case 2:
+        case 3: { return "two or three"; }
+        case 4: {
+            // explicit break exits the switch — return below this is unreachable
+            // when n == 4, but the early `return` here exercises the same exit.
+            return "four";
+        }
+        default: { return "other"; }
+    }
+}
+
+print(describe(1));
+print(describe(2));
+print(describe(3));
+print(describe(4));
+print(describe(99));
+
+// Strings work too — uses Value::equals().
+function color_code(name) {
+    switch (name) {
+        case "red":   { return 1; }
+        case "green": { return 2; }
+        case "blue":  { return 3; }
+        default:      { return 0; }
+    }
+}
+
+print(color_code("red"));
+print(color_code("green"));
+print(color_code("violet"));
+
+// No default — falls through to nothing.
+var matched = false;
+switch (42) {
+    case 1: { matched = true; }
+}
+print("matched:", matched);
+
+// explicit `break` inside a case exits the switch cleanly.
+function early_out(n) {
+    var counter = 0;
+    switch (n) {
+        case 1: {
+            counter = counter + 1;
+            break;
+            counter = 999;   // unreachable
+        }
+        default: { counter = -1; }
+    }
+    return counter;
+}
+print("early_out:", early_out(1));
+print("early_out:", early_out(5));
+
+// Bangla form — বিকল্প / অবস্থা / অন্যথায়.
+ফাংশন bn_describe(n) {
+    বিকল্প (n) {
+        অবস্থা 1: { ফেরত "এক"; }
+        অবস্থা 2: { ফেরত "দুই"; }
+        অন্যথায়: { ফেরত "অন্য"; }
+    }
+}
+print(bn_describe(1));
+print(bn_describe(2));
+print(bn_describe(99));

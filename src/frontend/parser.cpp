@@ -6,6 +6,32 @@ namespace bnl {
 
 Parser::Parser(std::vector<Token> tokens) : tokens_(std::move(tokens)) {}
 
+namespace {
+// True for token types that have an alphabetic lexeme — every keyword plus
+// Identifier itself. Map keys and member access (`obj.field`) accept any of
+// these as a bareword, so users can write `{default: 1}` or `args.default`
+// even when `default` is a reserved keyword.
+bool is_namelike_token(TokenType t) {
+    switch (t) {
+        case TokenType::Identifier:
+        case TokenType::If:    case TokenType::Else:
+        case TokenType::While: case TokenType::For:    case TokenType::Of:
+        case TokenType::Function: case TokenType::Return:
+        case TokenType::Var:
+        case TokenType::Class: case TokenType::Extends: case TokenType::Super:
+        case TokenType::Import: case TokenType::As:
+        case TokenType::And: case TokenType::Or: case TokenType::Not:
+        case TokenType::True: case TokenType::False: case TokenType::Null:
+        case TokenType::Try: case TokenType::Catch: case TokenType::Throw: case TokenType::Finally:
+        case TokenType::Switch: case TokenType::Case: case TokenType::Default:
+        case TokenType::Break:  case TokenType::Continue:
+            return true;
+        default:
+            return false;
+    }
+}
+}  // namespace
+
 std::vector<StmtPtr> Parser::parse() {
     std::vector<StmtPtr> stmts;
     while (!at_end()) {
@@ -92,13 +118,16 @@ StmtPtr Parser::class_declaration() {
 }
 
 StmtPtr Parser::statement() {
-    if (match({TokenType::If}))     return if_statement();
-    if (match({TokenType::While}))  return while_statement();
-    if (match({TokenType::For}))    return for_statement();
-    if (match({TokenType::Return})) return return_statement();
-    if (match({TokenType::Try}))    return try_statement();
-    if (match({TokenType::Throw}))  return throw_statement();
-    if (match({TokenType::LBrace})) return block_statement();
+    if (match({TokenType::If}))       return if_statement();
+    if (match({TokenType::While}))    return while_statement();
+    if (match({TokenType::For}))      return for_statement();
+    if (match({TokenType::Return}))   return return_statement();
+    if (match({TokenType::Try}))      return try_statement();
+    if (match({TokenType::Throw}))    return throw_statement();
+    if (match({TokenType::Switch}))   return switch_statement();
+    if (match({TokenType::Break}))    return break_statement();
+    if (match({TokenType::Continue})) return continue_statement();
+    if (match({TokenType::LBrace}))   return block_statement();
     return expression_statement();
 }
 
@@ -225,6 +254,82 @@ StmtPtr Parser::throw_statement() {
     ExprPtr value = expression();
     consume(TokenType::Semicolon, "expected ';' after throw value");
     return std::make_unique<ThrowStmt>(keyword, std::move(value));
+}
+
+// switch (subject) { case X: { ... } case Y: case Z: { ... } default: { ... } }
+//
+// No fall-through. Each case body is required to be wrapped in `{ ... }`,
+// and after the matching block runs control exits the switch. Multiple
+// `case <expr>:` lines stacked before a single block share that block.
+StmtPtr Parser::switch_statement() {
+    Token keyword = previous();   // 'switch' / 'বিকল্প'
+    consume(TokenType::LParen, "expected '(' after 'switch'");
+    ExprPtr subject = expression();
+    consume(TokenType::RParen, "expected ')' after switch subject");
+    consume(TokenType::LBrace, "expected '{' before switch body");
+
+    std::vector<SwitchCase> cases;
+    bool                    has_default  = false;
+    std::vector<StmtPtr>    default_body;
+
+    // Pending case values waiting for a body.
+    std::vector<ExprPtr> pending_values;
+
+    while (!check(TokenType::RBrace) && !at_end()) {
+        if (match({TokenType::Case})) {
+            ExprPtr v = expression();
+            consume(TokenType::Colon, "expected ':' after case value");
+            pending_values.push_back(std::move(v));
+
+            // If the next token is `{`, this case takes a body. Otherwise
+            // it stacks onto the next case / default.
+            if (check(TokenType::LBrace)) {
+                advance();   // consume '{'
+                std::vector<StmtPtr> body = block_body();
+                cases.push_back(SwitchCase{
+                    std::move(pending_values), std::move(body)});
+                pending_values.clear();
+            }
+        } else if (match({TokenType::Default})) {
+            consume(TokenType::Colon, "expected ':' after 'default'");
+            consume(TokenType::LBrace, "expected '{' after 'default:'");
+            std::vector<StmtPtr> body = block_body();
+            if (!pending_values.empty()) {
+                // Cases stacked before `default` share the default body.
+                cases.push_back(SwitchCase{
+                    std::move(pending_values), std::move(body)});
+                pending_values.clear();
+                has_default  = true;
+                default_body.clear();
+            } else {
+                has_default  = true;
+                default_body = std::move(body);
+            }
+        } else {
+            throw_error(peek(), "expected 'case' or 'default' inside switch body");
+        }
+    }
+    consume(TokenType::RBrace, "expected '}' after switch body");
+
+    if (!pending_values.empty()) {
+        throw_error(keyword, "switch has 'case' values with no body");
+    }
+
+    return std::make_unique<SwitchStmt>(keyword, std::move(subject),
+                                        std::move(cases),
+                                        has_default, std::move(default_body));
+}
+
+StmtPtr Parser::break_statement() {
+    Token keyword = previous();   // 'break' / 'থামুন'
+    consume(TokenType::Semicolon, "expected ';' after 'break'");
+    return std::make_unique<BreakStmt>(keyword);
+}
+
+StmtPtr Parser::continue_statement() {
+    Token keyword = previous();   // 'continue' / 'চলুন'
+    consume(TokenType::Semicolon, "expected ';' after 'continue'");
+    return std::make_unique<ContinueStmt>(keyword);
 }
 
 StmtPtr Parser::block_statement() {
@@ -363,7 +468,12 @@ ExprPtr Parser::call() {
         if (match({TokenType::LParen})) {
             expr = finish_call(std::move(expr));
         } else if (match({TokenType::Dot})) {
-            Token name = consume(TokenType::Identifier, "expected property name after '.'");
+            // Allow any name-like token (identifier or keyword) so users can
+            // write `args.default`, `obj.case`, etc.
+            if (!is_namelike_token(peek().type)) {
+                throw_error(peek(), "expected property name after '.'");
+            }
+            Token name = advance();
             expr = std::make_unique<MemberExpr>(std::move(expr), name);
         } else if (match({TokenType::LBracket})) {
             Token   bracket = previous();
@@ -439,8 +549,9 @@ ExprPtr Parser::primary() {
                     auto sv = previous().lexeme;
                     // Strip surrounding quotes; no escapes for map keys (keep simple).
                     key = std::string(sv.substr(1, sv.size() - 2));
-                } else if (match({TokenType::Identifier})) {
-                    key = std::string(previous().lexeme);
+                } else if (is_namelike_token(peek().type)) {
+                    // Accept any keyword as a bareword map key (e.g. `default`).
+                    key = std::string(advance().lexeme);
                 } else {
                     throw_error(peek(), "expected map key (identifier or string)");
                 }
@@ -541,6 +652,9 @@ void Parser::synchronize() {
             case TokenType::Return:
             case TokenType::Try:
             case TokenType::Throw:
+            case TokenType::Switch:
+            case TokenType::Break:
+            case TokenType::Continue:
                 return;
             default:
                 advance();

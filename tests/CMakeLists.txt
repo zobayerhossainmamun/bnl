@@ -29,6 +29,8 @@ add_bnl_test(classes_bilingual    lang)
 add_bnl_test(classes_inheritance  lang)
 add_bnl_test(try_catch            lang)
 add_bnl_test(for_loop             lang)
+add_bnl_test(switch_basic         lang)
+add_bnl_test(break_continue       lang)
 
 # ---------- built-in stdlib (sys, io, timers, regex, crypto, net, http, tls) -
 add_bnl_test(native_sys           stdlib)

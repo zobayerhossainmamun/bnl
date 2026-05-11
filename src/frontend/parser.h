@@ -41,6 +41,9 @@ private:
     StmtPtr import_statement(Token keyword);
     StmtPtr try_statement();
     StmtPtr throw_statement();
+    StmtPtr switch_statement();
+    StmtPtr break_statement();
+    StmtPtr continue_statement();
     StmtPtr block_statement();
     StmtPtr expression_statement();
 

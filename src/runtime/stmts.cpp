@@ -33,7 +33,10 @@ void Interpreter::visit(IfStmt& s) {
 void Interpreter::visit(WhileStmt& s) {
     while (evaluate(*s.cond).truthy()) {
         check_interrupt(s.keyword);
-        execute(*s.body);
+        try {
+            execute(*s.body);
+        } catch (const BreakSignal&)    { return; }
+          catch (const ContinueSignal&) { continue; }
     }
 }
 
@@ -47,7 +50,14 @@ void Interpreter::visit(ForStmt& s) {
     if (s.init) execute(*s.init);
     while (!s.cond || evaluate(*s.cond).truthy()) {
         check_interrupt(s.keyword);
-        execute(*s.body);
+        try {
+            execute(*s.body);
+        } catch (const BreakSignal&) {
+            environment_ = saved;
+            return;
+        } catch (const ContinueSignal&) {
+            // fall through to the update + next iteration
+        }
         if (s.update) evaluate(*s.update);
     }
 
@@ -69,9 +79,54 @@ void Interpreter::visit(ForOfStmt& s) {
         env->define(std::string(s.var.lexeme), v);
         auto saved   = environment_;
         environment_ = env;
-        execute(*s.body);
+        try {
+            execute(*s.body);
+        } catch (const BreakSignal&) {
+            environment_ = saved;
+            return;
+        } catch (const ContinueSignal&) {
+            // fall through to next iteration
+        }
         environment_ = saved;
     }
+}
+
+void Interpreter::visit(SwitchStmt& s) {
+    Value subject = evaluate(*s.subject);
+    bool  matched = false;
+
+    for (const auto& c : s.cases) {
+        bool case_matches = false;
+        for (const auto& v_expr : c.values) {
+            if (subject.equals(evaluate(*v_expr))) { case_matches = true; break; }
+        }
+        if (!case_matches) continue;
+
+        matched = true;
+        try {
+            execute_block(c.body, std::make_shared<Environment>(environment_));
+        } catch (const BreakSignal&) {
+            // explicit `break;` exits the switch — same end state as falling
+            // off the end of the case body.
+        }
+        break;   // no fall-through: stop after the first matching case.
+    }
+
+    if (!matched && s.has_default) {
+        try {
+            execute_block(s.default_body, std::make_shared<Environment>(environment_));
+        } catch (const BreakSignal&) {
+            // default body's `break;` also exits cleanly.
+        }
+    }
+}
+
+void Interpreter::visit(BreakStmt& s) {
+    throw BreakSignal{s.keyword};
+}
+
+void Interpreter::visit(ContinueStmt& s) {
+    throw ContinueSignal{s.keyword};
 }
 
 void Interpreter::visit(FunctionStmt& s) {

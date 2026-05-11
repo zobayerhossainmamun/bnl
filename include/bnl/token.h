@@ -35,6 +35,11 @@ enum class TokenType {
     Throw,
     Finally,
     Of,
+    Switch,
+    Case,
+    Default,
+    Break,
+    Continue,
 
     // Punctuation
     LParen,

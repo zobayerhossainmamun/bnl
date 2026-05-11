@@ -43,6 +43,9 @@ class TryStmt;
 class ThrowStmt;
 class ForStmt;
 class ForOfStmt;
+class SwitchStmt;
+class BreakStmt;
+class ContinueStmt;
 
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
@@ -86,6 +89,9 @@ public:
     virtual void visit(ThrowStmt&)      = 0;
     virtual void visit(ForStmt&)        = 0;
     virtual void visit(ForOfStmt&)      = 0;
+    virtual void visit(SwitchStmt&)     = 0;
+    virtual void visit(BreakStmt&)      = 0;
+    virtual void visit(ContinueStmt&)   = 0;
 };
 
 // ---- bases ------------------------------------------------------------------
@@ -414,6 +420,48 @@ public:
     Token   keyword;   // 'throw' — kept for error reporting
     ExprPtr value;
     ThrowStmt(Token k, ExprPtr v) : keyword(k), value(std::move(v)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// switch (subject) { case X: { ... } case Y: case Z: { ... } default: { ... } }
+//
+// No fall-through: each block runs at most once. Multi-value matching is
+// expressed by stacking `case`s before a block — a SwitchCase with multiple
+// `values` and one shared `body`. If no case matches and a `default_body` is
+// present, it runs.
+struct SwitchCase {
+    std::vector<ExprPtr> values;   // one or more case expressions sharing the body
+    std::vector<StmtPtr> body;     // statements inside the `{ ... }` block
+};
+
+class SwitchStmt : public Stmt {
+public:
+    Token                    keyword;          // 'switch' / 'বিকল্প'
+    ExprPtr                  subject;
+    std::vector<SwitchCase>  cases;
+    bool                     has_default;
+    std::vector<StmtPtr>     default_body;
+    SwitchStmt(Token k, ExprPtr s, std::vector<SwitchCase> cs,
+               bool hd, std::vector<StmtPtr> db)
+        : keyword(k), subject(std::move(s)), cases(std::move(cs)),
+          has_default(hd), default_body(std::move(db)) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// break;   — exits the nearest enclosing while / for / for-of / switch.
+class BreakStmt : public Stmt {
+public:
+    Token keyword;   // 'break' / 'থামুন' — for error reporting
+    explicit BreakStmt(Token k) : keyword(k) {}
+    void accept(StmtVisitor& v) override { v.visit(*this); }
+};
+
+// continue;  — skips to the next iteration of the nearest enclosing loop.
+// (Does NOT match a switch — continue in a switch propagates to an outer loop.)
+class ContinueStmt : public Stmt {
+public:
+    Token keyword;   // 'continue' / 'চলুন'
+    explicit ContinueStmt(Token k) : keyword(k) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };
 

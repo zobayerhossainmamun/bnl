@@ -56,6 +56,20 @@ struct ThrowSignal {
     Token token;
 };
 
+// Unwind out of the nearest enclosing while / for / for-of / switch when a
+// `break;` runs. `token` is the keyword, used to render a clean diagnostic
+// if a `break` escapes its enclosing construct.
+struct BreakSignal {
+    Token token;
+};
+
+// Unwind out of one iteration of the nearest enclosing loop when `continue;`
+// runs. Does not unwind switch — a switch inside a loop lets `continue` pass
+// through to the loop.
+struct ContinueSignal {
+    Token token;
+};
+
 class Interpreter : public ExprVisitor, public StmtVisitor {
 public:
     Interpreter();
@@ -159,6 +173,9 @@ public:
     void visit(ThrowStmt&)      override;
     void visit(ForStmt&)        override;
     void visit(ForOfStmt&)      override;
+    void visit(SwitchStmt&)     override;
+    void visit(BreakStmt&)      override;
+    void visit(ContinueStmt&)   override;
 
 private:
     Value evaluate(Expr& e);
