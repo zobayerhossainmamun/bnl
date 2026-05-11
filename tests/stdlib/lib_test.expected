@@ -1,0 +1,11 @@
+--- equal / not_equal ---
+ok
+--- is_true / is_false / is_null / not_null ---
+ok
+--- contains string + list ---
+ok
+--- throws ---
+ok
+--- failure detection ---
+caught mismatch: true
+caught non-throw

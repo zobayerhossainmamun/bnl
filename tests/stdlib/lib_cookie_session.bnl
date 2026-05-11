@@ -1,0 +1,65 @@
+// End-to-end exercise of cookies + sessions through the web layer. Two
+// requests in sequence:
+//   1. No cookie → server mints a session, increments visits to 1,
+//      sets Set-Cookie header.
+//   2. Replay the cookie → server reads existing session, increments to 2.
+import "web"     as web;
+import "request" as req;
+import "session" as session;
+import "cookie"  as cookie;
+
+print("--- cookie.parse + build ---");
+var parsed = cookie.parse("theme=dark; lang=en; tab=3");
+print(parsed.theme);
+print(parsed.lang);
+print(parsed.tab);
+
+var sc = cookie.build("sid", "abc123", {
+    path: "/", http_only: true, max_age: 3600, same_site: "Lax"
+});
+print(sc);
+
+print("--- session round-trip via web ---");
+var store = session.create_store(null);
+var app = web.app();
+app.before(store.before);
+app.after (store.after);
+
+app.get("/visit", function (r) {
+    var n = r.session.visits;
+    if (n == null) { n = 0; }
+    r.session.visits = n + 1;
+    return "visits=" + str(r.session.visits);
+});
+
+var server = app.listen({ port: 0 });
+var base   = "http://127.0.0.1:" + str(server.port);
+
+// First request: no cookie, expect visits=1 and a Set-Cookie header.
+req.get(base + "/visit", function (e1, r1) {
+    print("first body:", r1.body);
+    var set_cookie = r1.headers["set-cookie"];
+    print("first has set-cookie:", set_cookie != null);
+    print("first cookie name ok:", set_cookie.starts_with("bnl_sid="));
+
+    // Parse the sid out of the Set-Cookie value to replay it.
+    var semi = set_cookie.index_of(";");
+    var name_value = set_cookie;
+    if (semi >= 0) { name_value = set_cookie.byte_slice(0, semi); }
+
+    // Second request: send back the same cookie, expect visits=2.
+    req.request({
+        url:     base + "/visit",
+        method:  "GET",
+        headers: { "Cookie": name_value }
+    }, function (e2, r2) {
+        print("second body:", r2.body);
+
+        // Third request without cookie: fresh session, visits=1.
+        req.get(base + "/visit", function (e3, r3) {
+            print("third (no cookie) body:", r3.body);
+            print("store count:", store.count());
+            server.close();
+        });
+    });
+});

@@ -1,0 +1,12 @@
+--- cookie.parse + build ---
+dark
+en
+3
+sid=abc123; Path=/; Max-Age=3600; HttpOnly; SameSite=Lax
+--- session round-trip via web ---
+first body: visits=1
+first has set-cookie: true
+first cookie name ok: true
+second body: visits=2
+third (no cookie) body: visits=1
+store count: 2

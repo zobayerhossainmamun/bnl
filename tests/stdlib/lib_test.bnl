@@ -1,0 +1,37 @@
+// Exercise the test framework end-to-end. Each `test()` registers and
+// `run()` executes them. We expect 2 PASS lines + 0 failures with run()'s
+// exit-on-failure DISABLED for this test — so we use `equal`/`throws`
+// directly rather than calling `t.run()` (which would `sys.exit(1)` on
+// failure inside our assertions).
+import "test" as t;
+
+print("--- equal / not_equal ---");
+t.equal(1 + 1, 2);
+t.equal("foo", "foo");
+t.not_equal(1, 2);
+print("ok");
+
+print("--- is_true / is_false / is_null / not_null ---");
+t.is_true(true);
+t.is_false(false);
+t.is_null(null);
+t.not_null("x");
+print("ok");
+
+print("--- contains string + list ---");
+t.contains("hello world", "world");
+t.contains([1, 2, 3], 2);
+print("ok");
+
+print("--- throws ---");
+t.throws(function () { throw "boom"; });
+t.throws_with(function () { throw "out of range error"; }, "out of range");
+print("ok");
+
+print("--- failure detection ---");
+var caught = false;
+try { t.equal(1, 2); } catch (e) { caught = true; }
+print("caught mismatch:", caught);
+
+try { t.throws(function () { return 42; }); print("WRONG"); }
+catch (e) { print("caught non-throw"); }

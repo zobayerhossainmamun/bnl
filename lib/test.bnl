@@ -1,0 +1,124 @@
+import "sys" as _sys;
+
+// Tiny test framework for bnl. Usage:
+//
+//   import "test" as t;
+//
+//   t.test("addition", function () {
+//       t.equal(2 + 2, 4);
+//   });
+//
+//   t.test("upper case", function () {
+//       t.equal("foo".to_upper(), "FOO");
+//   });
+//
+//   t.test("missing keys", function () {
+//       var m = { a: 1 };
+//       t.is_null(m.b);
+//   });
+//
+//   t.test("bad keys throw", function () {
+//       t.throws(function () { throw "boom"; });
+//   });
+//
+//   t.run();    // executes all registered tests; exits 1 on any failure
+//
+// Run as: bnl my_spec.bnl
+
+var _tests = [];
+
+// test(name, fn) — register a test. fn takes no args; throw to fail.
+function test(name, fn) {
+    _tests.push({ name: name, fn: fn });
+}
+
+// equal(actual, expected) — value compare. Throws on mismatch.
+function equal(actual, expected) {
+    if (actual != expected) {
+        throw "expected " + _show(expected) + ", got " + _show(actual);
+    }
+}
+
+// not_equal(actual, expected) — opposite of equal.
+function not_equal(actual, expected) {
+    if (actual == expected) {
+        throw "expected NOT " + _show(expected) + ", but got it";
+    }
+}
+
+// is_true(v), is_false(v), is_null(v) — single-value checks.
+function is_true(v)  { if (v != true)  { throw "expected true, got "  + _show(v); } }
+function is_false(v) { if (v != false) { throw "expected false, got " + _show(v); } }
+function is_null(v)  { if (v != null)  { throw "expected null, got "  + _show(v); } }
+function not_null(v) { if (v == null)  { throw "expected not-null, got null"; } }
+
+// contains(haystack, needle) — substring (for strings) / item (for lists).
+function contains(haystack, needle) {
+    if (type(haystack) == "string") {
+        if (haystack.index_of(needle) < 0) {
+            throw "expected " + _show(haystack) + " to contain " + _show(needle);
+        }
+        return;
+    }
+    if (type(haystack) == "list") {
+        var i = 0;
+        while (i < haystack.length) {
+            if (haystack[i] == needle) { return; }
+            i = i + 1;
+        }
+        throw "expected list to contain " + _show(needle);
+    }
+    throw "contains: expected string or list, got " + type(haystack);
+}
+
+// throws(fn) — assert that fn() throws. Optional second arg matches message
+// substring.
+function throws(fn) {
+    var threw = false;
+    try { fn(); } catch (e) { threw = true; }
+    if (not threw) { throw "expected fn to throw, but it returned normally"; }
+}
+
+function throws_with(fn, message_substring) {
+    var threw = false;
+    var msg = "";
+    try { fn(); } catch (e) { threw = true; msg = str(e); }
+    if (not threw) {
+        throw "expected fn to throw, but it returned normally";
+    }
+    if (msg.index_of(message_substring) < 0) {
+        throw "expected thrown message to contain " + _show(message_substring)
+            + ", got " + _show(msg);
+    }
+}
+
+// run() — execute every registered test, print results, exit non-zero on
+// failure. Call at the end of your spec file.
+function run() {
+    var passed = 0;
+    var failed = 0;
+    var i = 0;
+    while (i < _tests.length) {
+        var t = _tests[i];
+        var err = null;
+        try { t.fn(); } catch (e) { err = e; }
+        if (err == null) {
+            print("ok  " + t.name);
+            passed = passed + 1;
+        } else {
+            print("FAIL " + t.name + " — " + str(err));
+            failed = failed + 1;
+        }
+        i = i + 1;
+    }
+    print("");
+    print(str(passed) + " passed, " + str(failed) + " failed");
+    if (failed > 0) { _sys.exit(1); }
+}
+
+// _show(v) — short repr for error messages.
+function _show(v) {
+    if (v == null)              { return "null"; }
+    if (type(v) == "string")    { return "\"" + v + "\""; }
+    return str(v);
+}

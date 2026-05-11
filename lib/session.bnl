@@ -1,0 +1,110 @@
+import "uuid"   as _uuid;
+import "cookie" as _cookie;
+
+// In-memory session store + before/after middleware that wires into
+// web.app. Sessions are keyed by a random UUID stored in an HttpOnly
+// cookie; per-session data is a bnl map living in-process. Pluggable —
+// you can implement the same {before, after} interface backed by Redis
+// or a DB later without changing handler code.
+//
+// Usage:
+//   import "web"     as web;
+//   import "session" as session;
+//
+//   var store = session.create_store();
+//   var app = web.app();
+//   app.before(store.before);
+//   app.after (store.after);
+//
+//   app.get("/", function (req) {
+//       var visits = req.session.visits;
+//       if (visits == null) { visits = 0; }
+//       req.session.visits = visits + 1;
+//       return "visit " + str(req.session.visits);
+//   });
+//
+//   app.listen(3000);
+//
+// `req.session` is a per-request COPY of the stored data — mutating
+// fields on it (including with the `req.session.foo = ...` syntax) is
+// safe and gets written back at response time.
+
+// create_store(opts?) → store object.
+// opts:
+//   cookie_name: "bnl_sid"
+//   max_age:     86400      (seconds; HttpOnly cookie lifetime)
+//   same_site:   "Lax"
+//   secure:      false      (set true behind HTTPS only)
+function create_store(opts) {
+    if (opts == null) { opts = {}; }
+    var cookie_name = opts.cookie_name; if (cookie_name == null) { cookie_name = "bnl_sid"; }
+    var max_age     = opts.max_age;     if (max_age     == null) { max_age     = 86400; }
+    var same_site   = opts.same_site;   if (same_site   == null) { same_site   = "Lax"; }
+    var secure      = opts.secure;      if (secure      == null) { secure      = false; }
+
+    var data_by_id = {};   // session_id -> map
+
+    var store = {};
+    store.cookie_name = cookie_name;
+    // NOTE: don't expose `.size` — bnl maps reserve that key as the
+    // intrinsic length accessor (always returns a number, shadowing any
+    // user-stored value). Use `store.count()` instead.
+    store.count = function () { return data_by_id.size; };
+
+    // before(req) — populate req.session from the cookie or mint a fresh
+    // session id. Stash the id on req._session_id so `after` knows where
+    // to persist back. Returns null → continue to the route.
+    store.before = function (req) {
+        var sid = null;
+        var ck  = req.headers["cookie"];
+        if (ck != null) {
+            sid = _cookie.parse(ck)[cookie_name];
+        }
+        if (sid == null or data_by_id[sid] == null) {
+            sid = _uuid.v4();
+            data_by_id[sid] = {};
+        }
+        req._session_id = sid;
+        req.session     = _copy_map(data_by_id[sid]);
+        return null;
+    };
+
+    // after(resp, req) — write req.session back to the store and attach
+    // the session cookie. Mounted on app.after.
+    store.after = function (resp, req) {
+        if (req._session_id == null) { return resp; }
+        data_by_id[req._session_id] = _copy_map(req.session);
+
+        var c = _cookie.build(cookie_name, req._session_id, {
+            path:      "/",
+            http_only: true,
+            max_age:   max_age,
+            same_site: same_site,
+            secure:    secure
+        });
+        if (resp.cookies == null) { resp.cookies = []; }
+        resp.cookies.push(c);
+        return resp;
+    };
+
+    // destroy(req) — drop the session from the store and arrange for the
+    // browser to delete the cookie. Call this from a logout route, then
+    // return your response — the after hook still runs and overwrites
+    // with the expired cookie.
+    store.destroy = function (req) {
+        if (req._session_id == null) { return; }
+        data_by_id[req._session_id] = null;
+        req.session = {};
+        req._session_id_expired = req._session_id;
+        req._session_id = null;
+    };
+
+    return store;
+}
+
+function _copy_map(m) {
+    var out = {};
+    if (m == null) { return out; }
+    for (var k of m.keys()) { out[k] = m[k]; }
+    return out;
+}

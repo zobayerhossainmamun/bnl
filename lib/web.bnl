@@ -8,6 +8,7 @@ import "timers"    as _timers;
 import "multipart" as _mp;
 import "template"  as _tpl;
 import "ws"        as _ws;
+import "cookie"   as _cookie;
 
 // Defaults applied to web.serve / app.listen opts when the caller doesn't
 // override. Hardening knobs only — connection logic doesn't depend on them.
@@ -215,8 +216,14 @@ function _coerce(value) {
             if (value.headers == null) { value.headers = {}; }
             return value;
         }
-        if (value.status != null and (value.body != null or value.headers != null)) {
-            var raw = { status: value.status, body: value.body, headers: value.headers };
+        if (value.status != null and (value.body != null or value.headers != null
+                                       or value.cookies != null)) {
+            var raw = {
+                status:  value.status,
+                body:    value.body,
+                headers: value.headers,
+                cookies: value.cookies
+            };
             if (raw.body == null)    { raw.body = ""; }
             if (raw.headers == null) { raw.headers = {}; }
             return raw;
@@ -268,6 +275,16 @@ function _write_response(conn, resp, on_done) {
     var out = "HTTP/1.1 " + str(status) + " " + _status_text(status) + "\r\n";
     for (var k of headers.keys()) {
         out = out + k + ": " + str(headers[k]) + "\r\n";
+    }
+    // Multiple Set-Cookie headers need a distinct wire line each — bnl
+    // maps disallow duplicate keys, so the response carries them in a
+    // separate `cookies: [...]` list which we serialise here.
+    if (resp.cookies != null and type(resp.cookies) == "list") {
+        var ci = 0;
+        while (ci < resp.cookies.length) {
+            out = out + "Set-Cookie: " + str(resp.cookies[ci]) + "\r\n";
+            ci = ci + 1;
+        }
     }
     out = out + "\r\n" + body;
 
@@ -350,6 +367,7 @@ function _enrich_for_app(req, params) {
     req.params = params;
     req.json   = function () { return _json.parse(req.body); };
     req.form   = function () { return _url.parse_query(req.body); };
+    req.cookies = function () { return _cookie.parse(req.headers["cookie"]); };
     req.file   = function (name) {
         var parts = _parse_multipart_cached(req);
         var i = 0;
