@@ -1,0 +1,261 @@
+import "timers" as timers;
+
+// Composition helpers for callback-based async functions.
+//
+// Bnlang's async model is plain error-first callbacks: every async function
+// takes a final `function (err, result) {...}` argument and is called back
+// when the work is done. That is a clean baseline, but nesting half a dozen
+// I/O steps quickly gets ugly. This library wraps the pattern with a handful
+// of composers, so you can run a list of tasks in series, in parallel, or
+// thread their results through a pipeline.
+//
+// All composers accept a final `done(err, results)` callback. On the first
+// task error, `done` is called with that error and the partially-filled
+// results list, and no further tasks are started. Tasks already in flight
+// during a parallel run will finish but their results are discarded.
+//
+// Conventions:
+//   - `tasks`           — list of `function (cb)`.
+//   - `waterfall` tasks — list of `function (prev, cb)`. The first task
+//                         receives `null` as `prev`.
+//   - `items`           — list of values; `iter(item, cb)` runs for each one.
+//
+// Note: composers assume each task eventually defers via real async work
+// (timers, I/O, network). Tasks that call back synchronously and recurse
+// deeply through `series` can grow the call stack.
+
+
+// series(tasks, done) — run tasks one after another, collect results in
+// input order. Stops on the first error and returns the partial list.
+function series(tasks, done) {
+    var n = tasks.length;
+    if (n == 0) { done(null, []); return; }
+
+    var results = [];
+    var i       = 0;
+
+    function next() {
+        if (i >= n) { done(null, results); return; }
+        tasks[i](function (err, result) {
+            if (err != null) { done(err, results); return; }
+            results.push(result);
+            i = i + 1;
+            next();
+        });
+    }
+
+    next();
+}
+
+
+// parallel(tasks, done) — start every task at once. Results land in input
+// order regardless of completion order. On the first error `done` fires
+// once; later completions are dropped.
+function parallel(tasks, done) {
+    var n = tasks.length;
+    if (n == 0) { done(null, []); return; }
+
+    var results = [];
+    var i_init  = 0;
+    while (i_init < n) { results.push(null); i_init = i_init + 1; }
+
+    var pending = n;
+    var failed  = false;
+
+    function launch(idx) {
+        tasks[idx](function (err, result) {
+            if (failed) { return; }
+            if (err != null) {
+                failed = true;
+                done(err, results);
+                return;
+            }
+            results[idx] = result;
+            pending = pending - 1;
+            if (pending == 0) { done(null, results); }
+        });
+    }
+
+    var i = 0;
+    while (i < n) { launch(i); i = i + 1; }
+}
+
+
+// waterfall(tasks, done) — like `series` but each task receives the previous
+// task's result as `prev`. Every task takes `(prev, cb)`; the first task
+// gets `null`. The final `done(err, last_result)` carries the last task's
+// value, not a list.
+function waterfall(tasks, done) {
+    var n = tasks.length;
+    if (n == 0) { done(null, null); return; }
+
+    var i = 0;
+
+    function step(prev) {
+        if (i >= n) { done(null, prev); return; }
+        var task = tasks[i];
+        i = i + 1;
+        task(prev, function (err, result) {
+            if (err != null) { done(err, null); return; }
+            step(result);
+        });
+    }
+
+    step(null);
+}
+
+
+// each(items, iter, done) — run `iter(item, cb)` for every item in parallel.
+// No results are collected; `done(err)` fires when all callbacks return.
+function each(items, iter, done) {
+    var n = items.length;
+    if (n == 0) { done(null); return; }
+
+    var pending = n;
+    var failed  = false;
+
+    function launch(idx) {
+        iter(items[idx], function (err) {
+            if (failed) { return; }
+            if (err != null) { failed = true; done(err); return; }
+            pending = pending - 1;
+            if (pending == 0) { done(null); }
+        });
+    }
+
+    var i = 0;
+    while (i < n) { launch(i); i = i + 1; }
+}
+
+
+// each_series(items, iter, done) — like `each` but sequential. Useful when
+// the iter has ordering side effects (writing to the same file, for example).
+function each_series(items, iter, done) {
+    var n = items.length;
+    if (n == 0) { done(null); return; }
+
+    var i = 0;
+
+    function next() {
+        if (i >= n) { done(null); return; }
+        iter(items[i], function (err) {
+            if (err != null) { done(err); return; }
+            i = i + 1;
+            next();
+        });
+    }
+
+    next();
+}
+
+
+// map(items, iter, done) — like `each` but collects each iter's result into
+// a list (in input order). `done(err, results)`.
+function map(items, iter, done) {
+    var n = items.length;
+    if (n == 0) { done(null, []); return; }
+
+    var results = [];
+    var i_init  = 0;
+    while (i_init < n) { results.push(null); i_init = i_init + 1; }
+
+    var pending = n;
+    var failed  = false;
+
+    function launch(idx) {
+        iter(items[idx], function (err, result) {
+            if (failed) { return; }
+            if (err != null) { failed = true; done(err, results); return; }
+            results[idx] = result;
+            pending = pending - 1;
+            if (pending == 0) { done(null, results); }
+        });
+    }
+
+    var i = 0;
+    while (i < n) { launch(i); i = i + 1; }
+}
+
+
+// map_series(items, iter, done) — like `map` but sequential.
+function map_series(items, iter, done) {
+    var n = items.length;
+    if (n == 0) { done(null, []); return; }
+
+    var results = [];
+    var i       = 0;
+
+    function next() {
+        if (i >= n) { done(null, results); return; }
+        iter(items[i], function (err, result) {
+            if (err != null) { done(err, results); return; }
+            results.push(result);
+            i = i + 1;
+            next();
+        });
+    }
+
+    next();
+}
+
+
+// ----- apply_* helpers ----------------------------------------------------
+//
+// These accept a plain *sync* function `fn(item)` instead of a callback-style
+// `iter(item, cb)`. The wrapper defers each call onto the event loop via
+// `timers.set(0, ...)` so the loop stays responsive, and converts any throw
+// inside `fn` into an ordinary error delivered through `done`.
+//
+// Use these when you have a sync function and an array — they hide the
+// callback ceremony for the common case.
+//
+// Caveat: this is *not* CPU parallelism. The interpreter is single-threaded;
+// each `fn(item)` still blocks the loop while it runs. The win is API
+// friendliness and automatic error catching, not throughput.
+
+
+// apply_each(items, fn, done) — call `fn(item)` for every item (results
+// discarded). `done(err)` fires when all items complete; the first throw
+// short-circuits.
+function apply_each(items, fn, done) {
+    each(items, function (item, cb) {
+        timers.set(0, function () {
+            try { fn(item); cb(null); }
+            catch (e) { cb(e); }
+        });
+    }, done);
+}
+
+
+// apply_each_series(items, fn, done) — sequential `apply_each`.
+function apply_each_series(items, fn, done) {
+    each_series(items, function (item, cb) {
+        timers.set(0, function () {
+            try { fn(item); cb(null); }
+            catch (e) { cb(e); }
+        });
+    }, done);
+}
+
+
+// apply_map(items, fn, done) — call `fn(item)` for every item and collect
+// the return values into a list (in input order). `done(err, results)`.
+function apply_map(items, fn, done) {
+    map(items, function (item, cb) {
+        timers.set(0, function () {
+            try { cb(null, fn(item)); }
+            catch (e) { cb(e, null); }
+        });
+    }, done);
+}
+
+
+// apply_map_series(items, fn, done) — sequential `apply_map`.
+function apply_map_series(items, fn, done) {
+    map_series(items, function (item, cb) {
+        timers.set(0, function () {
+            try { cb(null, fn(item)); }
+            catch (e) { cb(e, null); }
+        });
+    }, done);
+}

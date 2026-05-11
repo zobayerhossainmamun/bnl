@@ -1,0 +1,37 @@
+--- series ---
+err is null: true
+len: 3
+a b c
+--- series error ---
+err: boom
+len: 1
+a
+--- parallel ---
+err is null: true
+1 2 3
+--- parallel error ---
+err: nope
+--- waterfall ---
+err is null: true
+final: 22
+--- each ---
+err is null: true
+count: 3
+--- each_series ---
+err is null: true
+10 20 30
+--- map ---
+err is null: true
+2 4 6
+--- map_series ---
+err is null: true
+2 4 6
+--- apply_map ---
+err is null: true
+10 20 30 40
+--- apply_each_series ---
+err is null: true
+a b c
+--- apply_map throw ---
+err: rejected: 2
+--- done ---

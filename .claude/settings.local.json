@@ -120,7 +120,9 @@
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >NUL && cmake --build --preset windows-release\")",
       "PowerShell(& \"C:\\\\Program Files\\\\CMake\\\\bin\\\\ctest.exe\" --test-dir build\\\\windows-release --output-on-failure -C Release 2>&1 | Select-Object -Last 8)",
       "Bash(C:/vcpkg/vcpkg search *)",
-      "PowerShell(Get-Process *)"
+      "PowerShell(Get-Process *)",
+      "Bash(cmake --build \"D:/bnlang/new-v/bnl/build/windows\" --target bnl)",
+      "PowerShell(D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe D:\\\\bnlang\\\\new-v\\\\bnl\\\\tests\\\\stdlib\\\\lib_async.bnl)"
     ]
   }
 }
