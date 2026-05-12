@@ -181,7 +181,9 @@
       "Bash(echo \"---vers exit: $?---\")",
       "Bash(echo \"---math exit: $?---\")",
       "Bash(echo \"---exit: $?---\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "PowerShell($ErrorActionPreference = 'Stop'; foreach \\($p in @\\('D:\\\\bnlang\\\\new-v\\\\bnl\\\\scripts\\\\package.ps1','D:\\\\bnlang\\\\new-v\\\\bnl-web\\\\public\\\\install.ps1'\\)\\) { $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile\\($p, [ref]$null, [ref]$errs\\); if \\($errs -and $errs.Count\\) { \"FAIL $p`n$\\($errs | Out-String\\)\" } else { \"OK   $p\" } })"
     ]
   }
 }
