@@ -152,7 +152,31 @@
       "Bash(cp D:/bnlang/new-v/bnl/include/bnl/plugin.h D:/bnlang/new-v/my-go-lib/bnl/plugin.h)",
       "PowerShell(go env *)",
       "PowerShell(Get-Item *)",
-      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --help)"
+      "PowerShell(& D:\\\\bnlang\\\\new-v\\\\bnl\\\\build\\\\windows\\\\bin\\\\bnl.exe --help)",
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(require\\('shiki/package.json'\\).version\\)\")",
+      "Bash(node -e \"const s = require\\('shiki'\\); console.log\\(Object.keys\\(s\\).filter\\(k => k.includes\\('ighlight'\\) || k.includes\\('odeTo'\\) || k.includes\\('Singleton'\\)\\).slice\\(0, 20\\)\\);\")",
+      "Bash(node -e ' *)",
+      "Bash(grep -c \"_pre\\\\\\\\\\\\\\\\\\\\\\\\]\" ../bpm-api/public/css/style.css)",
+      "Bash(grep -o \"\\\\\\\\.prose [^{]*pre[^{]*{[^}]*background-color:[^;}]*\" ../bpm-api/public/css/style.css)",
+      "Bash(grep -o \"\\\\\\\\[&_pre\\\\\\\\\\\\\\\\\\\\\\\\]:bg-zinc-50[^{]*{[^}]*}\" ../bpm-api/public/css/style.css)",
+      "Bash(grep -oE '\\\\\\\\\\\\[\\\\\\\\&_pre\\\\\\\\\\\\][^{,]*\\\\{[^}]{0,100}\\\\}' ../bpm-api/public/css/style.css)",
+      "Bash(grep -oE '\\\\\\\\\\\\[\\\\\\\\&_pre\\\\\\\\\\\\]\\\\\\\\\\\\:[a-z0-9-]+[^,]*pre\\\\{[^}]{0,80}\\\\}' ../bpm-api/public/css/style.css)",
+      "Bash(grep -oE '\\\\\\\\&_pre\\\\\\\\\\\\][^\\\\{]+\\\\{[^\\\\}]+\\\\}' ../bpm-api/public/css/style.css)",
+      "Bash(grep -oE ' pre\\\\{[^}]{0,120}\\\\}' ../bpm-api/public/css/style.css)",
+      "Bash(mkdir -p build/test)",
+      "Bash(cc -O2 -Isrc -shared -fPIC src/hash.c -o build/test/bnlhash.so)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File build.ps1)",
+      "Bash(powershell.exe -File build.ps1)",
+      "PowerShell(Rename-Item *)",
+      "PowerShell(Get-ChildItem -Recurse \"D:\\\\bnlang\\\\new-v\\\\example-libs\\\\bnlhash\" -Force | ForEach-Object { $f=$_; try { $h=[System.IO.File]::Open\\($f.FullName, 'Open', 'Read', 'None'\\); $h.Close\\(\\); \"free  $\\($f.FullName\\)\" } catch { \"LOCK  $\\($f.FullName\\)\" } } | Select-Object -First 15)",
+      "Bash(cmd.exe /c \"rd /s /q D:\\\\bnlang\\\\new-v\\\\example-libs\\\\bnlhash\")",
+      "Bash(command -v zig)",
+      "Bash(zig version *)",
+      "Bash(go vet *)",
+      "Bash(node -e 'const j=require\\('\\\\''D:/bnlang/new-v/example-libs/__TRACKED_VAR__/bnl.json'\\\\''\\); console.log\\('\\\\''  targets:'\\\\'', Object.keys\\(j.targets\\).join\\('\\\\'', '\\\\''\\)\\)')",
+      "PowerShell(powershell.exe -NoProfile -Command \"Get-Command -Syntax \\(Resolve-Path 'D:\\\\bnlang\\\\new-v\\\\example-libs\\\\simple-inih-cpp\\\\build.ps1'\\)\" 2>&1 | Select-Object -First 5)",
+      "Bash(file D:/bnlang/new-v/example-libs/simple-inih-cpp/build/windows-*/simple-inih-cpp.dll)"
     ]
   }
 }

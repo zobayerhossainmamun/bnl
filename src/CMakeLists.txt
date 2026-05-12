@@ -67,7 +67,22 @@ target_link_libraries(bnl_core
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
 )
 
-add_executable(bnl main.cpp)
+# On Windows, compile the .rc resource file into the executable so it carries
+# the bnlang.ico app icon (visible in Explorer, taskbar, alt-tab) plus the
+# VS_VERSION_INFO block (CompanyName / FileDescription / version, visible in
+# the file properties dialog). CMake invokes rc.exe automatically for .rc
+# sources on Windows. The .rc references bnlang.ico via a relative path, so
+# we also need to tell rc to look in resources/ for the .ico.
+if(WIN32)
+    add_executable(bnl main.cpp ${CMAKE_SOURCE_DIR}/resources/bnl.rc)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/resources/bnl.rc
+        PROPERTIES LANGUAGE RC)
+    # /I tells rc.exe where to find bnlang.ico (referenced relatively from bnl.rc).
+    set_property(SOURCE ${CMAKE_SOURCE_DIR}/resources/bnl.rc APPEND PROPERTY
+        COMPILE_OPTIONS /I${CMAKE_SOURCE_DIR}/resources)
+else()
+    add_executable(bnl main.cpp)
+endif()
 
 target_link_libraries(bnl
     PRIVATE
