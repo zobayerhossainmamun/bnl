@@ -180,7 +180,8 @@
       "Bash(echo \"---exit code: $?---\")",
       "Bash(echo \"---vers exit: $?---\")",
       "Bash(echo \"---math exit: $?---\")",
-      "Bash(echo \"---exit: $?---\")"
+      "Bash(echo \"---exit: $?---\")",
+      "Bash(node *)"
     ]
   }
 }

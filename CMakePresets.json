@@ -67,9 +67,10 @@
             "inherits": "_dev",
             "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
             "cacheVariables": {
-                "VCPKG_TARGET_TRIPLET": "x86-linux",
-                "CMAKE_C_FLAGS": "-m32",
-                "CMAKE_CXX_FLAGS": "-m32"
+                "VCPKG_TARGET_TRIPLET":   "x86-linux",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-triplets",
+                "CMAKE_C_FLAGS":          "-m32",
+                "CMAKE_CXX_FLAGS":        "-m32"
             }
         },
         {

@@ -17,3 +17,11 @@ set(VCPKG_CMAKE_SYSTEM_NAME Linux)
 
 set(VCPKG_C_FLAGS_RELEASE   "-O3 -DNDEBUG")
 set(VCPKG_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+
+# Apply NDEBUG to the *debug* variants of vcpkg ports too. We never step
+# through third-party deps with a debugger anyway, and the buggy SQLite
+# i386 assertion fires in vcpkg's debug build of sqlite3 just as it does
+# in release. Without this, the linux-x86 (Debug) preset crashes in
+# lib_sqlite / native_sqlite tests because it links vcpkg's debug sqlite3.
+set(VCPKG_C_FLAGS_DEBUG   "-DNDEBUG")
+set(VCPKG_CXX_FLAGS_DEBUG "-DNDEBUG")
