@@ -176,7 +176,11 @@
       "Bash(go vet *)",
       "Bash(node -e 'const j=require\\('\\\\''D:/bnlang/new-v/example-libs/__TRACKED_VAR__/bnl.json'\\\\''\\); console.log\\('\\\\''  targets:'\\\\'', Object.keys\\(j.targets\\).join\\('\\\\'', '\\\\''\\)\\)')",
       "PowerShell(powershell.exe -NoProfile -Command \"Get-Command -Syntax \\(Resolve-Path 'D:\\\\bnlang\\\\new-v\\\\example-libs\\\\simple-inih-cpp\\\\build.ps1'\\)\" 2>&1 | Select-Object -First 5)",
-      "Bash(file D:/bnlang/new-v/example-libs/simple-inih-cpp/build/windows-*/simple-inih-cpp.dll)"
+      "Bash(file D:/bnlang/new-v/example-libs/simple-inih-cpp/build/windows-*/simple-inih-cpp.dll)",
+      "Bash(echo \"---exit code: $?---\")",
+      "Bash(echo \"---vers exit: $?---\")",
+      "Bash(echo \"---math exit: $?---\")",
+      "Bash(echo \"---exit: $?---\")"
     ]
   }
 }

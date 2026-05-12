@@ -17,7 +17,11 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 if(MSVC)
-    add_compile_options(/W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
+    # /EHsc enables synchronous C++ exception handling — without it, MSVC
+    # warns C4530 and catch blocks silently fail to unwind, so any thrown
+    # exception (e.g. from nlohmann::json::parse on malformed input) escapes
+    # main() and triggers the CRT abort popup instead of being handled.
+    add_compile_options(/EHsc /W4 /permissive- /utf-8 /Zc:__cplusplus /Zc:preprocessor)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS UNICODE _UNICODE)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wconversion)

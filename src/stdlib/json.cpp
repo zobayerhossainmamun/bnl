@@ -155,6 +155,11 @@ void register_json(Interpreter& interp) {
         // number / string / list / map). On a malformed input, prints an
         // error to stderr and returns null. Returning null instead of
         // throwing preserves the legacy contract: `if (got == null) {...}`.
+        //
+        // We catch std::exception (every nlohmann exception derives from it)
+        // plus a bare catch — on Windows, catching the nested nlohmann type
+        // by its specific name doesn't always match across the vcpkg/MSVC
+        // boundary, so the std::exception base is the reliable funnel.
         .add_function("parse", 1,
             [](Interpreter&, std::vector<Value> args) -> Value {
                 if (!args[0].is_string())
@@ -162,8 +167,11 @@ void register_json(Interpreter& interp) {
                 try {
                     auto j = nlohmann::json::parse(args[0].as_string());
                     return json_to_value(j);
-                } catch (const nlohmann::json::parse_error& e) {
+                } catch (const std::exception& e) {
                     fmt::print(stderr, "json.parse: {}\n", e.what());
+                    return Value{};
+                } catch (...) {
+                    fmt::print(stderr, "json.parse: unknown error\n");
                     return Value{};
                 }
             })
