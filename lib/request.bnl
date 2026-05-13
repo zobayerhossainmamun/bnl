@@ -325,6 +325,16 @@ function _do_request(config, before_fns, after_fns, cb) {
     });
 }
 
+// Shallow-merge `config` into `verb_opts` so the verb's url/method/body
+// always win. `config` may be null (common case for the no-config call form).
+function _opts_with(verb_opts, config) {
+    if (config == null) { return verb_opts; }
+    var out = {};
+    for (var k of config.keys())     { out[k] = config[k]; }
+    for (var k of verb_opts.keys())  { out[k] = verb_opts[k]; }
+    return out;
+}
+
 function create(defaults) {
     if (defaults == null) { defaults = {}; }
     var inst = {};
@@ -335,74 +345,69 @@ function create(defaults) {
     inst.before   = function (fn) { before_fns.push(fn); return inst; };
     inst.after    = function (fn) { after_fns.push(fn);  return inst; };
 
-    inst.request = function (opts, cb) {
-        var cfg = _merge_config(defaults, opts);
-        _do_request(cfg, before_fns, after_fns, cb);
+    // Core entry point: takes a config map (url, method, headers, params,
+    // data/json/form/body, timeout, ...) and returns a Future that settles
+    // with the response. Wraps the callback-style `_do_request` driver.
+    inst.request = function (opts) {
+        return Future(function (resolve, reject) {
+            var cfg = _merge_config(defaults, opts);
+            _do_request(cfg, before_fns, after_fns, function (err, resp) {
+                if (err != null) { reject(err); }
+                else             { resolve(resp); }
+            });
+        });
     };
 
-    inst.get   = function (url, cb)        { inst.request({url: url, method: "GET"},    cb); };
-    inst.head  = function (url, cb)        { inst.request({url: url, method: "HEAD"},   cb); };
-    inst.delete = function (url, cb)       { inst.request({url: url, method: "DELETE"}, cb); };
-    inst.post  = function (url, data, cb)  { inst.request({url: url, method: "POST",  data: data}, cb); };
-    inst.put   = function (url, data, cb)  { inst.request({url: url, method: "PUT",   data: data}, cb); };
-    inst.patch = function (url, data, cb)  { inst.request({url: url, method: "PATCH", data: data}, cb); };
-
-    inst.post_form = function (url, fields, cb) {
-        inst.request({url: url, method: "POST", form: fields}, cb);
-    };
-
-    // ---- Future-returning (`_async`) variants -----------------------------
-    // Mirror each callback-style verb with a Future-returning version so user
-    // code can write `wait inst.get_async(url)` instead of nesting callbacks.
-    // Implemented via the `futurify` global, which wraps a callback-style
-    // function (last arg is the (err, result) callback) as one that returns
-    // a Future. These do not change the callback-form methods — both shapes
-    // coexist so old code keeps working during migration.
-    inst.request_async   = futurify(inst.request);
-    inst.get_async       = futurify(inst.get);
-    inst.head_async      = futurify(inst.head);
-    inst.delete_async    = futurify(inst.delete);
-    inst.post_async      = futurify(inst.post);
-    inst.put_async       = futurify(inst.put);
-    inst.patch_async     = futurify(inst.patch);
-    inst.post_form_async = futurify(inst.post_form);
+    // Verb shortcuts. Every verb accepts an optional `config` map (may be
+    // null) for headers / params / timeout / etc. The verb's URL, method,
+    // and body always win over config — config is purely additive.
+    inst.get       = function (url, config)         { return inst.request(_opts_with({url: url, method: "GET"},    config)); };
+    inst.head      = function (url, config)         { return inst.request(_opts_with({url: url, method: "HEAD"},   config)); };
+    inst.delete    = function (url, config)         { return inst.request(_opts_with({url: url, method: "DELETE"}, config)); };
+    inst.post      = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "POST",  data: data}, config)); };
+    inst.put       = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "PUT",   data: data}, config)); };
+    inst.patch     = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "PATCH", data: data}, config)); };
+    inst.post_form = function (url, fields, config) { return inst.request(_opts_with({url: url, method: "POST", form: fields}, config)); };
 
     return inst;
 }
 
 var _default = create({});
 
-function get(url, cb)         { _default.get(url, cb); }
-function head(url, cb)        { _default.head(url, cb); }
-function delete(url, cb)      { _default.delete(url, cb); }
-function post(url, data, cb)  { _default.post(url, data, cb); }
-function put(url, data, cb)   { _default.put(url, data, cb); }
-function patch(url, data, cb) { _default.patch(url, data, cb); }
-function request(opts, cb)    { _default.request(opts, cb); }
-function send(opts, cb)       { _default.request(opts, cb); }
-
-function post_form(url, fields, cb) { _default.post_form(url, fields, cb); }
-
-// Module-level `_async` variants — same as the callback-form functions above
-// but return a Future. Use with `wait` in an async context.
-function get_async(url)            { return _default.get_async(url); }
-function head_async(url)           { return _default.head_async(url); }
-function delete_async(url)         { return _default.delete_async(url); }
-function post_async(url, data)     { return _default.post_async(url, data); }
-function put_async(url, data)      { return _default.put_async(url, data); }
-function patch_async(url, data)    { return _default.patch_async(url, data); }
-function request_async(opts)       { return _default.request_async(opts); }
-function send_async(opts)          { return _default.request_async(opts); }
-function post_form_async(url, fields) { return _default.post_form_async(url, fields); }
+// Module-level shortcuts — same shape as the instance methods, routed
+// through the default (no-defaults) instance.
+function request(config)                { return _default.request(config); }
+function get(url, config)               { return _default.get(url, config); }
+function head(url, config)              { return _default.head(url, config); }
+function delete(url, config)            { return _default.delete(url, config); }
+function post(url, data, config)        { return _default.post(url, data, config); }
+function put(url, data, config)         { return _default.put(url, data, config); }
+function patch(url, data, config)       { return _default.patch(url, data, config); }
+function post_form(url, fields, config) { return _default.post_form(url, fields, config); }
 
 function before(fn) { _default.before(fn); }
 function after(fn)  { _default.after(fn);  }
 
-function download(url, dest, cb) {
-    download_with({ url: url, dest: dest }, cb);
+// download(url, dest, config) — streams the response body to `dest` on disk.
+// Returns a Future resolving with the response map enriched with .dest and
+// .bytes_written. config (may be null) accepts headers / params / timeout
+// like the verbs, plus an optional on_progress callback.
+function download(url, dest, config) {
+    var opts = { url: url, dest: dest };
+    if (config != null) {
+        for (var k of config.keys()) {
+            if (k != "url" and k != "dest") { opts[k] = config[k]; }
+        }
+    }
+    return Future(function (resolve, reject) {
+        _do_download(opts, function (err, resp) {
+            if (err != null) { reject(err); }
+            else             { resolve(resp); }
+        });
+    });
 }
 
-function download_with(opts, cb) {
+function _do_download(opts, cb) {
     var cfg = _merge_config(_default.defaults, opts);
     if (cfg.headers == null) { cfg.headers = {}; }
     if (not _has_header(cfg.headers, "user-agent")) {
@@ -495,11 +500,27 @@ function download_with(opts, cb) {
     });
 }
 
-function upload(url, file_path, cb) {
-    upload_with({ url: url, file: file_path }, cb);
+// upload(url, file, config) — multipart/form-data POST of `file` to `url`.
+// `file` is either a path string or a spec map {path, name, filename,
+// content_type}. Returns a Future resolving with the response. config (may
+// be null) can carry headers / params / timeout / fields (extra form fields
+// sent alongside the file).
+function upload(url, file, config) {
+    var opts = { url: url, file: file };
+    if (config != null) {
+        for (var k of config.keys()) {
+            if (k != "url" and k != "file") { opts[k] = config[k]; }
+        }
+    }
+    return Future(function (resolve, reject) {
+        _do_upload(opts, function (err, resp) {
+            if (err != null) { reject(err); }
+            else             { resolve(resp); }
+        });
+    });
 }
 
-function upload_with(opts, cb) {
+function _do_upload(opts, cb) {
     var spec = _normalize_file_spec(opts.file);
     var fields = opts.fields;
     if (fields == null) { fields = {}; }

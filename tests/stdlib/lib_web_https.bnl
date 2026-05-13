@@ -1,4 +1,4 @@
-// Embedded bnl stdlib — web.serve over HTTPS roundtripped via request.send.
+// Embedded bnl stdlib — web.serve over HTTPS roundtripped via request.
 // Same handler shape, opts.tls = {cert, key} on the server side, opts.tls
 // = {verify: false} on the client side (cert is self-signed).
 import "io"      as io;
@@ -16,12 +16,13 @@ var server = web.serve(
 
 print("port valid:", server.port > 0);
 
-req.send(
-    { url: "https://localhost:" + str(server.port) + "/api",
-      tls: { verify: false } },
-    function (e, r) {
-        if (e != null) { print("err:", e); server.close(); return; }
-        print("status:", r.status);
-        print("body:", r.body);
-        server.close();
+function run() {
+    var r = wait req.request({
+        url: "https://localhost:" + str(server.port) + "/api",
+        tls: { verify: false }
     });
+    print("status:", r.status);
+    print("body:", r.body);
+    server.close();
+}
+run().fail(function (e) { print("err:", e); server.close(); });

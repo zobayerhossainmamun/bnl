@@ -84,11 +84,13 @@ var server = web.serve({port: 0}, function (r) {
     }
     return [404, "nope"];
 });
-req.get("http://127.0.0.1:" + str(server.port) + "/page", function (e, resp) {
+function run() {
+    var resp = wait req.get("http://127.0.0.1:" + str(server.port) + "/page", null);
     print("status:", resp.status);
     print("ct:",     resp.headers["content-type"]);
     print("has h2:", resp.body.index_of("<h2>via http</h2>") >= 0);
     print("has li:", resp.body.index_of("data-i=\"1\"") >= 0);
     print("footer:", resp.body.index_of("<footer>(c) 2026</footer>") >= 0);
     server.close();
-});
+}
+run().fail(function (e) { print("err:", e); server.close(); });

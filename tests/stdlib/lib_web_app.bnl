@@ -73,115 +73,79 @@ var server = app.listen({ port: 0 });
 var base   = "http://127.0.0.1:" + str(server.port);
 print("port valid:", server.port > 0);
 
-function done() {
+function cleanup() {
     server.close();
     io.remove("_web_app_pub/hello.txt");
     io.remove("_web_app_pub");
 }
 
-// ---- Step 9: static file ----------------------------------------------------
-function step_static() {
-    r.get(base + "/assets/hello.txt", function (err, resp) {
-        print("static status:",  resp.status);
-        print("static ct:",      resp.headers["content-type"]);
-        print("static body:",    resp.body);
-
-        r.get(base + "/assets/nope.txt", function (e2, r2) {
-            print("static missing:", r2.status);
-            done();
-        });
-    });
-}
-
-// ---- Step 8: file upload round-trip via request.upload ---------------------
-function step_upload() {
-    io.write_file("_web_app_upload.txt", "uploaded payload");
-    r.upload_with({
-        url:    base + "/upload",
-        file:   { path: "_web_app_upload.txt", name: "photo",
-                  filename: "report.txt", content_type: "text/plain" },
-        fields: { user: "alice" }
-    }, function (err, resp) {
-        print("upload status:", resp.status);
-        var got = resp.data;
-        print("upload filename:",   got.filename);
-        print("upload bytes:",      got.bytes);
-        print("upload body_text:",  got.body_text);
-        print("upload field_name:", got.field_name);
-        io.remove("_web_app_upload.txt");
-        step_static();
-    });
-}
-
-// ---- Step 7: on_error catches thrown handler exceptions --------------------
-function step_error() {
-    r.get(base + "/boom", function (err, resp) {
-        print("error status:", resp.status);
-        print("error body:",   resp.body);
-        step_upload();
-    });
-}
-
-// ---- Step 6: on_404 custom handler -----------------------------------------
-function step_404() {
-    r.get(base + "/no-such-thing", function (err, resp) {
-        print("404 status:", resp.status);
-        print("404 body:",   resp.body);
-        step_error();
-    });
-}
-
-// ---- Step 5: before hook short-circuit -------------------------------------
-function step_before() {
-    r.get(base + "/locked/anything", function (err, resp) {
-        print("locked status:", resp.status);
-        print("locked body:",   resp.body);
-        step_404();
-    });
-}
-
-// ---- Step 4: null returns 204 ----------------------------------------------
-function step_null() {
-    r.delete(base + "/del", function (err, resp) {
-        print("204 status:", resp.status);
-        // Body should be empty.
-        print("204 body len:", resp.body.byte_length);
-        step_before();
-    });
-}
-
-// ---- Step 3: status + body shorthand ---------------------------------------
-function step_status_shorthand() {
-    r.post(base + "/users", { name: "alice" }, function (err, resp) {
-        print("created status:", resp.status);
-        print("created id:",     resp.data.id);
-        print("created echo:",   resp.data.echo);
-        step_null();
-    });
-}
-
-// ---- Step 2: path params + verb dispatch -----------------------------------
-function step_params() {
-    r.get(base + "/users/42", function (err, resp) {
-        print("user id:", resp.data.id);
-        r.put(base + "/echo-method", "x", function (e2, r2) {
-            print("verb dispatch:", r2.body);
-            step_status_shorthand();
-        });
-    });
-}
-
-// ---- Step 1: simple string + list responses --------------------------------
-r.get(base + "/", function (err, resp) {
+function run() {
+    // ---- Step 1: simple string + list responses ---------------------------
+    var resp = wait r.get(base + "/", null);
     print("root:", resp.body);
     print("root ct:", resp.headers["content-type"]);
-    // after hook should have added X-Trace
     print("after-hook:", resp.headers["x-trace"]);
 
-    r.get(base + "/users", function (e2, r2) {
-        print("users ct:", r2.headers["content-type"]);
-        print("users[0].name:", r2.data[0].name);
-        print("users[1].id:",   r2.data[1].id);
-        step_params();
-    });
-});
+    var r2 = wait r.get(base + "/users", null);
+    print("users ct:", r2.headers["content-type"]);
+    print("users[0].name:", r2.data[0].name);
+    print("users[1].id:",   r2.data[1].id);
+
+    // ---- Step 2: path params + verb dispatch ------------------------------
+    var ru = wait r.get(base + "/users/42", null);
+    print("user id:", ru.data.id);
+    var rp = wait r.put(base + "/echo-method", "x", null);
+    print("verb dispatch:", rp.body);
+
+    // ---- Step 3: status + body shorthand ----------------------------------
+    var rc = wait r.post(base + "/users", { name: "alice" }, null);
+    print("created status:", rc.status);
+    print("created id:",     rc.data.id);
+    print("created echo:",   rc.data.echo);
+
+    // ---- Step 4: null returns 204 -----------------------------------------
+    var rd = wait r.delete(base + "/del", null);
+    print("204 status:", rd.status);
+    print("204 body len:", rd.body.byte_length);
+
+    // ---- Step 5: before hook short-circuit --------------------------------
+    var rl = wait r.get(base + "/locked/anything", null);
+    print("locked status:", rl.status);
+    print("locked body:",   rl.body);
+
+    // ---- Step 6: on_404 custom handler ------------------------------------
+    var r404 = wait r.get(base + "/no-such-thing", null);
+    print("404 status:", r404.status);
+    print("404 body:",   r404.body);
+
+    // ---- Step 7: on_error catches thrown handler exceptions ---------------
+    var rb = wait r.get(base + "/boom", null);
+    print("error status:", rb.status);
+    print("error body:",   rb.body);
+
+    // ---- Step 8: file upload round-trip via request.upload ----------------
+    io.write_file("_web_app_upload.txt", "uploaded payload");
+    var rup = wait r.upload(base + "/upload",
+        { path: "_web_app_upload.txt", name: "photo",
+          filename: "report.txt", content_type: "text/plain" },
+        { fields: { user: "alice" } });
+    print("upload status:", rup.status);
+    var got = rup.data;
+    print("upload filename:",   got.filename);
+    print("upload bytes:",      got.bytes);
+    print("upload body_text:",  got.body_text);
+    print("upload field_name:", got.field_name);
+    io.remove("_web_app_upload.txt");
+
+    // ---- Step 9: static file ----------------------------------------------
+    var rs = wait r.get(base + "/assets/hello.txt", null);
+    print("static status:",  rs.status);
+    print("static ct:",      rs.headers["content-type"]);
+    print("static body:",    rs.body);
+
+    var rm = wait r.get(base + "/assets/nope.txt", null);
+    print("static missing:", rm.status);
+
+    cleanup();
+}
+run().fail(function (e) { print("err:", e); cleanup(); });

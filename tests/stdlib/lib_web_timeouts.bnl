@@ -10,14 +10,21 @@ var hang_server = web.serve({port: 0}, function (req) {
     return null;
 });
 
-r.request({
-    url:     "http://127.0.0.1:" + str(hang_server.port) + "/",
-    method:  "GET",
-    timeout: 200
-}, function (err, resp) {
-    print("err is not null:",        err != null);
-    print("err mentions timeout:",   err.index_of("timeout") >= 0);
-    print("resp is null:",           resp == null);
+function run() {
+    try {
+        var resp = wait r.request({
+            url:     "http://127.0.0.1:" + str(hang_server.port) + "/",
+            method:  "GET",
+            timeout: 200
+        });
+        print("err is not null:",      false);
+        print("err mentions timeout:", false);
+        print("resp is null:",         resp == null);
+    } catch (e) {
+        print("err is not null:",      e != null);
+        print("err mentions timeout:", e.index_of("timeout") >= 0);
+        print("resp is null:",         true);
+    }
     hang_server.close();
 
     print("--- 2. server returns 413 when body exceeds max_body_size ---");
@@ -29,11 +36,11 @@ r.request({
     var i = 0;
     while (i < 500) { big = big + "x"; i = i + 1; }
 
-    r.post("http://127.0.0.1:" + str(small_server.port) + "/", big,
-        function (e2, r2) {
-            print("413 status:", r2.status);
-            print("413 conn:",   r2.headers["connection"]);
-            print("413 body:",   r2.body);
-            small_server.close();
-        });
-});
+    var r2 = wait r.post("http://127.0.0.1:" + str(small_server.port) + "/",
+                         big, null);
+    print("413 status:", r2.status);
+    print("413 conn:",   r2.headers["connection"]);
+    print("413 body:",   r2.body);
+    small_server.close();
+}
+run().fail(function (e) { print("runner err:", e); });

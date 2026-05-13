@@ -1,5 +1,5 @@
 // Embedded bnl stdlib — request module (HTTP client). End-to-end against an
-// in-process web.serve instance.
+// in-process web.serve instance, using the wait-based API.
 import "web"     as web;
 import "request" as req;
 
@@ -18,14 +18,17 @@ var server = web.serve({port: 0}, function (r) {
 var base = "http://127.0.0.1:" + str(server.port);
 print("port valid:", server.port > 0);
 
-req.get(base + "/hello?name=alice", function (e1, r1) {
+function run() {
+    var r1 = wait req.get(base + "/hello?name=alice", null);
     print("hello:", r1.status, r1.body);
     print("ct:",    r1.headers["content-type"]);
-    req.post(base + "/echo", "ping payload", function (e2, r2) {
-        print("echo:", r2.status, r2.body);
-        req.get(base + "/missing", function (e3, r3) {
-            print("404:", r3.status, r3.body);
-            server.close();
-        });
-    });
-});
+
+    var r2 = wait req.post(base + "/echo", "ping payload", null);
+    print("echo:", r2.status, r2.body);
+
+    var r3 = wait req.get(base + "/missing", null);
+    print("404:", r3.status, r3.body);
+
+    server.close();
+}
+run().fail(function (e) { print("err:", e); server.close(); });

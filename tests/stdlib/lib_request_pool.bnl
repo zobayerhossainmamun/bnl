@@ -49,25 +49,22 @@ print("port valid:", server.port > 0);
 
 // Make 3 sequential pool:true requests. Each completes before the next
 // starts, giving the pool a chance to hand the same conn back out.
-var done_count = 0;
-var fire = function () {};
-fire = function () {
-    r.request({ url: base + "/r", method: "GET", pool: true },
-        function (err, resp) {
-            done_count = done_count + 1;
-            print("req", done_count, ":", resp.status, resp.body);
-            if (done_count < 3) { fire(); return; }
-            print("requests served:", request_count);
-            print("tcp accepts:",     accept_count);
-            print("pool reused:",     accept_count < request_count);
+function run() {
+    var i = 0;
+    while (i < 3) {
+        var resp = wait r.request({ url: base + "/r", method: "GET", pool: true });
+        i = i + 1;
+        print("req", i, ":", resp.status, resp.body);
+    }
+    print("requests served:", request_count);
+    print("tcp accepts:",     accept_count);
+    print("pool reused:",     accept_count < request_count);
 
-            // Final request with pool:false should open a fresh conn.
-            r.get(base + "/no-pool", function (e2, r2) {
-                print("no-pool body:",  r2.body);
-                print("accepts now:",   accept_count);
-                r.shutdown();
-                server.close();
-            });
-        });
-};
-fire();
+    // Final request with pool:false should open a fresh conn.
+    var r2 = wait r.get(base + "/no-pool", null);
+    print("no-pool body:",  r2.body);
+    print("accepts now:",   accept_count);
+    r.shutdown();
+    server.close();
+}
+run().fail(function (e) { print("err:", e); server.close(); });

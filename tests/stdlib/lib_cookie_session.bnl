@@ -35,8 +35,9 @@ app.get("/visit", function (r) {
 var server = app.listen({ port: 0 });
 var base   = "http://127.0.0.1:" + str(server.port);
 
-// First request: no cookie, expect visits=1 and a Set-Cookie header.
-req.get(base + "/visit", function (e1, r1) {
+function run() {
+    // First request: no cookie, expect visits=1 and a Set-Cookie header.
+    var r1 = wait req.get(base + "/visit", null);
     print("first body:", r1.body);
     var set_cookie = r1.headers["set-cookie"];
     print("first has set-cookie:", set_cookie != null);
@@ -48,18 +49,17 @@ req.get(base + "/visit", function (e1, r1) {
     if (semi >= 0) { name_value = set_cookie.byte_slice(0, semi); }
 
     // Second request: send back the same cookie, expect visits=2.
-    req.request({
+    var r2 = wait req.request({
         url:     base + "/visit",
         method:  "GET",
         headers: { "Cookie": name_value }
-    }, function (e2, r2) {
-        print("second body:", r2.body);
-
-        // Third request without cookie: fresh session, visits=1.
-        req.get(base + "/visit", function (e3, r3) {
-            print("third (no cookie) body:", r3.body);
-            print("store count:", store.count());
-            server.close();
-        });
     });
-});
+    print("second body:", r2.body);
+
+    // Third request without cookie: fresh session, visits=1.
+    var r3 = wait req.get(base + "/visit", null);
+    print("third (no cookie) body:", r3.body);
+    print("store count:", store.count());
+    server.close();
+}
+run().fail(function (e) { print("err:", e); server.close(); });
