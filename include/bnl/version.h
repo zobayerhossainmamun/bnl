@@ -2,7 +2,7 @@
 
 namespace bnl {
 
-inline constexpr const char* kVersion = "1.0.0";
+inline constexpr const char* kVersion = "2.0.0";
 
 #if defined(_WIN32)
 inline constexpr const char* kPlatform = "windows";
