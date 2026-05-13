@@ -1,22 +1,6 @@
-// Public io facade.
-//
-// The native I/O primitives live in the "_io" module — sync functions
-// return values directly; async functions take an (err, result) callback.
-// This lib re-exports the sync surface verbatim and wraps every callback-
-// style function with `futurify` so user code can write:
-//
-//     import "io" as io;
-//     var text = io.read_file("config.json");            // sync
-//     var big  = wait io.read_file_async("/big.bin");    // async, returns Future
-//
-// New code should prefer the async forms inside async contexts and reserve
-// the sync forms for startup-time config / small files.
-
 import "_io" as _io;
 
-// ---- Sync filesystem operations -------------------------------------------
-// These don't need wrapping — they return values directly.
-
+// Sync functions
 function read_file(path)         { return _io.read_file(path); }
 function write_file(path, data)  { return _io.write_file(path, data); }
 function append_file(path, data) { return _io.append_file(path, data); }
@@ -30,30 +14,23 @@ function remove(path)            { return _io.remove(path); }
 function rename(from, to)        { return _io.rename(from, to); }
 function copy_file(from, to)     { return _io.copy_file(from, to); }
 
-// ---- Async, Future-returning forms ----------------------------------------
-// futurify wraps a callback-style fn (last arg is (err, result) callback)
-// as one that returns a Future. Use with `wait`.
-
+// Async functions
 var read_file_async  = futurify(_io.read_file_async);
 var write_file_async = futurify(_io.write_file_async);
 
-// ---- Streams --------------------------------------------------------------
-// _io.open_read / open_write return a stream object whose .read / .write
-// methods are callback-style. Wrap those methods so users can `wait` on
-// individual chunks instead of nesting callbacks.
-
+// Streams
 function open_read(path) {
     var s = _io.open_read(path);
     var wrapped = {};
-    wrapped.read  = futurify(s.read);   // wait stream.read(size) → chunk or null
-    wrapped.close = s.close;            // sync
+    wrapped.read  = futurify(s.read);
+    wrapped.close = s.close;
     return wrapped;
 }
 
 function open_write(path) {
     var s = _io.open_write(path);
     var wrapped = {};
-    wrapped.write = futurify(s.write);  // wait stream.write(chunk)
+    wrapped.write = futurify(s.write);
     wrapped.close = s.close;
     return wrapped;
 }

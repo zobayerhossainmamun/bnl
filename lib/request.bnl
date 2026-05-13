@@ -325,8 +325,6 @@ function _do_request(config, before_fns, after_fns, cb) {
     });
 }
 
-// Shallow-merge `config` into `verb_opts` so the verb's url/method/body
-// always win. `config` may be null (common case for the no-config call form).
 function _opts_with(verb_opts, config) {
     if (config == null) { return verb_opts; }
     var out = {};
@@ -345,9 +343,6 @@ function create(defaults) {
     inst.before   = function (fn) { before_fns.push(fn); return inst; };
     inst.after    = function (fn) { after_fns.push(fn);  return inst; };
 
-    // Core entry point: takes a config map (url, method, headers, params,
-    // data/json/form/body, timeout, ...) and returns a Future that settles
-    // with the response. Wraps the callback-style `_do_request` driver.
     inst.request = function (opts) {
         return Future(function (resolve, reject) {
             var cfg = _merge_config(defaults, opts);
@@ -358,9 +353,6 @@ function create(defaults) {
         });
     };
 
-    // Verb shortcuts. Every verb accepts an optional `config` map for
-    // headers / params / timeout / etc. The verb's URL, method, and body
-    // always win over config — config is purely additive.
     inst.get       = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "GET"},    config)); };
     inst.head      = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "HEAD"},   config)); };
     inst.delete    = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "DELETE"}, config)); };
@@ -374,8 +366,6 @@ function create(defaults) {
 
 var _default = create({});
 
-// Module-level shortcuts — same shape as the instance methods, routed
-// through the default (no-defaults) instance.
 function request(config)                       { return _default.request(config); }
 function get(url, config = null)               { return _default.get(url, config); }
 function head(url, config = null)              { return _default.head(url, config); }
@@ -388,10 +378,6 @@ function post_form(url, fields, config = null) { return _default.post_form(url, 
 function before(fn) { _default.before(fn); }
 function after(fn)  { _default.after(fn);  }
 
-// download(url, dest, config) — streams the response body to `dest` on disk.
-// Returns a Future resolving with the response map enriched with .dest and
-// .bytes_written. config (may be null) accepts headers / params / timeout
-// like the verbs, plus an optional on_progress callback.
 function download(url, dest, config = null) {
     var opts = { url: url, dest: dest };
     if (config != null) {
@@ -500,11 +486,6 @@ function _do_download(opts, cb) {
     });
 }
 
-// upload(url, file, config) — multipart/form-data POST of `file` to `url`.
-// `file` is either a path string or a spec map {path, name, filename,
-// content_type}. Returns a Future resolving with the response. config (may
-// be null) can carry headers / params / timeout / fields (extra form fields
-// sent alongside the file).
 function upload(url, file, config = null) {
     var opts = { url: url, file: file };
     if (config != null) {
