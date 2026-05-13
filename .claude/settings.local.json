@@ -205,7 +205,8 @@
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\lang\\\\default_params.bnl)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\lib_io.bnl)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\lang\\\\bilingual_modules.bnl)",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "Bash(xargs -n1 basename)"
     ]
   }
 }
