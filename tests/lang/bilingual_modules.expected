@@ -1,0 +1,14 @@
+same timers module: true
+read via bangla import: hello bilingual
+Future is global: function
+ভবিষ্যৎ is global: function
+same builtin: true
+str: 42
+to_number: 3.14
+chr: A
+pretty: [1, 2, 3]
+dump: {a: 1}
+try_call: caught: oops
+same random module: true
+got: 42
+legacy via bangla: 11

@@ -32,6 +32,7 @@ add_bnl_test(for_loop             lang)
 add_bnl_test(switch_basic         lang)
 add_bnl_test(break_continue       lang)
 add_bnl_test(default_params       lang)
+add_bnl_test(bilingual_modules    lang)
 
 # ---------- built-in stdlib (sys, io, timers, regex, crypto, net, http, tls) -
 add_bnl_test(native_sys           stdlib)

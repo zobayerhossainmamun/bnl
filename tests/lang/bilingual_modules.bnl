@@ -1,0 +1,42 @@
+// Bilingual module + global aliases. Same Callable / Module instance is
+// reachable via English or Bangla names.
+
+// ---- Module alias: native ----
+import "টাইমার" as timers_bn;
+import "timers"   as timers_en;
+print("same timers module:", timers_bn == timers_en);
+
+// ---- Module alias: lib facade ----
+import "ফাইল" as io_bn;
+var p = "_bilingual_test.tmp";
+io_bn.write_file(p, "hello bilingual");
+print("read via bangla import:", io_bn.read_file(p));
+io_bn.remove(p);
+
+// ---- Global alias: Future / ভবিষ্যৎ ----
+print("Future is global:", type(Future));
+print("ভবিষ্যৎ is global:", type(ভবিষ্যৎ));
+print("same builtin:", Future == ভবিষ্যৎ);
+
+// ভবিষ্যৎ.of works just like Future.of
+ভবিষ্যৎ.of(42).next(function (v) { print("got:", v); });
+
+// ---- Global alias: futurify / ভবিষ্যৎকর ----
+function legacy(x, cb) { cb(null, x + 1); }
+var make_async = ভবিষ্যৎকর(legacy);
+make_async(10).next(function (v) { print("legacy via bangla:", v); });
+
+// ---- Other global aliases — each Bangla name calls the same Callable ----
+print("str:",       স্ট্রিং(42));
+print("to_number:", সংখ্যা("3.14"));
+print("chr:",       অক্ষর(65));
+print("pretty:",    সুন্দর([1, 2, 3]));
+print("dump:",      বিস্তারিত({a: 1}));
+print("try_call:",  নিরাপদ_কল(
+    function ()  { throw "oops"; },
+    function (e) { return "caught: " + e; }));
+
+// ---- Module alias: এলোমেলো / random ----
+import "এলোমেলো" as rng_bn;
+import "random"     as rng_en;
+print("same random module:", rng_bn == rng_en);

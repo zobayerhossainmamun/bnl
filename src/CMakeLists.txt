@@ -10,6 +10,7 @@ add_library(bnl_core STATIC
     runtime/environment.cpp
     runtime/class_type.cpp
     runtime/future.cpp
+    runtime/bn_aliases.cpp
     runtime/native_module.cpp
     runtime/module_loader.cpp
     runtime/interpreter.cpp

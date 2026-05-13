@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "bnl/interpreter.h"
+#include "runtime/bn_aliases.h"
 #include "runtime/environment.h"
 #include "runtime/internal.h"
 
@@ -388,7 +389,7 @@ FutureBuiltin::FutureBuiltin() {
 
 void register_future(Interpreter& interp) {
     auto builtin = std::make_shared<FutureBuiltin>();
-    interp.globals()->define("Future", Value{builtin});
+    bn_aliases::define_global(interp, "Future", Value{builtin});
 
     // futurify(fn): wrap a callback-style fn (last arg is (err, result) callback)
     // as a Future-returning function. usage:
@@ -420,7 +421,7 @@ void register_future(Interpreter& interp) {
                     return Value{fut};
                 }) };
         });
-    interp.globals()->define("futurify", Value{futurify_fn});
+    bn_aliases::define_global(interp, "futurify", Value{futurify_fn});
 }
 
 }  // namespace bnl

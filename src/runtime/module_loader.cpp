@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "runtime/bn_aliases.h"
 #include "runtime/environment.h"
 #include "bnl/interpreter.h"
 #include "ffi/dynamic_library.h"
@@ -265,18 +266,22 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
     }
 
     // Bare-name resolution chain:
+    //   0. Bangla → English alias normalization (so `import "ফাইল"` resolves
+    //      identically to `import "io"`, with the same Module instance).
     //   1. Built-in native modules (sys, io, timers, …)
     //   2. Embedded bnl stdlib (web, request, url, …) baked from lib/*.bnl
     //   3. Walk up: <ancestor>/deps/<name>/ — entry: bnl.json main / index.bnl / <name>.bnl
     //   4. Global:  $BNL_HOME/deps/<name>/ or ~/.bnl/deps/<name>/ — only outside a project
     //   5. Error.
 
-    if (auto m = interp_.native_module(path_string); m) {
+    const std::string& canonical_name = bn_aliases::canonical_module(path_string);
+
+    if (auto m = interp_.native_module(canonical_name); m) {
         return m;
     }
 
-    if (auto eit = embedded_stdlib().find(path_string); eit != embedded_stdlib().end()) {
-        std::string key = "<embedded:" + path_string + ">";
+    if (auto eit = embedded_stdlib().find(canonical_name); eit != embedded_stdlib().end()) {
+        std::string key = "<embedded:" + canonical_name + ">";
         if (auto cit = cache_.find(key); cit != cache_.end()) return cit->second;
         if (in_progress_.count(key)) {
             throw ModuleError(import_token,
@@ -295,6 +300,9 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
         return m;
     }
 
+    // For deps walk and global lookup, keep using the original name — only
+    // bnl-internal aliases live in the table above. A dep package author
+    // names their own folder.
     if (auto dep_dir = find_dep_in_walk(requesting_dir, path_string)) {
         if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
             return is_native_library_path(*entry)

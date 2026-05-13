@@ -1,6 +1,7 @@
 #include "bnl/interpreter.h"
 #include "runtime/internal.h"
 
+#include "runtime/bn_aliases.h"
 #include "runtime/environment.h"
 
 #include <fmt/core.h>
@@ -258,9 +259,7 @@ void Interpreter::register_builtins() {
             return Value{};
         });
 
-    // Both names point at the same Callable instance.
-    globals_->define("print",  Value{print_fn});
-    globals_->define("\xe0\xa6\xb2\xe0\xa6\xbf\xe0\xa6\x96\xe0\xa7\x81\xe0\xa6\xa8", Value{print_fn});  // লিখুন
+    bn_aliases::define_global(*this, "print", Value{print_fn});
 
     // str(x): convert any value to its display string.
     auto str_fn = std::make_shared<NativeFunction>(
@@ -268,7 +267,7 @@ void Interpreter::register_builtins() {
         [](Interpreter&, std::vector<Value> args) -> Value {
             return Value{args[0].to_display()};
         });
-    globals_->define("str", Value{str_fn});
+    bn_aliases::define_global(*this, "str", Value{str_fn});
 
     // type(x): return the type name as a string.
     auto type_fn = std::make_shared<NativeFunction>(
@@ -276,8 +275,7 @@ void Interpreter::register_builtins() {
         [](Interpreter&, std::vector<Value> args) -> Value {
             return Value{std::string(args[0].type_name())};
         });
-    globals_->define("type", Value{type_fn});
-    globals_->define("\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xa3", Value{type_fn});  // ধরণ
+    bn_aliases::define_global(*this, "type", Value{type_fn});
 
     // to_number(s): parse a string to a number, returning null on failure.
     auto to_number_fn = std::make_shared<NativeFunction>(
@@ -297,7 +295,7 @@ void Interpreter::register_builtins() {
                 return Value{};
             }
         });
-    globals_->define("to_number", Value{to_number_fn});
+    bn_aliases::define_global(*this, "to_number", Value{to_number_fn});
 
     // chr(n): single-byte string from byte value 0..255.
     auto chr_fn = std::make_shared<NativeFunction>(
@@ -310,7 +308,7 @@ void Interpreter::register_builtins() {
                 throw std::runtime_error("chr(n): n must be in 0..255");
             return Value{std::string(1, static_cast<char>(n))};
         });
-    globals_->define("chr", Value{chr_fn});
+    bn_aliases::define_global(*this, "chr", Value{chr_fn});
 
     // try_call(thunk, on_err): call thunk() with no args; if it throws, call
     // on_err(message_string). Returns thunk()'s return value, or on_err's
@@ -334,7 +332,7 @@ void Interpreter::register_builtins() {
                 return args[1].as_callable()->call(interp, { Value{std::string(e.what())} });
             }
         });
-    globals_->define("try_call", Value{try_call_fn});
+    bn_aliases::define_global(*this, "try_call", Value{try_call_fn});
 
     // pretty(x): pretty-formatted display string. Lists/maps are inline if
     // short, multi-line indented otherwise. Strings show their quotes
@@ -350,7 +348,7 @@ void Interpreter::register_builtins() {
             std::string s = format_pretty(args[0], 0, /*colorize=*/false);
             return Value{truncate_codepoints(std::move(s), limit)};
         });
-    globals_->define("pretty", Value{pretty_fn});
+    bn_aliases::define_global(*this, "pretty", Value{pretty_fn});
 
     // dump(x): same pretty format as `pretty()` but no truncation. Useful
     // when you need to see ALL of a deep value during debugging.
@@ -359,7 +357,7 @@ void Interpreter::register_builtins() {
         [](Interpreter&, std::vector<Value> args) -> Value {
             return Value{format_pretty(args[0], 0, /*colorize=*/false)};
         });
-    globals_->define("dump", Value{dump_fn});
+    bn_aliases::define_global(*this, "dump", Value{dump_fn});
     (void)utf8_codepoint_count;  // reserved for future use
 
     // input(prompt?): write the optional prompt to stdout (no newline), then
@@ -384,10 +382,7 @@ void Interpreter::register_builtins() {
             if (!line.empty() && line.back() == '\r') line.pop_back();
             return Value{std::move(line)};
         });
-    globals_->define("input", Value{input_fn});
-    // ইনপুট — Bangla transliteration; same callable.
-    globals_->define("\xe0\xa6\x87\xe0\xa6\xa8\xe0\xa6\xaa\xe0\xa7\x81\xe0\xa6\x9f",
-                     Value{input_fn});
+    bn_aliases::define_global(*this, "input", Value{input_fn});
 }
 
 }  // namespace bnl
