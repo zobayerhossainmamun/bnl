@@ -19,14 +19,14 @@ var base = "http://127.0.0.1:" + str(server.port);
 print("port valid:", server.port > 0);
 
 function run() {
-    var r1 = wait req.get(base + "/hello?name=alice", null);
+    var r1 = wait req.get(base + "/hello?name=alice");
     print("hello:", r1.status, r1.body);
     print("ct:",    r1.headers["content-type"]);
 
-    var r2 = wait req.post(base + "/echo", "ping payload", null);
+    var r2 = wait req.post(base + "/echo", "ping payload");
     print("echo:", r2.status, r2.body);
 
-    var r3 = wait req.get(base + "/missing", null);
+    var r3 = wait req.get(base + "/missing");
     print("404:", r3.status, r3.body);
 
     server.close();

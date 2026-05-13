@@ -61,7 +61,7 @@ function run() {
     print("pool reused:",     accept_count < request_count);
 
     // Final request with pool:false should open a fresh conn.
-    var r2 = wait r.get(base + "/no-pool", null);
+    var r2 = wait r.get(base + "/no-pool");
     print("no-pool body:",  r2.body);
     print("accepts now:",   accept_count);
     r.shutdown();

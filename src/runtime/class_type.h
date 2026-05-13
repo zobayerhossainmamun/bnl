@@ -36,8 +36,9 @@ public:
     // Calling a class instantiates it. Arity matches the user-visible side of
     // `init` — i.e. init's declared arity minus 1 for the implicit `self`.
     // For inherited classes with no own init, falls back to the parent's init.
-    int         arity() const override;
-    std::string name()  const override { return name_; }
+    int         arity()     const override;
+    int         min_arity() const override;
+    std::string name()      const override { return name_; }
     Value       call(Interpreter& interp, std::vector<Value> args) override;
 
     // Method-resolution order: own methods first, then walk up the parent
@@ -81,6 +82,10 @@ public:
         // Hide `self` from the caller. Variadic functions stay variadic.
         int a = fn_->arity();
         return a < 0 ? a : a - 1;
+    }
+    int min_arity() const override {
+        int n = fn_->min_arity();
+        return n < 0 ? n : (n > 0 ? n - 1 : 0);
     }
     std::string name() const override { return fn_->name(); }
 

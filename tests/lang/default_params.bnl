@@ -1,0 +1,58 @@
+// Default parameter values. Defaults are tail-only, evaluated per call in
+// the function's local env (so a later default can reference earlier params).
+
+// ---- 1. Simple default ----
+function greet(name, greeting = "hello") {
+    return greeting + ", " + name;
+}
+print(greet("alice"));            // hello, alice
+print(greet("bob", "hi"));        // hi, bob
+
+// ---- 2. Multiple defaults ----
+function box(w = 10, h = 20, label = "?") {
+    return "[" + str(w) + "x" + str(h) + " " + label + "]";
+}
+print(box());                     // [10x20 ?]
+print(box(5));                    // [5x20 ?]
+print(box(5, 7));                 // [5x7 ?]
+print(box(5, 7, "ok"));           // [5x7 ok]
+
+// ---- 3. Default references earlier param ----
+function range(start, end = start + 10) {
+    return "from " + str(start) + " to " + str(end);
+}
+print(range(0));                  // from 0 to 10
+print(range(100));                // from 100 to 110
+print(range(0, 5));               // from 0 to 5
+
+// ---- 4. Default is evaluated lazily per call ----
+var counter = 0;
+function next_id(id = counter + 1) {
+    counter = id;
+    return id;
+}
+print(next_id());                 // 1
+print(next_id());                 // 2
+print(next_id());                 // 3
+print(next_id(100));              // 100
+print(next_id());                 // 101
+
+// ---- 5. Defaults work in function expressions too ----
+var fmt = function (x, prefix = ">> ") { return prefix + str(x); };
+print(fmt(7));                    // >> 7
+print(fmt(7, "* "));              // * 7
+
+// ---- 6. Default is null (sentinel) ----
+function maybe(x = null) {
+    if (x == null) { return "absent"; }
+    return "got: " + str(x);
+}
+print(maybe());                   // absent
+print(maybe(42));                 // got: 42
+
+// ---- 7. Too many args still rejected ----
+try {
+    greet("alice", "hi", "extra");
+} catch (e) {
+    print("caught:", e);
+}

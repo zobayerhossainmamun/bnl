@@ -1,0 +1,19 @@
+hello, alice
+hi, bob
+[10x20 ?]
+[5x20 ?]
+[5x7 ?]
+[5x7 ok]
+from 0 to 10
+from 100 to 110
+from 0 to 5
+1
+2
+3
+100
+101
+>> 7
+* 7
+absent
+got: 42
+caught: function 'greet' expects 1 to 2 arguments, got 3

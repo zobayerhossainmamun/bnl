@@ -14,6 +14,14 @@ int Class::arity() const {
     return init_arity > 0 ? init_arity - 1 : 0;    // hide self
 }
 
+int Class::min_arity() const {
+    auto init = find_method("init");
+    if (!init) return 0;
+    int n = init->min_arity();
+    if (n < 0) return n;
+    return n > 0 ? n - 1 : 0;
+}
+
 Value Class::call(Interpreter& interp, std::vector<Value> args) {
     auto instance = std::make_shared<Instance>(shared_from_this());
     if (auto init = find_method("init"); init) {

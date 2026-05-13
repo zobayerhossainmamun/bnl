@@ -81,45 +81,45 @@ function cleanup() {
 
 function run() {
     // ---- Step 1: simple string + list responses ---------------------------
-    var resp = wait r.get(base + "/", null);
+    var resp = wait r.get(base + "/");
     print("root:", resp.body);
     print("root ct:", resp.headers["content-type"]);
     print("after-hook:", resp.headers["x-trace"]);
 
-    var r2 = wait r.get(base + "/users", null);
+    var r2 = wait r.get(base + "/users");
     print("users ct:", r2.headers["content-type"]);
     print("users[0].name:", r2.data[0].name);
     print("users[1].id:",   r2.data[1].id);
 
     // ---- Step 2: path params + verb dispatch ------------------------------
-    var ru = wait r.get(base + "/users/42", null);
+    var ru = wait r.get(base + "/users/42");
     print("user id:", ru.data.id);
-    var rp = wait r.put(base + "/echo-method", "x", null);
+    var rp = wait r.put(base + "/echo-method", "x");
     print("verb dispatch:", rp.body);
 
     // ---- Step 3: status + body shorthand ----------------------------------
-    var rc = wait r.post(base + "/users", { name: "alice" }, null);
+    var rc = wait r.post(base + "/users", { name: "alice" });
     print("created status:", rc.status);
     print("created id:",     rc.data.id);
     print("created echo:",   rc.data.echo);
 
     // ---- Step 4: null returns 204 -----------------------------------------
-    var rd = wait r.delete(base + "/del", null);
+    var rd = wait r.delete(base + "/del");
     print("204 status:", rd.status);
     print("204 body len:", rd.body.byte_length);
 
     // ---- Step 5: before hook short-circuit --------------------------------
-    var rl = wait r.get(base + "/locked/anything", null);
+    var rl = wait r.get(base + "/locked/anything");
     print("locked status:", rl.status);
     print("locked body:",   rl.body);
 
     // ---- Step 6: on_404 custom handler ------------------------------------
-    var r404 = wait r.get(base + "/no-such-thing", null);
+    var r404 = wait r.get(base + "/no-such-thing");
     print("404 status:", r404.status);
     print("404 body:",   r404.body);
 
     // ---- Step 7: on_error catches thrown handler exceptions ---------------
-    var rb = wait r.get(base + "/boom", null);
+    var rb = wait r.get(base + "/boom");
     print("error status:", rb.status);
     print("error body:",   rb.body);
 
@@ -138,12 +138,12 @@ function run() {
     io.remove("_web_app_upload.txt");
 
     // ---- Step 9: static file ----------------------------------------------
-    var rs = wait r.get(base + "/assets/hello.txt", null);
+    var rs = wait r.get(base + "/assets/hello.txt");
     print("static status:",  rs.status);
     print("static ct:",      rs.headers["content-type"]);
     print("static body:",    rs.body);
 
-    var rm = wait r.get(base + "/assets/nope.txt", null);
+    var rm = wait r.get(base + "/assets/nope.txt");
     print("static missing:", rm.status);
 
     cleanup();

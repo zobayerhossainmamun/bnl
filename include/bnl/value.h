@@ -25,8 +25,13 @@ class Callable {
 public:
     virtual ~Callable() = default;
     virtual Value       call(Interpreter& interp, std::vector<Value> args) = 0;
-    virtual int         arity() const = 0;        // -1 means variadic
+    virtual int         arity() const = 0;        // -1 means variadic; otherwise MAX arity
     virtual std::string name()  const = 0;
+
+    // Minimum required argument count. For callables without optional/default
+    // params this equals arity(); for user functions with `=` defaults on the
+    // tail, min_arity is the count of required params. Variadic stays as -1.
+    virtual int         min_arity() const { return arity(); }
 };
 
 using CallablePtr = std::shared_ptr<Callable>;

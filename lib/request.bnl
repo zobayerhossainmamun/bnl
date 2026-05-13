@@ -358,16 +358,16 @@ function create(defaults) {
         });
     };
 
-    // Verb shortcuts. Every verb accepts an optional `config` map (may be
-    // null) for headers / params / timeout / etc. The verb's URL, method,
-    // and body always win over config — config is purely additive.
-    inst.get       = function (url, config)         { return inst.request(_opts_with({url: url, method: "GET"},    config)); };
-    inst.head      = function (url, config)         { return inst.request(_opts_with({url: url, method: "HEAD"},   config)); };
-    inst.delete    = function (url, config)         { return inst.request(_opts_with({url: url, method: "DELETE"}, config)); };
-    inst.post      = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "POST",  data: data}, config)); };
-    inst.put       = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "PUT",   data: data}, config)); };
-    inst.patch     = function (url, data, config)   { return inst.request(_opts_with({url: url, method: "PATCH", data: data}, config)); };
-    inst.post_form = function (url, fields, config) { return inst.request(_opts_with({url: url, method: "POST", form: fields}, config)); };
+    // Verb shortcuts. Every verb accepts an optional `config` map for
+    // headers / params / timeout / etc. The verb's URL, method, and body
+    // always win over config — config is purely additive.
+    inst.get       = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "GET"},    config)); };
+    inst.head      = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "HEAD"},   config)); };
+    inst.delete    = function (url, config = null)         { return inst.request(_opts_with({url: url, method: "DELETE"}, config)); };
+    inst.post      = function (url, data, config = null)   { return inst.request(_opts_with({url: url, method: "POST",  data: data}, config)); };
+    inst.put       = function (url, data, config = null)   { return inst.request(_opts_with({url: url, method: "PUT",   data: data}, config)); };
+    inst.patch     = function (url, data, config = null)   { return inst.request(_opts_with({url: url, method: "PATCH", data: data}, config)); };
+    inst.post_form = function (url, fields, config = null) { return inst.request(_opts_with({url: url, method: "POST", form: fields}, config)); };
 
     return inst;
 }
@@ -376,14 +376,14 @@ var _default = create({});
 
 // Module-level shortcuts — same shape as the instance methods, routed
 // through the default (no-defaults) instance.
-function request(config)                { return _default.request(config); }
-function get(url, config)               { return _default.get(url, config); }
-function head(url, config)              { return _default.head(url, config); }
-function delete(url, config)            { return _default.delete(url, config); }
-function post(url, data, config)        { return _default.post(url, data, config); }
-function put(url, data, config)         { return _default.put(url, data, config); }
-function patch(url, data, config)       { return _default.patch(url, data, config); }
-function post_form(url, fields, config) { return _default.post_form(url, fields, config); }
+function request(config)                       { return _default.request(config); }
+function get(url, config = null)               { return _default.get(url, config); }
+function head(url, config = null)              { return _default.head(url, config); }
+function delete(url, config = null)            { return _default.delete(url, config); }
+function post(url, data, config = null)        { return _default.post(url, data, config); }
+function put(url, data, config = null)         { return _default.put(url, data, config); }
+function patch(url, data, config = null)       { return _default.patch(url, data, config); }
+function post_form(url, fields, config = null) { return _default.post_form(url, fields, config); }
 
 function before(fn) { _default.before(fn); }
 function after(fn)  { _default.after(fn);  }
@@ -392,7 +392,7 @@ function after(fn)  { _default.after(fn);  }
 // Returns a Future resolving with the response map enriched with .dest and
 // .bytes_written. config (may be null) accepts headers / params / timeout
 // like the verbs, plus an optional on_progress callback.
-function download(url, dest, config) {
+function download(url, dest, config = null) {
     var opts = { url: url, dest: dest };
     if (config != null) {
         for (var k of config.keys()) {
@@ -505,7 +505,7 @@ function _do_download(opts, cb) {
 // content_type}. Returns a Future resolving with the response. config (may
 // be null) can carry headers / params / timeout / fields (extra form fields
 // sent alongside the file).
-function upload(url, file, config) {
+function upload(url, file, config = null) {
     var opts = { url: url, file: file };
     if (config != null) {
         for (var k of config.keys()) {

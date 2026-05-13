@@ -35,18 +35,18 @@ function run() {
 
     // 2. wait on a GET (no config)
     print("--- get ---");
-    var resp1 = wait r.get(base + "/hello", null);
+    var resp1 = wait r.get(base + "/hello");
     print("got:", resp1.body);
 
     // 3. wait on a POST with JSON body
     print("--- post ---");
-    var resp2 = wait r.post(base + "/echo", { name: "alice", n: 7 }, null);
+    var resp2 = wait r.post(base + "/echo", { name: "alice", n: 7 });
     print("echoed name:", resp2.data.name);
     print("echoed n:", resp2.data.n);
 
     // 4. fetch a list, iterate it asynchronously
     print("--- list ---");
-    var users_resp = wait r.get(base + "/users", null);
+    var users_resp = wait r.get(base + "/users");
     var names = users_resp.data;
     for (var name of names) {
         print("user:", name);
@@ -55,7 +55,7 @@ function run() {
 
     // 5. 404 still resolves (not rejects) — resp.ok / resp.status reflect it
     print("--- 404 ---");
-    var resp404 = wait r.get(base + "/nope", null);
+    var resp404 = wait r.get(base + "/nope");
     print("status:", resp404.status, "ok:", resp404.ok);
 
     print("--- done ---");

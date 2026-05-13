@@ -206,10 +206,18 @@ void Interpreter::visit(CallExpr& e) {
     for (auto& a : e.arguments) args.push_back(evaluate(*a));
 
     auto fn = callee.as_callable();
-    if (fn->arity() >= 0 && static_cast<int>(args.size()) != fn->arity()) {
-        throw RuntimeError(e.paren,
-            fmt::format("function '{}' expects {} arguments, got {}",
-                        fn->name(), fn->arity(), args.size()));
+    int  max_a = fn->arity();
+    if (max_a >= 0) {
+        int min_a = fn->min_arity();
+        int n     = static_cast<int>(args.size());
+        if (n < min_a || n > max_a) {
+            std::string range = (min_a == max_a)
+                ? fmt::format("{} arguments", max_a)
+                : fmt::format("{} to {} arguments", min_a, max_a);
+            throw RuntimeError(e.paren,
+                fmt::format("function '{}' expects {}, got {}",
+                            fn->name(), range, args.size()));
+        }
     }
 
     // Hardening: cooperative Ctrl-C and recursion-depth ceiling. Both unwind

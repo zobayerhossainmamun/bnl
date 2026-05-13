@@ -159,21 +159,35 @@ inline bool stmts_contain_wait(const std::vector<StmtPtr>& stmts) {
 class UserFunction : public Callable {
 public:
     UserFunction(std::string                  name,
-                 const std::vector<Token>*    params,
+                 const std::vector<Param>*    params,
                  const std::vector<StmtPtr>*  body,
                  std::shared_ptr<Environment> closure)
         : name_(std::move(name)), params_(params), body_(body),
           closure_(std::move(closure)),
-          is_async_(stmts_contain_wait(*body)) {}
+          is_async_(stmts_contain_wait(*body)),
+          min_arity_(compute_min_arity(*params)) {}
 
-    int         arity() const override { return static_cast<int>(params_->size()); }
-    std::string name()  const override { return name_; }
-    bool        is_async() const       { return is_async_; }
+    int         arity()     const override { return static_cast<int>(params_->size()); }
+    int         min_arity() const override { return min_arity_; }
+    std::string name()      const override { return name_; }
+    bool        is_async()  const          { return is_async_; }
 
     Value call(Interpreter& interp, std::vector<Value> args) override {
         auto env = std::make_shared<Environment>(closure_);
         for (std::size_t i = 0; i < params_->size(); ++i) {
-            env->define(std::string((*params_)[i].lexeme), std::move(args[i]));
+            Value v;
+            if (i < args.size()) {
+                v = std::move(args[i]);
+            } else if ((*params_)[i].default_value) {
+                // Evaluate default in the function's call env so it can
+                // reference earlier params (already bound below).
+                v = interp.evaluate_in(*(*params_)[i].default_value, env);
+            } else {
+                // Shouldn't happen — the arity check in CallExpr ensures
+                // at least min_arity args. Defensive.
+                v = Value{};
+            }
+            env->define(std::string((*params_)[i].name.lexeme), std::move(v));
         }
         if (is_async_) {
             return Value{interp.run_async_body(body_, std::move(env))};
@@ -187,11 +201,21 @@ public:
     }
 
 private:
+    static int compute_min_arity(const std::vector<Param>& ps) {
+        int n = 0;
+        for (const auto& p : ps) {
+            if (p.default_value) break;
+            ++n;
+        }
+        return n;
+    }
+
     std::string                  name_;
-    const std::vector<Token>*    params_;
+    const std::vector<Param>*    params_;
     const std::vector<StmtPtr>*  body_;
     std::shared_ptr<Environment> closure_;
     bool                         is_async_;
+    int                          min_arity_;
 };
 
 }  // namespace bnl::interp_detail

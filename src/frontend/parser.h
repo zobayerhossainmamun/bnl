@@ -33,6 +33,7 @@ private:
     StmtPtr function_declaration(const std::string& kind);
     StmtPtr class_declaration();
     std::unique_ptr<FunctionStmt> parse_function(const std::string& kind);
+    std::vector<Param>            parse_param_list(const std::string& kind);
     StmtPtr statement();
     StmtPtr if_statement();
     StmtPtr while_statement();

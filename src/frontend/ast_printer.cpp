@@ -99,7 +99,18 @@ public:
 
     void visit(FunctionExpr& e) override {
         out_ += fmt::format("(fn {} (params", e.name.empty() ? "<anon>" : e.name);
-        for (const auto& p : e.params) { out_ += ' '; out_ += p.lexeme; }
+        for (const auto& p : e.params) {
+            out_ += ' ';
+            if (p.default_value) {
+                out_ += '(';
+                out_ += p.name.lexeme;
+                out_ += " = ";
+                p.default_value->accept(*this);
+                out_ += ')';
+            } else {
+                out_ += p.name.lexeme;
+            }
+        }
         out_ += ")";
         depth_++;
         for (const auto& st : e.body) { out_ += '\n'; st->accept(*this); }
@@ -253,7 +264,15 @@ public:
         out_ += fmt::format("(function {} (params", s.name.lexeme);
         for (const auto& p : s.params) {
             out_ += ' ';
-            out_ += p.lexeme;
+            if (p.default_value) {
+                out_ += '(';
+                out_ += p.name.lexeme;
+                out_ += " = ";
+                p.default_value->accept(*this);
+                out_ += ')';
+            } else {
+                out_ += p.name.lexeme;
+            }
         }
         out_ += ')';
         depth_++;

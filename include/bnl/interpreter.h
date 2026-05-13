@@ -158,6 +158,10 @@ public:
 
     void                         execute_block(const std::vector<StmtPtr>& stmts,
                                                std::shared_ptr<Environment> env);
+    // Evaluate `e` with `env` swapped in for the duration. Used by
+    // UserFunction to evaluate default-parameter expressions in the call's
+    // local environment (so a default can reference earlier params).
+    Value                        evaluate_in(Expr& e, std::shared_ptr<Environment> env);
     void                         run_module(Module& m);
     std::shared_ptr<Environment> globals() const { return globals_; }
 

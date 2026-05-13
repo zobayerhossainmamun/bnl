@@ -77,19 +77,38 @@ StmtPtr Parser::var_declaration() {
 std::unique_ptr<FunctionStmt> Parser::parse_function(const std::string& kind) {
     Token name = consume(TokenType::Identifier, "expected " + kind + " name");
     consume(TokenType::LParen, "expected '(' after " + kind + " name");
-    std::vector<Token> params;
+    auto params = parse_param_list(kind);
+    consume(TokenType::LBrace, "expected '{' before " + kind + " body");
+    auto body = block_body();
+    return std::make_unique<FunctionStmt>(name, std::move(params), std::move(body));
+}
+
+// Parses a comma-separated parameter list and the closing ')'. Each param
+// is `name` or `name = default_expr`. Once one param has a default, every
+// subsequent param must also have one (defaults are tail-only).
+std::vector<Param> Parser::parse_param_list(const std::string& kind) {
+    std::vector<Param> params;
+    bool seen_default = false;
     if (!check(TokenType::RParen)) {
         do {
             if (params.size() >= 255) {
                 throw_error(peek(), "cannot have more than 255 parameters");
             }
-            params.push_back(consume(TokenType::Identifier, "expected parameter name"));
+            Token pname = consume(TokenType::Identifier, "expected parameter name");
+            ExprPtr def;
+            if (match({TokenType::Assign})) {
+                def = expression();
+                seen_default = true;
+            } else if (seen_default) {
+                throw_error(pname, "required parameter cannot follow one with a "
+                                   "default value (defaults must be at the end)");
+            }
+            params.emplace_back(pname, std::move(def));
         } while (match({TokenType::Comma}));
     }
     consume(TokenType::RParen, "expected ')' after parameters");
-    consume(TokenType::LBrace, "expected '{' before " + kind + " body");
-    auto body = block_body();
-    return std::make_unique<FunctionStmt>(name, std::move(params), std::move(body));
+    (void)kind;
+    return params;
 }
 
 StmtPtr Parser::function_declaration(const std::string& kind) {
@@ -583,16 +602,7 @@ ExprPtr Parser::function_expression() {
         name = std::string(advance().lexeme);
     }
     consume(TokenType::LParen, "expected '(' after 'function'");
-    std::vector<Token> params;
-    if (!check(TokenType::RParen)) {
-        do {
-            if (params.size() >= 255) {
-                throw_error(peek(), "cannot have more than 255 parameters");
-            }
-            params.push_back(consume(TokenType::Identifier, "expected parameter name"));
-        } while (match({TokenType::Comma}));
-    }
-    consume(TokenType::RParen, "expected ')' after parameters");
+    auto params = parse_param_list("function expression");
     consume(TokenType::LBrace, "expected '{' before function body");
     auto body = block_body();
     return std::make_unique<FunctionExpr>(std::move(name), std::move(params), std::move(body));

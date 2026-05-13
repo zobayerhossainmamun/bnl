@@ -645,6 +645,19 @@ Value Interpreter::evaluate(Expr& e) {
 
 void Interpreter::execute(Stmt& s) { s.accept(*this); }
 
+Value Interpreter::evaluate_in(Expr& e, std::shared_ptr<Environment> env) {
+    auto saved = environment_;
+    environment_ = std::move(env);
+    try {
+        Value v = evaluate(e);
+        environment_ = saved;
+        return v;
+    } catch (...) {
+        environment_ = saved;
+        throw;
+    }
+}
+
 void Interpreter::execute_block(const std::vector<StmtPtr>& stmts,
                                 std::shared_ptr<Environment> env) {
     auto previous = environment_;

@@ -85,7 +85,7 @@ var server = web.serve({port: 0}, function (r) {
     return [404, "nope"];
 });
 function run() {
-    var resp = wait req.get("http://127.0.0.1:" + str(server.port) + "/page", null);
+    var resp = wait req.get("http://127.0.0.1:" + str(server.port) + "/page");
     print("status:", resp.status);
     print("ct:",     resp.headers["content-type"]);
     print("has h2:", resp.body.index_of("<h2>via http</h2>") >= 0);

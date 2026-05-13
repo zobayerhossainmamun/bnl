@@ -51,6 +51,16 @@ class ContinueStmt;
 using ExprPtr = std::unique_ptr<Expr>;
 using StmtPtr = std::unique_ptr<Stmt>;
 
+// Function parameter. `default_value` is null for required params; for
+// optional params it's an expression evaluated lazily on each call (in the
+// function's call env, after earlier params have been bound — so a default
+// can reference earlier param names).
+struct Param {
+    Token   name;
+    ExprPtr default_value;   // may be null
+    Param(Token n, ExprPtr d) : name(n), default_value(std::move(d)) {}
+};
+
 // ---- visitors ---------------------------------------------------------------
 
 class ExprVisitor {
@@ -195,9 +205,9 @@ public:
 class FunctionExpr : public Expr {
 public:
     std::string          name;   // empty if anonymous
-    std::vector<Token>   params;
+    std::vector<Param>   params;
     std::vector<StmtPtr> body;
-    FunctionExpr(std::string n, std::vector<Token> p, std::vector<StmtPtr> b)
+    FunctionExpr(std::string n, std::vector<Param> p, std::vector<StmtPtr> b)
         : name(std::move(n)), params(std::move(p)), body(std::move(b)) {}
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
@@ -357,9 +367,9 @@ public:
 class FunctionStmt : public Stmt {
 public:
     Token                name;
-    std::vector<Token>   params;
+    std::vector<Param>   params;
     std::vector<StmtPtr> body;
-    FunctionStmt(Token n, std::vector<Token> p, std::vector<StmtPtr> b)
+    FunctionStmt(Token n, std::vector<Param> p, std::vector<StmtPtr> b)
         : name(n), params(std::move(p)), body(std::move(b)) {}
     void accept(StmtVisitor& v) override { v.visit(*this); }
 };

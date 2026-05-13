@@ -37,23 +37,23 @@ print("port valid:", server.port > 0);
 
 function run() {
     // ---- Verb methods round-trip method name --------------------------------
-    var r1 = wait r.put(base + "/method", "x", null);
+    var r1 = wait r.put(base + "/method", "x");
     print("PUT:",   r1.body);
-    var r2 = wait r.patch(base + "/method", "x", null);
+    var r2 = wait r.patch(base + "/method", "x");
     print("PATCH:", r2.body);
-    var r3 = wait r.delete(base + "/method", null);
+    var r3 = wait r.delete(base + "/method");
     print("DELETE:", r3.body);
-    var r4 = wait r.head(base + "/method", null);
+    var r4 = wait r.head(base + "/method");
     print("HEAD status:", r4.status);
 
     // ---- JSON body auto-encoded when data is a map --------------------------
-    var rj = wait r.post(base + "/echo-body", { name: "alice" }, null);
+    var rj = wait r.post(base + "/echo-body", { name: "alice" });
     print("json ct:", rj.headers["content-type"]);
     print("json body:", rj.body);
     print("json data.name:", rj.data.name);
 
     // ---- Form-encoded body via post_form ------------------------------------
-    var rf = wait r.post_form(base + "/echo-body", { user: "alice", n: 7 }, null);
+    var rf = wait r.post_form(base + "/echo-body", { user: "alice", n: 7 });
     print("form ct:", rf.headers["content-type"]);
     print("form has user:", rf.body.index_of("user=alice") >= 0);
     print("form has n:",    rf.body.index_of("n=7")        >= 0);
@@ -64,13 +64,13 @@ function run() {
     print("params b:", rq.data.b);
 
     // ---- resp.ok flag for 4xx -----------------------------------------------
-    var r404 = wait r.get(base + "/missing", null);
+    var r404 = wait r.get(base + "/missing");
     print("404 ok:", r404.ok);
     print("404 status:", r404.status);
 
     // ---- Download to disk, verify bytes_written + file contents -------------
     var dest = "_request_axios_dl.bin";
-    var rd = wait r.download(base + "/blob", dest, null);
+    var rd = wait r.download(base + "/blob", dest);
     print("download status:", rd.status);
     print("download ok:", rd.ok);
     print("download bytes:", rd.bytes_written);
@@ -89,7 +89,7 @@ function run() {
         resp.from_after = true;
         return resp;
     });
-    var ri = wait api.get("/echo-headers", null);
+    var ri = wait api.get("/echo-headers");
     print("hits:", hits);
     print("from_after:", ri.from_after);
     print("x-custom:", ri.data["x-custom"]);

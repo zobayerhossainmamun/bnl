@@ -37,7 +37,7 @@ var base   = "http://127.0.0.1:" + str(server.port);
 
 function run() {
     // First request: no cookie, expect visits=1 and a Set-Cookie header.
-    var r1 = wait req.get(base + "/visit", null);
+    var r1 = wait req.get(base + "/visit");
     print("first body:", r1.body);
     var set_cookie = r1.headers["set-cookie"];
     print("first has set-cookie:", set_cookie != null);
@@ -57,7 +57,7 @@ function run() {
     print("second body:", r2.body);
 
     // Third request without cookie: fresh session, visits=1.
-    var r3 = wait req.get(base + "/visit", null);
+    var r3 = wait req.get(base + "/visit");
     print("third (no cookie) body:", r3.body);
     print("store count:", store.count());
     server.close();
