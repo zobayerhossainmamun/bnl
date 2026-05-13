@@ -202,7 +202,8 @@
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\lib_request.bnl)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\lib_request_axios.bnl)",
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\lib_web_timeouts.bnl)",
-      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\lang\\\\default_params.bnl)"
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\lang\\\\default_params.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\lib_io.bnl)"
     ]
   }
 }

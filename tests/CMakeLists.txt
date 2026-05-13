@@ -63,6 +63,7 @@ add_bnl_test(wait_try             stdlib)
 
 # ---------- embedded bnl stdlib (lib/*.bnl) -------------------------------
 add_bnl_test(lib_url              stdlib)
+add_bnl_test(lib_io               stdlib)
 add_bnl_test(lib_web              stdlib)
 add_bnl_test(lib_web_app          stdlib)
 add_bnl_test(lib_web_keepalive    stdlib)

@@ -1,0 +1,8 @@
+sync read: hello sync
+exists: true
+is_file: true
+after remove exists: false
+async read: hello async
+stream chunk: hello async
+copied: piece-1 piece-2
+cleaned up

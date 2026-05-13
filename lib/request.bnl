@@ -3,7 +3,7 @@ import "tls"       as _tls;
 import "http"      as _http;
 import "url"       as _url;
 import "json"      as _json;
-import "io"        as _io;
+import "_io"       as _io;
 import "timers"    as _timers;
 import "multipart" as _mp;
 

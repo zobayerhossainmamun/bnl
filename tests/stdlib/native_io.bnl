@@ -1,5 +1,7 @@
-// Native io module — sync file ops via std::filesystem.
-import "io" as io;
+// Native io module — sync file ops via std::filesystem. This test targets
+// the underlying native module directly (registered as "_io"). User-facing
+// code uses `import "io"` which picks up the lib/io.bnl facade.
+import "_io" as io;
 
 var path = "_bnl_io_test.tmp";
 

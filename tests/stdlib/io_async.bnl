@@ -1,5 +1,7 @@
-// Async file I/O via libuv's worker thread pool.
-import "io" as io;
+// Async file I/O via libuv's worker thread pool. Targets the native module
+// directly (callback-style `read_file_async(path, cb)`). User-facing async
+// code goes through lib/io.bnl which futurifies these.
+import "_io" as io;
 
 var path = "_bnl_async_io_test.tmp";
 

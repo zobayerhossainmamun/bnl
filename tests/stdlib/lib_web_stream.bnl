@@ -1,10 +1,10 @@
-// Streaming request body — server uses serve_stream + io.open_write to
-// pipe an incoming POST body straight to disk. Client (raw net) writes the
-// body in several chunks so the streaming path actually exercises the
-// chunk callbacks (not just one big buf).
+// Streaming request body — server uses serve_stream + native callback-style
+// open_write to pipe an incoming POST body straight to disk. This test
+// exercises the low-level streaming API directly (chunk callbacks), so it
+// targets the native _io module rather than the lib/io.bnl facade.
 import "web" as web;
 import "net" as net;
-import "io"  as io;
+import "_io" as io;
 import "http" as http;
 
 var tmp = "_web_stream_dest.bin";

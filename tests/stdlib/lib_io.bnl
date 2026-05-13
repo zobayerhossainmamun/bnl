@@ -1,0 +1,40 @@
+// Public io lib — sync functions re-exported verbatim from _io, async
+// functions wrapped with futurify so they're usable with `wait`.
+import "io" as io;
+
+var path = "_lib_io_test.tmp";
+
+// ---- Sync still works the same as the old native module --------------------
+io.write_file(path, "hello sync");
+print("sync read:", io.read_file(path));
+print("exists:",    io.exists(path));
+print("is_file:",   io.is_file(path));
+
+io.remove(path);
+print("after remove exists:", io.exists(path));
+
+// ---- Async forms return Futures ------------------------------------------
+function run() {
+    // write_file_async + read_file_async
+    wait io.write_file_async(path, "hello async");
+    var got = wait io.read_file_async(path);
+    print("async read:", got);
+
+    // open_read returns a stream with futurified .read
+    var src = io.open_read(path);
+    var chunk = wait src.read(64);
+    src.close();
+    print("stream chunk:", chunk);
+
+    // open_write returns a stream with futurified .write
+    var dst = io.open_write("_lib_io_test_copy.tmp");
+    wait dst.write("piece-1 ");
+    wait dst.write("piece-2");
+    dst.close();
+    print("copied:", io.read_file("_lib_io_test_copy.tmp"));
+
+    io.remove(path);
+    io.remove("_lib_io_test_copy.tmp");
+    print("cleaned up");
+}
+run().fail(function (e) { print("err:", e); });

@@ -475,7 +475,11 @@ void on_write_done(uv_work_t* req, int /*status*/) {
 }  // namespace
 
 void register_io(Interpreter& interp) {
-    auto m = NativeModule("io")
+    // Native module is registered as "_io" (private). Public surface lives
+    // in lib/io.bnl, which re-exports the sync functions verbatim and wraps
+    // the callback-style async ones with `futurify` so user code does
+    // `wait io.read_file_async(path)`.
+    auto m = NativeModule("_io")
         // ---------- read / write -------------------------------------------
 
         // io.read_file(path) -> string (entire contents as bytes)
@@ -692,7 +696,7 @@ void register_io(Interpreter& interp) {
 
         .build();
 
-    interp.register_native_module("io", m);
+    interp.register_native_module("_io", m);
 }
 
 }  // namespace bnl

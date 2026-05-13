@@ -1,4 +1,4 @@
-import "io" as _io;
+import "_io" as _io;
 
 var _views_dir = "views";
 var _cache     = {};

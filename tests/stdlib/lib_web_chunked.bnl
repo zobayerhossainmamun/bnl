@@ -1,10 +1,10 @@
 // Transfer-Encoding: chunked on the server side. Raw TCP client sends a
 // POST with chunked framing; serve_stream's chunked decoder routes each
 // data slice through on_body_chunk and fires on_body_end at the 0-size
-// terminator.
+// terminator. Low-level streaming → targets the native _io module.
 import "web" as web;
 import "net" as net;
-import "io"  as io;
+import "_io" as io;
 import "http" as http;
 
 var tmp = "_web_chunked_dest.bin";
