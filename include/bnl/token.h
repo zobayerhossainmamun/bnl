@@ -40,6 +40,7 @@ enum class TokenType {
     Default,
     Break,
     Continue,
+    Wait,
 
     // Punctuation
     LParen,

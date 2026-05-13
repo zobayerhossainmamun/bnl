@@ -13,11 +13,13 @@ class Interpreter;
 class Value;
 class Module;
 class Instance;
+class Future;
 
 using ModulePtr   = std::shared_ptr<Module>;
 using ListPtr     = std::shared_ptr<std::vector<Value>>;
 using MapPtr      = std::shared_ptr<std::unordered_map<std::string, Value>>;
 using InstancePtr = std::shared_ptr<Instance>;
+using FuturePtr   = std::shared_ptr<Future>;
 
 class Callable {
 public:
@@ -40,7 +42,8 @@ public:
         ModulePtr,
         ListPtr,
         MapPtr,
-        InstancePtr
+        InstancePtr,
+        FuturePtr
     >;
 
     Value() = default;                        // null
@@ -55,6 +58,7 @@ public:
     Value(ListPtr l)             : storage_(std::move(l)) {}
     Value(MapPtr m)              : storage_(std::move(m)) {}
     Value(InstancePtr i)         : storage_(std::move(i)) {}
+    Value(FuturePtr f)           : storage_(std::move(f)) {}
 
     bool is_null()     const { return std::holds_alternative<std::monostate>(storage_); }
     bool is_bool()     const { return std::holds_alternative<bool>(storage_); }
@@ -65,6 +69,7 @@ public:
     bool is_list()     const { return std::holds_alternative<ListPtr>(storage_); }
     bool is_map()      const { return std::holds_alternative<MapPtr>(storage_); }
     bool is_instance() const { return std::holds_alternative<InstancePtr>(storage_); }
+    bool is_future()   const { return std::holds_alternative<FuturePtr>(storage_); }
 
     bool                       as_bool()     const { return std::get<bool>(storage_); }
     double                     as_number()   const { return std::get<double>(storage_); }
@@ -74,6 +79,7 @@ public:
     const ListPtr&             as_list()     const { return std::get<ListPtr>(storage_); }
     const MapPtr&              as_map()      const { return std::get<MapPtr>(storage_); }
     const InstancePtr&         as_instance() const { return std::get<InstancePtr>(storage_); }
+    const FuturePtr&           as_future()   const { return std::get<FuturePtr>(storage_); }
 
     bool        truthy() const;
     bool        equals(const Value& other) const;

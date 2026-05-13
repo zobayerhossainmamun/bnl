@@ -459,6 +459,11 @@ ExprPtr Parser::unary() {
         ExprPtr operand = unary();
         return std::make_unique<UnaryExpr>(op, std::move(operand));
     }
+    if (match({TokenType::Wait})) {
+        Token   keyword = previous();
+        ExprPtr operand = unary();
+        return std::make_unique<WaitExpr>(keyword, std::move(operand));
+    }
     return call();
 }
 

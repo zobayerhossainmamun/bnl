@@ -60,6 +60,9 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"break",     TokenType::Break},   {"\xe0\xa6\xa5\xe0\xa6\xbe\xe0\xa6\xae\xe0\xa7\x81\xe0\xa6\xa8",                                 TokenType::Break},     // থামুন
         {"continue",  TokenType::Continue},{"\xe0\xa6\x9a\xe0\xa6\xb2\xe0\xa7\x81\xe0\xa6\xa8",                                             TokenType::Continue},  // চলুন
 
+        // Async — suspends current frame until the Future resolves
+        {"wait",      TokenType::Wait},    {"\xe0\xa6\x85\xe0\xa6\xaa\xe0\xa7\x87\xe0\xa6\x95\xe0\xa7\x8d\xe0\xa6\xb7\xe0\xa6\xbe",         TokenType::Wait},      // অপেক্ষা
+
         // Note: `print` / `লিখুন` are deliberately NOT keywords. They are ordinary
         // identifiers that the runtime registers as builtin functions in the
         // global scope (with both Bangla and English names aliased to one impl).
@@ -411,6 +414,7 @@ const char* token_type_name(TokenType type) {
         case TokenType::Default:    return "Default";
         case TokenType::Break:      return "Break";
         case TokenType::Continue:   return "Continue";
+        case TokenType::Wait:       return "Wait";
         case TokenType::LParen:     return "LParen";
         case TokenType::RParen:     return "RParen";
         case TokenType::LBrace:     return "LBrace";

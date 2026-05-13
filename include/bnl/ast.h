@@ -29,6 +29,7 @@ class IndexExpr;
 class SetIndexExpr;
 class SetMemberExpr;
 class SuperExpr;
+class WaitExpr;
 
 class ExpressionStmt;
 class VarStmt;
@@ -71,6 +72,7 @@ public:
     virtual void visit(SetIndexExpr&)   = 0;
     virtual void visit(SetMemberExpr&)  = 0;
     virtual void visit(SuperExpr&)      = 0;
+    virtual void visit(WaitExpr&)       = 0;
 };
 
 class StmtVisitor {
@@ -250,6 +252,18 @@ public:
     ExprPtr value;
     SetMemberExpr(ExprPtr o, Token n, ExprPtr v)
         : object(std::move(o)), name(n), value(std::move(v)) {}
+    void accept(ExprVisitor& v) override { v.visit(*this); }
+};
+
+// wait expr  — suspends the enclosing async function until `expr` (a Future)
+// settles. Only legal as the initializer of a top-level VarStmt, or as the
+// sole expression of a top-level ExpressionStmt. The interpreter enforces
+// this; nested or sub-expression uses throw at runtime.
+class WaitExpr : public Expr {
+public:
+    Token   keyword;   // the 'wait' token, kept for diagnostics
+    ExprPtr operand;
+    WaitExpr(Token k, ExprPtr e) : keyword(k), operand(std::move(e)) {}
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 

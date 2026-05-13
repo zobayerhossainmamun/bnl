@@ -158,6 +158,12 @@ public:
         out_ += ')';
     }
 
+    void visit(WaitExpr& e) override {
+        out_ += "(wait ";
+        e.operand->accept(*this);
+        out_ += ')';
+    }
+
     // ---- statement visits --------------------------------------------------
 
     void visit(ExpressionStmt& s) override {

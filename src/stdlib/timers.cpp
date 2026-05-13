@@ -11,6 +11,7 @@
 #include "bnl/interpreter.h"
 #include "bnl/native_module.h"
 #include "bnl/value.h"
+#include "runtime/future.h"
 
 namespace bnl {
 
@@ -120,6 +121,43 @@ void register_timers(Interpreter& interp) {
 
                 uv_timer_start(timer, on_timer_fire, ms, /*repeat=*/0);
                 return make_cancel(timer, alive);
+            })
+
+        // timers.delay(ms) -> Future that resolves with null after `ms` ms.
+        // The async-friendly form of `timers.set`: use with `wait` to suspend
+        // an async function for a fixed duration without writing a callback.
+        //
+        //     function paced() {
+        //         print("a");
+        //         wait timers.delay(100);
+        //         print("b");
+        //     }
+        //
+        .add_function("delay", 1,
+            [&interp](Interpreter&, std::vector<Value> args) -> Value {
+                uint64_t ms = to_ms(args[0]);
+
+                auto fut = std::make_shared<Future>();
+
+                auto* timer = new uv_timer_t{};
+                uv_timer_init(interp.loop(), timer);
+
+                // Synthetic callback that resolves the Future when the timer
+                // fires. Reuses the existing TimerData / on_timer_fire path
+                // for unified close + error handling.
+                auto resolver = std::make_shared<NativeFunction>(
+                    "__delay_resolve", 0,
+                    [fut](Interpreter& ii, std::vector<Value>) -> Value {
+                        fut->resolve(ii, Value{});
+                        return Value{};
+                    });
+
+                auto alive  = std::make_shared<bool>(true);
+                timer->data = new TimerData{
+                    std::static_pointer_cast<Callable>(resolver), &interp, alive};
+
+                uv_timer_start(timer, on_timer_fire, ms, /*repeat=*/0);
+                return Value{fut};
             })
 
         // timers.interval(ms, fn) -> cancel callable. Repeats every ms.

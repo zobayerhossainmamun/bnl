@@ -1,0 +1,14 @@
+--- delay ---
+after delay
+--- get ---
+got: hello from server
+--- post ---
+echoed name: alice
+echoed n: 7
+--- list ---
+user: alice
+user: bob
+user: carol
+--- 404 ---
+status: 404 ok: false
+--- done ---

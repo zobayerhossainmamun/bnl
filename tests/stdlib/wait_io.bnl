@@ -1,0 +1,68 @@
+// Phase 3: `wait` + futurified stdlib (timers.delay, request *_async).
+// Demonstrates real I/O with wait — no manual callbacks.
+
+import "timers"  as timers;
+import "web"     as web;
+import "request" as r;
+import "json"    as json;
+
+// ---- Small local server to exercise request._async against -----------------
+var server = web.serve({port: 0}, function (req) {
+    if (req.path == "/hello") {
+        return { status: 200, body: "hello from server" };
+    }
+    if (req.path == "/echo") {
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: req.body };
+    }
+    if (req.path == "/users") {
+        return { status: 200,
+                 headers: { "Content-Type": "application/json; charset=utf-8" },
+                 body: json.stringify(["alice", "bob", "carol"]) };
+    }
+    return { status: 404, body: "not found" };
+});
+
+var base = "http://127.0.0.1:" + str(server.port);
+
+// ---- driver: one async function that does everything sequentially ---------
+function run() {
+    // 1. timers.delay — async sleep
+    print("--- delay ---");
+    wait timers.delay(10);
+    print("after delay");
+
+    // 2. wait on a GET
+    print("--- get ---");
+    var resp1 = wait r.get_async(base + "/hello");
+    print("got:", resp1.body);
+
+    // 3. wait on a POST with JSON body
+    print("--- post ---");
+    var resp2 = wait r.post_async(base + "/echo", { name: "alice", n: 7 });
+    print("echoed name:", resp2.data.name);
+    print("echoed n:", resp2.data.n);
+
+    // 4. fetch a list, iterate it asynchronously
+    print("--- list ---");
+    var users_resp = wait r.get_async(base + "/users");
+    var names = users_resp.data;
+    for (var name of names) {
+        print("user:", name);
+        wait timers.delay(1);   // pace each iteration via wait inside for-of
+    }
+
+    // 5. 404 still resolves (not rejects) — resp.ok / resp.status reflect it
+    print("--- 404 ---");
+    var resp404 = wait r.get_async(base + "/nope");
+    print("status:", resp404.status, "ok:", resp404.ok);
+
+    print("--- done ---");
+    server.close();
+}
+
+run().fail(function (e) {
+    print("runner failed:", e);
+    server.close();
+});

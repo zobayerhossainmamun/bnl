@@ -8,6 +8,7 @@
 
 #include "bnl/module.h"
 #include "runtime/class_type.h"
+#include "runtime/future.h"
 
 namespace bnl {
 
@@ -28,6 +29,7 @@ bool Value::equals(const Value& other) const {
     if (is_list())     return as_list().get()     == other.as_list().get();    // identity
     if (is_map())      return as_map().get()      == other.as_map().get();     // identity
     if (is_instance()) return as_instance().get() == other.as_instance().get();// identity
+    if (is_future())   return as_future().get()   == other.as_future().get();  // identity
     return false;
 }
 
@@ -46,6 +48,7 @@ const char* Value::type_name() const {
     if (is_list())     return "list";
     if (is_map())      return "map";
     if (is_instance()) return "instance";
+    if (is_future())   return "future";
     return "?";
 }
 
@@ -100,6 +103,12 @@ std::string Value::to_display() const {
     }
     if (is_instance()) {
         return "<instance of " + as_instance()->klass()->name() + ">";
+    }
+    if (is_future()) {
+        const auto& f = *as_future();
+        if (f.is_fulfilled()) return "<future fulfilled>";
+        if (f.is_rejected())  return "<future rejected>";
+        return "<future pending>";
     }
     return "?";
 }

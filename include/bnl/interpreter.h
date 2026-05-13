@@ -12,7 +12,9 @@
 
 #include <uv.h>
 
+#include <deque>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -106,6 +108,22 @@ public:
     // here. Most hosts do not need to touch this directly.
     uv_loop_t* loop() { return &loop_; }
 
+    // Microtask queue — Future continuations land here and drain at loop
+    // iteration boundaries (via a uv_prepare_t handle) plus once explicitly
+    // between the main script body and uv_run. Drain semantics: pop one,
+    // call it, repeat until the deque is empty. Tasks pushed during a drain
+    // run in the same pass, matching the JS Promise spec.
+    void enqueue_microtask(std::function<void()> fn);
+    void drain_microtasks();
+
+    // Run a function body containing `wait` statements. Returns a Future
+    // that settles when the body finishes: resolves with the return value,
+    // rejects with any thrown value (including rejections from awaited
+    // Futures). The body is walked statement-by-statement; wait points
+    // suspend execution and re-enter via .then microtasks.
+    FuturePtr run_async_body(const std::vector<StmtPtr>* body,
+                             std::shared_ptr<Environment> env);
+
     // Called from libuv callbacks when a bnl callback throws — flips run()
     // into a non-zero exit and stops the loop so uv_run returns promptly.
     void mark_loop_failed();
@@ -159,6 +177,7 @@ public:
     void visit(SetIndexExpr&)   override;
     void visit(SetMemberExpr&)  override;
     void visit(SuperExpr&)      override;
+    void visit(WaitExpr&)       override;
 
     void visit(ExpressionStmt&) override;
     void visit(VarStmt&)        override;
@@ -182,6 +201,60 @@ private:
     void  execute(Stmt& s);
     void  register_builtins();
 
+    // Async step state — callbacks routed to from inside an async-running
+    // function body. on_complete = block finished naturally. on_break /
+    // on_continue = current async loop frame (null when outside one).
+    // on_throw = current async try frame (defaults to "reject out") — set
+    // by try/catch to redirect rejections into the catch block.
+    // The outer Future `out` is settled by `return` (resolve) and by the
+    // top-level on_throw fallthrough (reject).
+    using StepCb  = std::function<void()>;
+    using ThrowCb = std::function<void(Value)>;
+
+    // Walks body[idx..end]. On any async-special statement (wait, or a
+    // sub-statement with a nested wait), defers via .next continuations
+    // and returns. Otherwise runs sync statements via execute() and
+    // continues the loop.
+    void  async_step(const std::vector<StmtPtr>* body,
+                     std::size_t                 idx,
+                     std::shared_ptr<Environment> env,
+                     FuturePtr                   out,
+                     StepCb                      on_complete,
+                     StepCb                      on_break,
+                     StepCb                      on_continue,
+                     ThrowCb                     on_throw);
+
+    // Process one statement that contains a wait somewhere. Dispatches to
+    // the right helper (top-level wait, block, if, while, for-of, try) and
+    // ultimately calls on_done.
+    void  async_step_one(Stmt&                       s,
+                         std::shared_ptr<Environment> env,
+                         FuturePtr                   out,
+                         StepCb                      on_done,
+                         StepCb                      on_break,
+                         StepCb                      on_continue,
+                         ThrowCb                     on_throw);
+
+    void  async_run_while(WhileStmt& w,
+                          std::shared_ptr<Environment> env,
+                          FuturePtr                    out,
+                          StepCb                       on_done,
+                          ThrowCb                      on_throw);
+
+    void  async_run_forof(ForOfStmt& fos,
+                          std::shared_ptr<Environment> env,
+                          FuturePtr                    out,
+                          StepCb                       on_done,
+                          ThrowCb                      on_throw);
+
+    void  async_run_try(TryStmt& ts,
+                        std::shared_ptr<Environment> env,
+                        FuturePtr                    out,
+                        StepCb                       on_done,
+                        StepCb                       on_break,
+                        StepCb                       on_continue,
+                        ThrowCb                      on_throw);
+
     // Throws a RuntimeError if the bnl call stack has hit max_call_depth_.
     void  check_call_depth(const Token& site);
     // Throws a RuntimeError if a Ctrl-C / SIGTERM has been delivered.
@@ -202,6 +275,8 @@ private:
     std::vector<std::vector<StmtPtr>>              kept_programs_;
     uv_loop_t                                      loop_{};
     uv_async_t                                     stop_async_{};   // wakes the loop on Ctrl-C
+    uv_prepare_t                                   microtask_prep_{};
+    std::deque<std::function<void()>>              microtasks_;
     bool                                           loop_failed_ = false;
 
     int                                            call_depth_     = 0;

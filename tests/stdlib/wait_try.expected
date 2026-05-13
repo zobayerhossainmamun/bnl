@@ -1,0 +1,12 @@
+ok: a
+ok: b
+caught: boom
+got: 42
+caught: first-fail
+loop caught: at FAIL
+ret: after-try
+happy ret: done
+fallback: fallback-value
+outer caught: rethrown: inner
+list ret: list-done
+recover ret: ok

@@ -351,6 +351,22 @@ function create(defaults) {
         inst.request({url: url, method: "POST", form: fields}, cb);
     };
 
+    // ---- Future-returning (`_async`) variants -----------------------------
+    // Mirror each callback-style verb with a Future-returning version so user
+    // code can write `wait inst.get_async(url)` instead of nesting callbacks.
+    // Implemented via the `futurify` global, which wraps a callback-style
+    // function (last arg is the (err, result) callback) as one that returns
+    // a Future. These do not change the callback-form methods — both shapes
+    // coexist so old code keeps working during migration.
+    inst.request_async   = futurify(inst.request);
+    inst.get_async       = futurify(inst.get);
+    inst.head_async      = futurify(inst.head);
+    inst.delete_async    = futurify(inst.delete);
+    inst.post_async      = futurify(inst.post);
+    inst.put_async       = futurify(inst.put);
+    inst.patch_async     = futurify(inst.patch);
+    inst.post_form_async = futurify(inst.post_form);
+
     return inst;
 }
 
@@ -366,6 +382,18 @@ function request(opts, cb)    { _default.request(opts, cb); }
 function send(opts, cb)       { _default.request(opts, cb); }
 
 function post_form(url, fields, cb) { _default.post_form(url, fields, cb); }
+
+// Module-level `_async` variants — same as the callback-form functions above
+// but return a Future. Use with `wait` in an async context.
+function get_async(url)            { return _default.get_async(url); }
+function head_async(url)           { return _default.head_async(url); }
+function delete_async(url)         { return _default.delete_async(url); }
+function post_async(url, data)     { return _default.post_async(url, data); }
+function put_async(url, data)      { return _default.put_async(url, data); }
+function patch_async(url, data)    { return _default.patch_async(url, data); }
+function request_async(opts)       { return _default.request_async(opts); }
+function send_async(opts)          { return _default.request_async(opts); }
+function post_form_async(url, fields) { return _default.post_form_async(url, fields); }
 
 function before(fn) { _default.before(fn); }
 function after(fn)  { _default.after(fn);  }

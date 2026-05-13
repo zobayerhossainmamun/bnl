@@ -1,0 +1,70 @@
+// Phase 2 polish: `wait` inside `try { } catch (e) { }`.
+// Rejections from awaited Futures route to catch instead of propagating up.
+
+// ---- 1. catch a rejected Future ----
+function direct_reject() {
+    try {
+        var x = wait Future.err("boom");
+        print("unreachable:", x);
+    } catch (e) {
+        print("caught:", e);
+    }
+    return "after-try";
+}
+direct_reject().next(function (v) { print("ret:", v); });
+
+// ---- 2. try succeeds — catch is skipped ----
+function happy() {
+    try {
+        var x = wait Future.of(42);
+        print("got:", x);
+    } catch (e) {
+        print("unreachable catch:", e);
+    }
+    return "done";
+}
+happy().next(function (v) { print("happy ret:", v); });
+
+// ---- 3. wait inside catch block too ----
+function recover() {
+    try {
+        var x = wait Future.err("first-fail");
+        print("unreachable:", x);
+    } catch (e) {
+        print("caught:", e);
+        var y = wait Future.of("fallback-value");
+        print("fallback:", y);
+    }
+    return "ok";
+}
+recover().next(function (v) { print("recover ret:", v); });
+
+// ---- 4. throw inside catch propagates if not caught again ----
+function rethrow() {
+    try {
+        var x = wait Future.err("inner");
+        print("unreachable:", x);
+    } catch (e) {
+        throw "rethrown: " + str(e);
+    }
+}
+rethrow().fail(function (e) { print("outer caught:", e); });
+
+// ---- 5. wait in a for-of inside try (one element rejects) ----
+function process_list() {
+    try {
+        for (var x of ["a", "b", "FAIL", "d"]) {
+            if (x == "FAIL") {
+                var bad = wait Future.err("at " + x);
+                print("never:", bad);
+            } else {
+                print("ok:", x);
+            }
+        }
+        print("after loop");   // unreachable
+    } catch (e) {
+        print("loop caught:", e);
+    }
+    return "list-done";
+}
+process_list().next(function (v) { print("list ret:", v); });

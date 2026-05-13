@@ -1,0 +1,92 @@
+// Phase 1: end-to-end exercise of the Future runtime type.
+// Covers: Future.of / Future.err, .next chaining, .fail, .always,
+// Future(executor) constructor, Future.all, Future.race, Future.all_settled,
+// and futurify() wrapping a callback-style function.
+
+import "timers" as timers;
+
+// ---- 1. Future.of + .next ----
+print("--- resolve ---");
+Future.of(7).next(function (v) {
+    print("got:", v);
+});
+
+// ---- 2. Future.err + .fail ----
+print("--- reject ---");
+Future.err("oops").fail(function (e) {
+    print("caught:", e);
+});
+
+// ---- 3. .then transforming value, chained ----
+print("--- chain ---");
+Future.of(10)
+    .next(function (v) { return v * 2; })
+    .next(function (v) { return v + 1; })
+    .next(function (v) { print("chained:", v); });
+
+// ---- 4. .always runs on both paths ----
+print("--- always ok ---");
+Future.of("ok-value").always(function () {
+    print("always fired (ok)");
+});
+
+print("--- always err ---");
+Future.err("err-value").always(function () {
+    print("always fired (err)");
+});
+
+// ---- 5. Future(executor) constructor with async resolution via timer ----
+print("--- executor ---");
+var f = Future(function (resolve, reject) {
+    timers.set(0, function () { resolve("from-executor"); });
+});
+f.next(function (v) { print("executor val:", v); });
+
+// ---- 6. Future.all — waits for all to fulfill ----
+print("--- all ---");
+Future.all([Future.of(1), Future.of(2), Future.of(3)])
+    .next(function (vs) {
+        print("all:", vs[0], vs[1], vs[2]);
+    });
+
+// ---- 7. Future.all — short-circuits on first reject ----
+print("--- all-reject ---");
+Future.all([Future.of(1), Future.err("bad"), Future.of(3)])
+    .fail(function (e) { print("all rejected with:", e); });
+
+// ---- 8. Future.race — first to settle wins ----
+print("--- race ---");
+Future.race([Future.of("fast"), Future.err("slow-err")])
+    .next(function (v) { print("race won:", v); });
+
+// ---- 9. Future.all_settled — never rejects ----
+print("--- all_settled ---");
+Future.all_settled([Future.of("a"), Future.err("b"), Future.of("c")])
+    .next(function (rs) {
+        print("settled[0]:", rs[0].ok, rs[0].value);
+        print("settled[1]:", rs[1].ok, rs[1].error);
+        print("settled[2]:", rs[2].ok, rs[2].value);
+    });
+
+// ---- 10. futurify — wrap a callback-style function ----
+print("--- futurify ---");
+function legacy_call(x, cb) {
+    timers.set(0, function () { cb(null, x * 100); });
+}
+var f_call = futurify(legacy_call);
+f_call(5).next(function (v) { print("futurified val:", v); });
+
+// ---- 11. futurify with error path ----
+print("--- futurify err ---");
+function legacy_fail(cb) {
+    timers.set(0, function () { cb("legacy-error", null); });
+}
+var f_fail = futurify(legacy_fail);
+f_fail().fail(function (e) { print("futurified err:", e); });
+
+// ---- 12. Type introspection ----
+print("--- type ---");
+print("type:", type(Future.of(0)));
+print("state pending:", Future(function (r, e) {}).state);
+print("state fulfilled:", Future.of(1).state);
+print("state rejected:", Future.err("x").state);

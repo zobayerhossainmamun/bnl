@@ -1,0 +1,11 @@
+early: no-wait-needed
+sync_caller type: future
+get7: 7
+bad caught: bad-thing
+plain: 42
+tick: after-tick
+sync_caller chained: 7
+nested: inner-value/outer
+chain: 60
+timer: hello-from-timer!
+legacy: 500

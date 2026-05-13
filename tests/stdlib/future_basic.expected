@@ -1,0 +1,31 @@
+--- resolve ---
+--- reject ---
+--- chain ---
+--- always ok ---
+--- always err ---
+--- executor ---
+--- all ---
+--- all-reject ---
+--- race ---
+--- all_settled ---
+--- futurify ---
+--- futurify err ---
+--- type ---
+type: future
+state pending: pending
+state fulfilled: fulfilled
+state rejected: rejected
+got: 7
+caught: oops
+always fired (ok)
+always fired (err)
+all: 1 2 3
+all rejected with: bad
+race won: fast
+settled[0]: true a
+settled[1]: false b
+settled[2]: true c
+chained: 21
+executor val: from-executor
+futurified val: 500
+futurified err: legacy-error

@@ -54,6 +54,11 @@ add_bnl_test(native_math          stdlib)
 add_bnl_test(native_random        stdlib)
 add_bnl_test(native_time          stdlib)
 add_bnl_test(native_zlib          stdlib)
+add_bnl_test(future_basic         stdlib)
+add_bnl_test(wait_basic           stdlib)
+add_bnl_test(wait_control         stdlib)
+add_bnl_test(wait_io              stdlib)
+add_bnl_test(wait_try             stdlib)
 
 # ---------- embedded bnl stdlib (lib/*.bnl) -------------------------------
 add_bnl_test(lib_url              stdlib)
@@ -90,7 +95,6 @@ add_bnl_test(lib_template_advanced stdlib)
 add_bnl_test(lib_ws               stdlib)
 add_bnl_test(lib_test             stdlib)
 add_bnl_test(lib_cookie_session   stdlib)
-add_bnl_test(lib_async            stdlib)
 
 # ---------- C-ABI plugin integration --------------------------------------
 if(BNL_BUILD_SAMPLE_PLUGIN)

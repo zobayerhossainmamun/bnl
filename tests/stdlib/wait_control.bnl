@@ -1,0 +1,123 @@
+// Phase 2 polish: `wait` inside common control flow (if/else, while, for-of).
+// Also exercises break/continue inside async loops.
+
+// ---- 1. for-of with wait inside the body ----
+function fetch_one(id) {
+    return Future.of("user-" + str(id));
+}
+function fetch_all(ids) {
+    var results = [];
+    for (var id of ids) {
+        var u = wait fetch_one(id);
+        results.push(u);
+    }
+    return results;
+}
+fetch_all([1, 2, 3]).next(function (vs) {
+    print("for-of:", vs[0], vs[1], vs[2]);
+});
+
+// ---- 2. for-of with break inside async body ----
+function find_first(ids, target) {
+    var found = null;
+    for (var id of ids) {
+        var u = wait fetch_one(id);
+        if (u == target) {
+            found = u;
+            break;
+        }
+    }
+    return found;
+}
+find_first([1, 2, 3, 4], "user-3").next(function (v) {
+    print("break:", v);
+});
+
+// ---- 3. for-of with continue ----
+function only_evens(ids) {
+    var keep = [];
+    for (var id of ids) {
+        if (id % 2 != 0) {
+            continue;
+        }
+        var u = wait fetch_one(id);
+        keep.push(u);
+    }
+    return keep;
+}
+only_evens([1, 2, 3, 4]).next(function (vs) {
+    print("continue:", vs[0], vs[1]);
+});
+
+// ---- 4. if/else branches that each contain wait ----
+function maybe_fetch(want) {
+    if (want) {
+        var v = wait Future.of("yes-val");
+        return v;
+    } else {
+        var v = wait Future.of("no-val");
+        return v;
+    }
+}
+maybe_fetch(true).next(function (v)  { print("if-then:", v); });
+maybe_fetch(false).next(function (v) { print("if-else:", v); });
+
+// ---- 5. if with wait, no else ----
+function maybe_log(want) {
+    var x = "default";
+    if (want) {
+        x = wait Future.of("set-by-if");
+    }
+    return x;
+}
+maybe_log(true).next(function (v)  { print("if-set:", v); });
+maybe_log(false).next(function (v) { print("if-skip:", v); });
+
+// ---- 6. while with wait inside the body ----
+function count_to(n) {
+    var i = 0;
+    var seen = [];
+    while (i < n) {
+        var v = wait Future.of(i * 10);
+        seen.push(v);
+        i = i + 1;
+    }
+    return seen;
+}
+count_to(3).next(function (vs) {
+    print("while:", vs[0], vs[1], vs[2]);
+});
+
+// ---- 7. while with break ----
+function until_match(limit) {
+    var i = 0;
+    while (i < limit) {
+        var v = wait Future.of(i);
+        if (v == 2) { break; }
+        i = i + 1;
+    }
+    return i;
+}
+until_match(10).next(function (v) {
+    print("while-break:", v);
+});
+
+// ---- 8. Nested: for-of containing an if-with-wait ----
+function categorize(ids) {
+    var evens = [];
+    var odds  = [];
+    for (var id of ids) {
+        if (id % 2 == 0) {
+            var ev = wait Future.of("even-" + str(id));
+            evens.push(ev);
+        } else {
+            var od = wait Future.of("odd-" + str(id));
+            odds.push(od);
+        }
+    }
+    return { evens: evens, odds: odds };
+}
+categorize([1, 2, 3, 4]).next(function (m) {
+    print("nested evens:", m.evens[0], m.evens[1]);
+    print("nested odds:",  m.odds[0],  m.odds[1]);
+});

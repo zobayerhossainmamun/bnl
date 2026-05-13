@@ -9,6 +9,7 @@ add_library(bnl_core STATIC
     runtime/value.cpp
     runtime/environment.cpp
     runtime/class_type.cpp
+    runtime/future.cpp
     runtime/native_module.cpp
     runtime/module_loader.cpp
     runtime/interpreter.cpp

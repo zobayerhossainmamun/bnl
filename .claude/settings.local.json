@@ -183,7 +183,22 @@
       "Bash(echo \"---exit: $?---\")",
       "Bash(node *)",
       "Bash(npx tsc *)",
-      "PowerShell($ErrorActionPreference = 'Stop'; foreach \\($p in @\\('D:\\\\bnlang\\\\new-v\\\\bnl\\\\scripts\\\\package.ps1','D:\\\\bnlang\\\\new-v\\\\bnl-web\\\\public\\\\install.ps1'\\)\\) { $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile\\($p, [ref]$null, [ref]$errs\\); if \\($errs -and $errs.Count\\) { \"FAIL $p`n$\\($errs | Out-String\\)\" } else { \"OK   $p\" } })"
+      "PowerShell($ErrorActionPreference = 'Stop'; foreach \\($p in @\\('D:\\\\bnlang\\\\new-v\\\\bnl\\\\scripts\\\\package.ps1','D:\\\\bnlang\\\\new-v\\\\bnl-web\\\\public\\\\install.ps1'\\)\\) { $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile\\($p, [ref]$null, [ref]$errs\\); if \\($errs -and $errs.Count\\) { \"FAIL $p`n$\\($errs | Out-String\\)\" } else { \"OK   $p\" } })",
+      "PowerShell($p = 'D:\\\\bnlang\\\\new-v\\\\bnl-web\\\\public\\\\install.ps1'; $errs = $null; [void][System.Management.Automation.Language.Parser]::ParseFile\\($p, [ref]$null, [ref]$errs\\); if \\($errs -and $errs.Count\\) { \"FAIL`n$\\($errs | Out-String\\)\" } else { \"OK $p\" })",
+      "PowerShell(& \"$env:VCPKG_ROOT\\\\vcpkg.exe\" search onnxruntime 2>&1 | Select-Object -First 30)",
+      "Bash(tee build_log.txt)",
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./build.ps1)",
+      "Bash(echo \"exit:$?\")",
+      "Bash(D:/bnlang/new-v/bnl/build/windows-release/bin/bnl.exe smoke.bnl)",
+      "Bash(D:/bnlang/new-v/bnl/build/windows-release/bin/bnl.exe D:/bnlang/new-v/example-libs/bnl-onnx/smoke.bnl)",
+      "Bash(powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"cmake --build --preset windows-x64\")",
+      "Bash(D:/bnlang/new-v/bnl/build/windows-release/bin/bnl.exe D:/bnlang/new-v/example-libs/bnl-onnx/gen.bnl)",
+      "Bash(cmake --preset windows)",
+      "PowerShell(. .\\\\dev.ps1; .\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\future_basic.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\wait_basic.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\wait_control.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\wait_io.bnl)",
+      "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\stdlib\\\\wait_try.bnl)"
     ]
   }
 }

@@ -3,6 +3,7 @@
 
 #include "runtime/class_type.h"
 #include "runtime/environment.h"
+#include "runtime/future.h"
 
 #include <fmt/core.h>
 
@@ -444,6 +445,69 @@ void Interpreter::visit(MemberExpr& e) {
         throw RuntimeError(e.name, fmt::format("string has no property '{}'", name));
     }
 
+    // Futures: .then / .fail / .always continuations. Each returns a new
+    // Future representing the downstream chain link.
+    if (obj.is_future()) {
+        FuturePtr fut = obj.as_future();
+        if (name == "next") {
+            result_ = Value{make_bound_native("next", -1,
+                [fut](Interpreter& interp, std::vector<Value> args) -> Value {
+                    if (args.empty() || !args[0].is_callable())
+                        throw std::runtime_error(
+                            "future.next(on_ok, on_err?): on_ok must be a function");
+                    CallablePtr on_ok = args[0].as_callable();
+                    CallablePtr on_err = nullptr;
+                    if (args.size() >= 2 && args[1].is_callable())
+                        on_err = args[1].as_callable();
+                    return Value{fut->add_next(interp, std::move(on_ok),
+                                               std::move(on_err))};
+                })};
+            return;
+        }
+        if (name == "fail") {
+            result_ = Value{make_bound_native("fail", 1,
+                [fut](Interpreter& interp, std::vector<Value> args) -> Value {
+                    if (!args[0].is_callable())
+                        throw std::runtime_error(
+                            "future.fail(on_err): on_err must be a function");
+                    return Value{fut->add_fail(interp, args[0].as_callable())};
+                })};
+            return;
+        }
+        if (name == "always") {
+            result_ = Value{make_bound_native("always", 1,
+                [fut](Interpreter& interp, std::vector<Value> args) -> Value {
+                    if (!args[0].is_callable())
+                        throw std::runtime_error(
+                            "future.always(fn): fn must be a function");
+                    return Value{fut->add_always(interp, args[0].as_callable())};
+                })};
+            return;
+        }
+        if (name == "state") {
+            const char* s = "pending";
+            if      (fut->is_fulfilled()) s = "fulfilled";
+            else if (fut->is_rejected())  s = "rejected";
+            result_ = Value{std::string(s)};
+            return;
+        }
+        throw RuntimeError(e.name, fmt::format("future has no property '{}'", name));
+    }
+
+    // Callable: only the Future builtin exposes member access (statics like
+    // Future.of, Future.err, Future.all). All other callables refuse.
+    if (obj.is_callable()) {
+        if (auto* fb = dynamic_cast<FutureBuiltin*>(obj.as_callable().get())) {
+            if (auto cb = fb->find_static(name)) {
+                result_ = Value{cb};
+                return;
+            }
+            throw RuntimeError(e.name, fmt::format(
+                "Future has no static '{}'", name));
+        }
+        // fall through — other callables don't support member access
+    }
+
     // Modules: name lookup in the module's exports environment.
     if (obj.is_module()) {
         const auto* v = obj.as_module()->exports()->lookup(name);
@@ -656,6 +720,18 @@ void Interpreter::visit(SuperExpr& e) {
 
     auto bound = std::make_shared<BoundMethod>(self_val->as_instance(), fn);
     result_ = Value{std::static_pointer_cast<Callable>(bound)};
+}
+
+void Interpreter::visit(WaitExpr& e) {
+    // The async UserFunction stepper intercepts `wait` at the top-level
+    // statement positions where it's legal (var init / expression statement).
+    // Reaching this visitor means wait appeared somewhere else — nested in
+    // an expression, inside a non-async context, etc. Reject with a useful
+    // diagnostic instead of evaluating the operand and silently returning
+    // the unwrapped Future.
+    throw RuntimeError(e.keyword,
+        "'wait' is only allowed as a top-level statement inside a function "
+        "(e.g. `var x = wait expr;` or `wait expr;`)");
 }
 
 }  // namespace bnl

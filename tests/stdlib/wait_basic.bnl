@@ -1,0 +1,90 @@
+// Phase 2: end-to-end exercise of the `wait` keyword.
+// Functions with `wait` in their body auto-detect as async and return a
+// Future; the body runs step-by-step, suspending at each wait until the
+// awaited Future settles.
+
+import "timers" as timers;
+
+// ---- 1. wait on a settled Future inside a function ----
+function get7() {
+    var x = wait Future.of(7);
+    return x;
+}
+get7().next(function (v) { print("get7:", v); });
+
+// ---- 2. wait on an executor-based Future that resolves via a timer ----
+function fetch_via_timer() {
+    var x = wait Future(function (resolve, reject) {
+        timers.set(0, function () { resolve("hello-from-timer"); });
+    });
+    return x + "!";
+}
+fetch_via_timer().next(function (v) { print("timer:", v); });
+
+// ---- 3. multiple sequential waits ----
+function chain() {
+    var a = wait Future.of(10);
+    var b = wait Future.of(20);
+    var c = wait Future.of(30);
+    return a + b + c;
+}
+chain().next(function (v) { print("chain:", v); });
+
+// ---- 4. wait on a rejected Future propagates as throw inside the function;
+//        bnl has no try/catch around top-level wait in Phase 2, so the outer
+//        Future rejects. .fail catches it.
+function bad() {
+    var x = wait Future.err("bad-thing");
+    return x;
+}
+bad().fail(function (e) { print("bad caught:", e); });
+
+// ---- 5. wait on a non-Future is permissive — auto-wraps with Future.of.
+function plain_wait() {
+    var x = wait 42;
+    return x;
+}
+plain_wait().next(function (v) { print("plain:", v); });
+
+// ---- 6. wait one async function from another ----
+function inner() {
+    var x = wait Future.of("inner-value");
+    return x;
+}
+function outer() {
+    var y = wait inner();        // inner() returns a Future; wait unwraps
+    return y + "/outer";
+}
+outer().next(function (v) { print("nested:", v); });
+
+// ---- 7. wait + futurified callback-style I/O ----
+function legacy_call(x, cb) {
+    timers.set(0, function () { cb(null, x * 100); });
+}
+var f_call = futurify(legacy_call);
+function use_legacy() {
+    var v = wait f_call(5);
+    return v;
+}
+use_legacy().next(function (v) { print("legacy:", v); });
+
+// ---- 8. wait as an expression statement (value discarded) ----
+function tick() {
+    wait Future.of("ignored-value");
+    return "after-tick";
+}
+tick().next(function (v) { print("tick:", v); });
+
+// ---- 9. return without wait — sync return inside an async function ----
+function early_return() {
+    return "no-wait-needed";          // function still has no wait, so sync
+}
+print("early:", early_return());
+
+// ---- 10. sync function calling an async function — caller sees a Future.
+//          This is the implicit-coloring leak we accept; users wait or .then.
+function sync_caller() {
+    return get7();                    // returns a Future
+}
+print("sync_caller type:", type(sync_caller()));
+sync_caller().next(function (v) { print("sync_caller chained:", v); });
