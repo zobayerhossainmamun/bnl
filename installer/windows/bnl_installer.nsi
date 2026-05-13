@@ -20,7 +20,7 @@
 !endif
 
 !define PRODUCT_NAME        "Bnlang"
-!define PRODUCT_VERSION     "1.0.0"
+!define PRODUCT_VERSION     "2.0.0"
 !define PRODUCT_PUBLISHER   "Bnlang"
 !define PRODUCT_UNINST_KEY  "Bnlang"
 !define INSTALL_DIR_NAME    "Bnlang"  ; Folder name under Program Files

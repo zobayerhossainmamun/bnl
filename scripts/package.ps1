@@ -1,6 +1,6 @@
 $ErrorActionPreference = "Stop"
 
-$Version      = if ($env:VERSION) { $env:VERSION } else { "v1.0.0" }
+$Version      = if ($env:VERSION) { $env:VERSION } else { "v2.0.0" }
 $RepoRoot     = (Resolve-Path "$PSScriptRoot\..").Path
 $ResourcesDir = Join-Path $RepoRoot "resources"
 $InstallerDir = Join-Path $RepoRoot "installer\windows"

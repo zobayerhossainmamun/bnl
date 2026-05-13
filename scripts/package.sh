@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-VERSION="${VERSION:-v1.0.0}"
+VERSION="${VERSION:-v2.0.0}"
 RES="resources"
 LICENSE="$RES/LICENSE.txt"
 README="$RES/README.txt"
