@@ -207,7 +207,12 @@
       "PowerShell(.\\\\build\\\\windows\\\\bin\\\\bnl.exe tests\\\\lang\\\\bilingual_modules.bnl)",
       "Bash(xxd)",
       "Bash(xargs -n1 basename)",
-      "Bash(xargs -0 -n1 sh -c 'sed -i \"s|/v1\\\\.0\\\\.0/|/v2.0.0/|g\" \"$0\"')"
+      "Bash(xargs -0 -n1 sh -c 'sed -i \"s|/v1\\\\.0\\\\.0/|/v2.0.0/|g\" \"$0\"')",
+      "Bash(xargs -I {} grep -l \"math\\\\|json\\\\|path\" {})",
+      "Bash(cmake --build build/windows-release --target bnl)",
+      "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_dhori.bnl)",
+      "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_nal.bnl)",
+      "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_bangla_num.bnl)"
     ]
   }
 }

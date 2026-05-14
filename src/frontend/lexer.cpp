@@ -27,6 +27,7 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"function",  TokenType::Function},{"\xe0\xa6\xab\xe0\xa6\xbe\xe0\xa6\x82\xe0\xa6\xb6\xe0\xa6\xa8",                                 TokenType::Function},  // ফাংশন
         {"return",    TokenType::Return},  {"\xe0\xa6\xab\xe0\xa7\x87\xe0\xa6\xb0\xe0\xa6\xa4",                     TokenType::Return},    // ফেরত
         {"var",       TokenType::Var},     {"\xe0\xa6\x9a\xe0\xa6\xb2\xe0\xa6\x95",                                 TokenType::Var},       // চলক
+        {"\xe0\xa6\xa7\xe0\xa6\xb0\xe0\xa6\xbf",                                 TokenType::Var},                                                                       // ধরি
         {"class",     TokenType::Class},   {"\xe0\xa6\xb6\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa7\x87\xe0\xa6\xa3\xe0\xa7\x80", TokenType::Class}, // শ্রেণী
         {"extends",   TokenType::Extends}, {"\xe0\xa6\xaa\xe0\xa7\x8d\xe0\xa6\xb0\xe0\xa6\xb8\xe0\xa6\xbe\xe0\xa6\xb0\xe0\xa6\xbf\xe0\xa6\xa4", TokenType::Extends}, // প্রসারিত
         {"super",     TokenType::Super},   {"\xe0\xa6\x89\xe0\xa6\xaa\xe0\xa6\xb0\xe0\xa7\x87\xe0\xa6\xb0",                                       TokenType::Super},   // উপরের
@@ -40,6 +41,7 @@ const std::unordered_map<std::string_view, TokenType>& keyword_table() {
         {"true",      TokenType::True},    {"\xe0\xa6\xb8\xe0\xa6\xa4\xe0\xa7\x8d\xe0\xa6\xaf",                     TokenType::True},      // সত্য
         {"false",     TokenType::False},   {"\xe0\xa6\xae\xe0\xa6\xbf\xe0\xa6\xa5\xe0\xa7\x8d\xe0\xa6\xaf\xe0\xa6\xbe", TokenType::False}, // মিথ্যা
         {"null",      TokenType::Null},    {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\x87",                                                         TokenType::Null},      // নাই
+        {"\xe0\xa6\xa8\xe0\xa6\xbe\xe0\xa6\xb2",                                 TokenType::Null},                                                                      // নাল
 
         // for-of iteration
         {"of",        TokenType::Of},      {"\xe0\xa6\x8f\xe0\xa6\xb0",                                                                     TokenType::Of},        // এর
@@ -229,7 +231,16 @@ void Lexer::scan_token() {
         }
     }
 
-    // Non-ASCII: must be the start of a UTF-8 identifier.
+    // Non-ASCII: Bangla digit ০-৯ (U+09E6..U+09EF, UTF-8 E0 A7 A6..AF) starts
+    // a numeric literal; anything else must be the start of a UTF-8 identifier.
+    if (lead == 0xE0 && static_cast<unsigned char>(peek(1)) == 0xA7) {
+        unsigned char b2 = static_cast<unsigned char>(peek(2));
+        if (b2 >= 0xA6 && b2 <= 0xAF) {
+            scan_number();
+            return;
+        }
+    }
+
     std::size_t saved_cursor = cursor_;
     std::size_t saved_column = column_;
     std::uint32_t cp = decode_codepoint();
@@ -276,10 +287,34 @@ void Lexer::scan_identifier_or_keyword() {
 }
 
 void Lexer::scan_number() {
-    while (!at_end() && is_ascii_digit(peek())) advance();
-    if (!at_end() && peek() == '.' && is_ascii_digit(peek(1))) {
+    // Digit predicate that accepts either ASCII (0-9) or Bangla (০-৯ at
+    // U+09E6..U+09EF, UTF-8 E0 A7 A6..AF) digits at a byte offset from cursor_.
+    auto digit_at = [this](std::size_t off) -> bool {
+        if (cursor_ + off >= source_.size()) return false;
+        unsigned char b0 = static_cast<unsigned char>(source_[cursor_ + off]);
+        if (b0 < 0x80) return is_ascii_digit(static_cast<char>(b0));
+        if (b0 == 0xE0 && cursor_ + off + 2 < source_.size()
+            && static_cast<unsigned char>(source_[cursor_ + off + 1]) == 0xA7) {
+            unsigned char b2 = static_cast<unsigned char>(source_[cursor_ + off + 2]);
+            return b2 >= 0xA6 && b2 <= 0xAF;
+        }
+        return false;
+    };
+    // Consumes one digit at cursor_; counts a Bangla digit as a single column.
+    auto consume_digit = [this]() {
+        unsigned char b0 = static_cast<unsigned char>(peek());
+        if (b0 < 0x80) {
+            advance();
+        } else {
+            cursor_ += 3;
+            column_++;
+        }
+    };
+
+    while (digit_at(0)) consume_digit();
+    if (!at_end() && peek() == '.' && digit_at(1)) {
         advance();  // consume '.'
-        while (!at_end() && is_ascii_digit(peek())) advance();
+        while (digit_at(0)) consume_digit();
     }
     emit(TokenType::Number);
 }

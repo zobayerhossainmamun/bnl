@@ -22,10 +22,10 @@ Reserved in both forms.
 | `while` | `যতক্ষণ` | `super` | `উপরের` |
 | `function` | `ফাংশন` | `import` | `আমদানি` |
 | `return` | `ফেরত` | `as` | `যেমন` |
-| `var` | `চলক` | `and` | `এবং` |
+| `var` | `চলক` / `ধরি` | `and` | `এবং` |
 | `true` | `সত্য` | `or` | `অথবা` |
 | `false` | `মিথ্যা` | `not` | `না` |
-| `null` | `নাই` | `try` | `চেষ্টা` |
+| `null` | `নাই` / `নাল` | `try` | `চেষ্টা` |
 | `catch` | `ধরুন` | `throw` | `নিক্ষেপ` |
 | `finally` | `অবশেষে` | `for` | `প্রতি` |
 | `of` | `এর` | | |
@@ -48,10 +48,10 @@ var greeting = "hi";
 
 | Form | Example |
 |---|---|
-| Number | `42`, `3.14`, `-0.5` (all stored as IEEE-754 double) |
+| Number | `42`, `3.14`, `-0.5`, `১২৩`, `৩.১৪` (ASCII or Bangla digits ০-৯; all stored as IEEE-754 double) |
 | String | `"hello"`, `"\n"`, `"\t"`, `"\""`, `"\\"` |
 | Boolean | `true` / `সত্য`, `false` / `মিথ্যা` |
-| Null | `null` / `নাই` |
+| Null | `null` / `নাই` / `নাল` |
 | List | `[1, 2, "three"]` |
 | Map | `{name: "alice", age: 30}` or `{"name": "alice"}` |
 

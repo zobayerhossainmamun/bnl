@@ -98,8 +98,26 @@ void Interpreter::visit(LiteralExpr& e) {
         case TokenType::True:   result_ = Value{true};              return;
         case TokenType::False:  result_ = Value{false};             return;
         case TokenType::Number: {
+            // Normalize Bangla digits ০-৯ (UTF-8 E0 A7 A6..AF) to ASCII 0-9
+            // so std::stod can parse the lexeme uniformly.
+            const auto& raw = e.value.lexeme;
+            std::string buf;
+            buf.reserve(raw.size());
+            for (std::size_t i = 0; i < raw.size(); ++i) {
+                unsigned char b = static_cast<unsigned char>(raw[i]);
+                if (b == 0xE0 && i + 2 < raw.size()
+                    && static_cast<unsigned char>(raw[i + 1]) == 0xA7) {
+                    unsigned char b2 = static_cast<unsigned char>(raw[i + 2]);
+                    if (b2 >= 0xA6 && b2 <= 0xAF) {
+                        buf.push_back(static_cast<char>('0' + (b2 - 0xA6)));
+                        i += 2;
+                        continue;
+                    }
+                }
+                buf.push_back(static_cast<char>(b));
+            }
             try {
-                result_ = Value{std::stod(std::string(e.value.lexeme))};
+                result_ = Value{std::stod(buf)};
             } catch (const std::exception&) {
                 throw RuntimeError(e.value, "invalid numeric literal");
             }
