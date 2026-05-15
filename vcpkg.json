@@ -37,10 +37,6 @@
             "name": "mongo-c-driver",
             "features": ["openssl"],
             "version>=": "2.3.0"
-        },
-        {
-            "name": "libffi",
-            "version>=": "3.4.6"
         }
     ]
 }

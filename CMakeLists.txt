@@ -36,7 +36,6 @@ find_package(unofficial-sqlite3 CONFIG REQUIRED)   # stdlib/sqlite.cpp
 find_package(PostgreSQL         REQUIRED)          # stdlib/pg.cpp
 find_package(mongoc             CONFIG REQUIRED)   # stdlib/mongo.cpp
 find_package(ZLIB               REQUIRED)          # stdlib/zlib.cpp (already a transitive dep of libpq)
-find_package(unofficial-libffi  CONFIG REQUIRED)   # stdlib/ffi.cpp — call arbitrary C ABI
 
 set(BNL_STDLIB_EMBEDDED_HEADER ${CMAKE_BINARY_DIR}/generated/stdlib_embedded.h)
 file(GLOB BNL_LIB_FILES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/lib/*.bnl)
