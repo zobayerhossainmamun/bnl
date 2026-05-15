@@ -32,7 +32,6 @@ add_library(bnl_core STATIC
     stdlib/dns.cpp
     stdlib/sqlite.cpp
     stdlib/pg.cpp
-    stdlib/mysql.cpp
     stdlib/mongo.cpp
     stdlib/math.cpp
     stdlib/random.cpp
@@ -64,7 +63,6 @@ target_link_libraries(bnl_core
         OpenSSL::SSL
         unofficial::sqlite3::sqlite3
         PostgreSQL::PostgreSQL
-        unofficial::libmariadb
         $<IF:$<TARGET_EXISTS:mongoc::shared>,mongoc::shared,mongoc::static>
         ZLIB::ZLIB
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>

@@ -34,7 +34,6 @@ find_package(nlohmann_json      CONFIG REQUIRED)   # used by module loader to re
 find_package(OpenSSL            REQUIRED)          # stdlib/crypto.cpp + tls.cpp
 find_package(unofficial-sqlite3 CONFIG REQUIRED)   # stdlib/sqlite.cpp
 find_package(PostgreSQL         REQUIRED)          # stdlib/pg.cpp
-find_package(unofficial-libmariadb CONFIG REQUIRED) # stdlib/mysql.cpp
 find_package(mongoc             CONFIG REQUIRED)   # stdlib/mongo.cpp
 find_package(ZLIB               REQUIRED)          # stdlib/zlib.cpp (already a transitive dep of libpq)
 find_package(unofficial-libffi  CONFIG REQUIRED)   # stdlib/ffi.cpp — call arbitrary C ABI

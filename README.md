@@ -1,6 +1,6 @@
 # Bnlang (bnl)
 
-A bilingual programming language and runtime — write the same program in **Bangla** or **English**, side by side. Implemented as a native C++ tree-walking interpreter with a built-in stdlib (I/O, timers, networking, HTTP, TLS, JSON, regex, crypto, exec, DNS, SQLite, Postgres, MySQL, MongoDB).
+A bilingual programming language and runtime — write the same program in **Bangla** or **English**, side by side. Implemented as a native C++ tree-walking interpreter with a built-in stdlib (I/O, timers, networking, HTTP, TLS, JSON, regex, crypto, exec, DNS, SQLite, Postgres, MongoDB).
 
 - **Self-contained binary**: Release builds statically link everything into a single `bnl` executable — users don't install a runtime, don't manage DLLs, just download and run.
 

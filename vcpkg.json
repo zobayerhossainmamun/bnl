@@ -34,11 +34,6 @@
             "version>=": "18.3"
         },
         {
-            "name": "libmariadb",
-            "features": ["openssl"],
-            "version>=": "3.4.8"
-        },
-        {
             "name": "mongo-c-driver",
             "features": ["openssl"],
             "version>=": "2.3.0"

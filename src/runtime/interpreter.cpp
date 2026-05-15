@@ -108,7 +108,6 @@ Interpreter::Interpreter()
     register_dns   (*this);
     register_sqlite(*this);
     register_pg    (*this);
-    register_mysql (*this);
     register_mongo (*this);
     register_math  (*this);
     register_random(*this);

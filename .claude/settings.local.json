@@ -226,7 +226,9 @@
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 40)",
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl >nul && ctest --test-dir build/windows-release --output-on-failure\" 2>&1 | Select-Object -Last 15)",
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 25)",
-      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release --output-on-failure\" 2>&1 | Select-Object -Last 10)"
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release --output-on-failure\" 2>&1 | Select-Object -Last 10)",
+      "PowerShell($path = 'D:\\\\bnlang\\\\new-v\\\\bnl\\\\resources\\\\LICENSE.txt'; $lines = [System.IO.File]::ReadAllLines\\($path\\); $before = $lines[0..246]; $after  = $lines[753..\\($lines.Length - 1\\)]; $kept = $before + $after; [System.IO.File]::WriteAllLines\\($path, $kept\\); \"kept=$\\($kept.Length\\) original=$\\($lines.Length\\) removed=$\\($lines.Length - $kept.Length\\)\")",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }
