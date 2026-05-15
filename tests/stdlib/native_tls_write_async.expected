@@ -1,0 +1,3 @@
+done_fired right after write: false
+on_done eventually fired: true
+on_done err: null

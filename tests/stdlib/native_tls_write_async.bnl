@@ -1,0 +1,57 @@
+// Verify TLS conn.write's on_done callback fires AFTER libuv flushes the
+// ciphertext to the kernel — not synchronously from inside .write().
+//
+// The contract: after `conn.write(data, on_done)` returns, on_done has NOT
+// fired yet. It fires on the next loop tick, after uv_write completes.
+//
+// This guards real backpressure flow control. If on_done fired sync (as the
+// pre-fix code did) the caller would race ahead of libuv's outbound queue
+// under sustained writes to slow consumers, growing memory unboundedly.
+
+import "io"  as io;
+import "tls" as tls;
+
+var cert = io.read_file("../_fixtures/tls/cert.pem");
+var key  = io.read_file("../_fixtures/tls/key.pem");
+
+var server = tls.listen(0, {cert: cert, key: key}, function (conn) {
+    conn.on_data(function (data) {
+        conn.write("ack");
+    });
+    conn.on_end(function () {
+        conn.close();
+        server.close();
+    });
+});
+
+tls.connect("localhost", "127.0.0.1", server.port, function (err, client) {
+    if (err != null) {
+        print("connect err:", err);
+        server.close();
+        return;
+    }
+
+    var done_fired = false;
+    var done_err   = "unset";
+
+    // on_data fires when the server's "ack" arrives. That round-trip
+    // requires our "hello" write to actually have left the kernel — so by
+    // the time on_data runs, on_done has fired. Use it as the observation
+    // point for done_fired.
+    client.on_data(function (data) {
+        print("on_done eventually fired:", done_fired);
+        print("on_done err:", done_err);
+        client.close();
+    });
+
+    // Write with on_done. After .write() returns:
+    //   - pre-fix: done_fired = true (on_done was called inline)
+    //   - post-fix: done_fired = false (on_done deferred to libuv flush)
+    client.write("hello", function (err) {
+        done_fired = true;
+        done_err   = err;
+    });
+
+    // Snapshot done_fired immediately after the synchronous .write() returns.
+    print("done_fired right after write:", done_fired);
+}, {verify: false});

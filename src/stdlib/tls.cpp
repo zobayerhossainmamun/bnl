@@ -151,6 +151,14 @@ struct TlsConnectReq {
 struct SocketWriteReq {
     uv_write_t             req{};
     std::string            data;
+    // The user's on_done callback rides only on the LAST chunk produced by
+    // a single pump_outgoing call — i.e., the one whose libuv completion
+    // means "all bytes for that ssl_write have been kernel-accepted." This
+    // is real flow-control signal (vs. firing sync right after SSL_write,
+    // which lied about the flush). Mirrors net.cpp's WriteReq layout.
+    CallablePtr            on_done;
+    Interpreter*           interp = nullptr;
+    std::shared_ptr<bool>  alive;
 };
 
 // ---------- exception-safe callback ----------------------------------------
@@ -183,7 +191,11 @@ void close_tls_listener_once(TlsListener* lst);
 void on_tls_conn_close(uv_handle_t* h);
 void on_tls_listener_close(uv_handle_t* h);
 ModulePtr build_tls_conn_module(TlsConn* conn);
-void pump_outgoing(TlsConn* conn);
+void pump_outgoing(TlsConn* conn,
+                   CallablePtr on_done = nullptr,
+                   Interpreter* interp = nullptr,
+                   std::shared_ptr<bool> alive = nullptr);
+void on_socket_write_done(uv_write_t* req, int status);
 
 // ---------- libuv read alloc -----------------------------------------------
 
@@ -194,28 +206,84 @@ void alloc_buf(uv_handle_t*, std::size_t suggested, uv_buf_t* buf) {
 
 // ---------- pump cipher text from network_bio out to the socket ------------
 
-void pump_outgoing(TlsConn* conn) {
-    if (conn->closing) return;
+// Fires the user's on_done callback once the kernel has accepted the bytes
+// (real flow-control signal). Skips if the conn was closed before flush.
+void on_socket_write_done(uv_write_t* req, int status) {
+    auto* wr = static_cast<SocketWriteReq*>(req->data);
+    if (wr->on_done && wr->alive && *wr->alive) {
+        Value err = (status < 0)
+            ? Value{std::string(uv_strerror(status))}
+            : Value{};
+        invoke_cb(*wr->interp, wr->on_done, { std::move(err) });
+    }
+    delete wr;
+}
+
+// Drains ciphertext from network_bio and submits one uv_write per chunk.
+// If on_done is given (only set when called from conn.write — handshake /
+// incoming-data pumps don't carry user callbacks), it's attached to the
+// LAST chunk so it fires after libuv reports the kernel accepted all bytes
+// for this SSL_write. Sync uv_write failure: fire on_done with the libuv
+// error string before tearing down the connection.
+void pump_outgoing(TlsConn* conn,
+                   CallablePtr on_done,
+                   Interpreter* interp,
+                   std::shared_ptr<bool> alive) {
+    if (conn->closing) {
+        if (on_done && alive && *alive) {
+            invoke_cb(*interp, on_done, { Value{std::string("connection closed")} });
+        }
+        return;
+    }
+
+    // First pass: drain network_bio into a vector of pending reqs. We need
+    // them all in hand so we can mark the LAST one as the on_done carrier.
+    std::vector<std::unique_ptr<SocketWriteReq>> chunks;
     while (true) {
         char buf[16384];
         int n = BIO_read(conn->network_bio, buf, sizeof(buf));
         if (n <= 0) break;
-        auto* wr = new SocketWriteReq{};
+        auto wr = std::make_unique<SocketWriteReq>();
         wr->data     = std::string(buf, static_cast<std::size_t>(n));
-        wr->req.data = wr;
-        uv_buf_t b   = uv_buf_init(wr->data.data(),
-                                   static_cast<unsigned int>(wr->data.size()));
+        wr->req.data = wr.get();
+        chunks.push_back(std::move(wr));
+    }
+
+    if (chunks.empty()) {
+        // SSL produced no ciphertext (unusual post-handshake — e.g. empty
+        // SSL_write). Nothing to flush, so on_done fires synchronously with
+        // success since the data was "accepted" by the SSL layer.
+        if (on_done && alive && *alive) {
+            invoke_cb(*interp, on_done, { Value{} });
+        }
+        return;
+    }
+
+    chunks.back()->on_done = std::move(on_done);
+    chunks.back()->interp  = interp;
+    chunks.back()->alive   = std::move(alive);
+
+    for (auto& wr : chunks) {
+        uv_buf_t b = uv_buf_init(wr->data.data(),
+                                  static_cast<unsigned int>(wr->data.size()));
         int rc = uv_write(&wr->req,
                           reinterpret_cast<uv_stream_t*>(&conn->handle),
-                          &b, 1,
-                          [](uv_write_t* req, int /*status*/) {
-                              delete static_cast<SocketWriteReq*>(req->data);
-                          });
+                          &b, 1, on_socket_write_done);
         if (rc < 0) {
-            delete wr;
+            // Sync failure. The on_done is on chunks.back(), which is either
+            // this failed req (if it was the last) or a later unsubmitted
+            // one — either way still alive in our vector. Fire it with the
+            // error before tearing down.
+            auto& last = chunks.back();
+            if (last && last->on_done && last->alive && *last->alive) {
+                invoke_cb(*last->interp, last->on_done,
+                          { Value{std::string(uv_strerror(rc))} });
+            }
             close_tls_conn_once(conn);
             return;
         }
+        // libuv now owns this req; on_socket_write_done will delete it.
+        wr.release();
     }
 }
 
@@ -395,8 +463,12 @@ ModulePtr build_tls_conn_module(TlsConn* conn) {
 
                 const std::string& data = args[0].as_string();
                 if (!conn->handshake_done) {
-                    // Queue — drained when handshake completes.
+                    // Queued for after handshake. on_done fires sync — the
+                    // bytes are owned by our buffer, not yet TLS-encoded, so
+                    // there's no kernel flush to wait on. Caller can think
+                    // of it as "the write was accepted into the queue".
                     conn->pending_writes.push_back(data);
+                    if (on_done) invoke_cb(*interp, on_done, { Value{} });
                 } else {
                     int n = SSL_write(conn->ssl, data.data(),
                                       static_cast<int>(data.size()));
@@ -405,12 +477,11 @@ ModulePtr build_tls_conn_module(TlsConn* conn) {
                         throw std::runtime_error("conn.write: SSL_write: " +
                                                  ssl_err_message(err));
                     }
-                    pump_outgoing(conn);
+                    // on_done fires from the LAST uv_write's completion callback
+                    // (real flow control). Until libuv reports the bytes hit
+                    // the kernel, the write isn't "done" — that's the contract.
+                    pump_outgoing(conn, std::move(on_done), interp, alive);
                 }
-                // For v1, on_done fires once SSL_write has accepted the bytes
-                // (they are queued in network_bio + uv_write). Real backpressure
-                // tracking would defer until the last uv_write callback fires.
-                if (on_done) invoke_cb(*interp, on_done, { Value{} });
                 return Value{};
             })
 
