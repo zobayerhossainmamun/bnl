@@ -1,14 +1,23 @@
-# bnl docs
+# bnl — developer docs
 
-Reference docs for the bnl language and runtime.
+Internal documentation for working on the bnl interpreter and runtime.
+These docs are written for **developers reading the source**, not for end
+users writing bnl scripts. (User-facing language reference lives elsewhere.)
 
-| Doc | When to read |
+| Doc | What it covers |
 |---|---|
-| [Guide](./guide.md) | First time using bnl. Install, first program, projects, async, classes. |
-| [Syntax](./syntax.md) | Language reference. Tokens, grammar, types, operators, statements. |
-| [Dep development](./deps-dev.md) | Authoring a pure-bnl package distributed under `deps/`. |
+| [architecture.md](./architecture.md) | How bnl works internally — pipeline, value model, module system, async model, build system |
+| [extending.md](./extending.md) | Practical: how to add a built-in module, a plugin, or a pure-bnl helper |
 
-bnl is a tree-walking interpreter for a Bangla+English language with Python-flavored
-semantics, semicolons, and brackets. The runtime ships with three native modules
-(`sys`, `io`, `timers`); everything else — crypto, networking, HTTP, databases —
-is delivered as plugins or pure-bnl packages.
+## 30-second pitch (what bnl is)
+
+A **bilingual programming language** (Bangla + English identifiers and
+keywords) implemented as a **tree-walking interpreter in C++20** on top of
+**libuv** for async I/O. Ships as a self-contained single binary (~5 MB)
+with a batteries-included standard library: file I/O, timers, regex,
+crypto, networking (TCP/HTTP/TLS), JSON, sqlite/postgres/mongo drivers,
+and 25 pure-bnl helper modules.
+
+Source is closed; the binary is free to use for personal, educational,
+and commercial work. The C plugin ABI (`include/bnl/plugin.h`) is public
+and stable — anyone can ship plugins.
