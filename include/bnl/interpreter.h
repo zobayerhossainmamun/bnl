@@ -104,6 +104,11 @@ public:
     void                            set_program_args(std::vector<std::string> args) { program_args_ = std::move(args); }
     const std::vector<std::string>& program_args() const { return program_args_; }
 
+    // Path of the entry script passed to run(). Distinct from current_file_,
+    // which follows the active module as imports execute. sys.script() reads
+    // this; stays empty for REPL / -e runs.
+    const std::filesystem::path&    entry_path()    const { return entry_path_; }
+
     // libuv loop owned by this interpreter. Native modules register handles
     // here. Most hosts do not need to touch this directly.
     uv_loop_t* loop() { return &loop_; }
@@ -171,8 +176,9 @@ public:
     void visit(UnaryExpr&)      override;
     void visit(BinaryExpr&)     override;
     void visit(LogicalExpr&)    override;
-    void visit(AssignExpr&)     override;
-    void visit(CallExpr&)       override;
+    void visit(AssignExpr&)         override;
+    void visit(CompoundAssignExpr&) override;
+    void visit(CallExpr&)           override;
     void visit(MemberExpr&)     override;
     void visit(FunctionExpr&)   override;
     void visit(ListExpr&)       override;
@@ -269,6 +275,7 @@ private:
     Value                        result_;
 
     std::filesystem::path                          current_file_;
+    std::filesystem::path                          entry_path_;
     std::unique_ptr<ModuleLoader>                  modules_;
     std::unordered_map<std::string, ModulePtr>     native_modules_;
     std::vector<std::string>                       program_args_;

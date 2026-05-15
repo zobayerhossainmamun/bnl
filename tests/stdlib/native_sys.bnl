@@ -16,3 +16,35 @@ print(sys.arg(0));
 // Bilingual import keyword keeps working alongside native modules.
 আমদানি "sys" যেমন স;
 print(স.platform == sys.platform);
+
+// --- introspection: version / arch are constants exposed as values. -------
+print(type(sys.version));
+print(sys.version.length > 0);
+print(type(sys.arch));
+
+// --- process / environment: value varies by machine, type does not. ------
+print(type(sys.script()));
+print(type(sys.executable()));
+print(type(sys.hostname()));
+print(type(sys.username()));
+print(type(sys.home()));
+print(type(sys.tempdir()));
+print(type(sys.cwd()));
+print(sys.pid() > 0);
+print(sys.cpu_count() > 0);
+
+// --- argv mirrors argc (no args forwarded by test driver). ---------------
+print(sys.argv().length == sys.argc());
+print(sys.argv().length);
+
+// --- setenv / unsetenv round-trip. ---------------------------------------
+sys.setenv("BNL_TEST_NEW_VAR", "value-x");
+print(sys.env("BNL_TEST_NEW_VAR"));
+sys.unsetenv("BNL_TEST_NEW_VAR");
+print(sys.env("BNL_TEST_NEW_VAR"));
+
+// --- chdir round-trip: leave, come back, expect same cwd. ----------------
+var orig_cwd = sys.cwd();
+sys.chdir(sys.tempdir());
+sys.chdir(orig_cwd);
+print(sys.cwd() == orig_cwd);

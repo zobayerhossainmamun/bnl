@@ -212,7 +212,16 @@
       "Bash(cmake --build build/windows-release --target bnl)",
       "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_dhori.bnl)",
       "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_nal.bnl)",
-      "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_bangla_num.bnl)"
+      "PowerShell(.\\\\build\\\\windows-release\\\\bin\\\\bnl.exe test_bangla_num.bnl)",
+      "Bash(cmake --build build/windows)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 80)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 20)",
+      "Bash(build/windows-release/bin/bnl.exe *)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release -R `\"^native_sys$`\" --output-on-failure\" 2>&1 | Select-Object -Last 30)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 30)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release --output-on-failure\" 2>&1 | Select-Object -Last 25)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl >nul && ctest --test-dir build/windows-release -R `\"^operators_short$`\" --output-on-failure\" 2>&1 | Select-Object -Last 10)",
+      "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release\" 2>&1 | Select-Object -Last 12)"
     ]
   }
 }

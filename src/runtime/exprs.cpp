@@ -123,7 +123,13 @@ void Interpreter::visit(LiteralExpr& e) {
             }
             return;
         }
-        case TokenType::String: result_ = Value{decode_string_literal(e.value)}; return;
+        case TokenType::String:
+            if (e.precomputed_string) {
+                result_ = Value{*e.precomputed_string};
+            } else {
+                result_ = Value{decode_string_literal(e.value)};
+            }
+            return;
         default:
             throw RuntimeError(e.value, "internal: unexpected literal token type");
     }
@@ -196,6 +202,14 @@ void Interpreter::visit(BinaryExpr& e) {
 
 void Interpreter::visit(LogicalExpr& e) {
     Value left = evaluate(*e.left);
+    if (e.op.type == TokenType::QuestionQuestion) {
+        // `a ?? b`: only null on the left falls through. Falsey-but-non-null
+        // values (0, "", false) keep the left, which is the whole point of
+        // having ?? distinct from ||.
+        if (!left.is_null()) { result_ = std::move(left); return; }
+        result_ = evaluate(*e.right);
+        return;
+    }
     bool is_or = (e.op.type == TokenType::PipePipe || e.op.type == TokenType::Or);
     if (is_or) {
         if (left.truthy()) { result_ = std::move(left); return; }
@@ -211,6 +225,123 @@ void Interpreter::visit(AssignExpr& e) {
         throw RuntimeError(e.name, "undefined variable '" + std::string(e.name.lexeme) + "'");
     }
     result_ = std::move(value);
+}
+
+// x op= v / x++ / x-- — the parser routes all three through this node.
+// Single-eval guarantee: the target's object and (for index) the index
+// expression are each evaluated exactly once.
+void Interpreter::visit(CompoundAssignExpr& e) {
+    auto apply = [&](Value left, Value right) -> Value {
+        switch (e.op.type) {
+            case TokenType::Plus:
+                if (left.is_number() && right.is_number())
+                    return Value{left.as_number() + right.as_number()};
+                if (left.is_string() || right.is_string())
+                    return Value{left.to_display() + right.to_display()};
+                throw RuntimeError(e.op,
+                    fmt::format("'+=' expects numbers or strings, got {} and {}",
+                                left.type_name(), right.type_name()));
+            case TokenType::Minus:
+                check_number_operands(e.op, left, right);
+                return Value{left.as_number() - right.as_number()};
+            case TokenType::Star:
+                check_number_operands(e.op, left, right);
+                return Value{left.as_number() * right.as_number()};
+            case TokenType::Percent:
+                check_number_operands(e.op, left, right);
+                return Value{std::fmod(left.as_number(), right.as_number())};
+            case TokenType::Slash:
+                check_number_operands(e.op, left, right);
+                if (right.as_number() == 0.0)
+                    throw RuntimeError(e.op, "division by zero");
+                return Value{left.as_number() / right.as_number()};
+            default:
+                throw RuntimeError(e.op, "internal: unsupported compound op");
+        }
+    };
+
+    if (auto* id = dynamic_cast<IdentifierExpr*>(e.target.get())) {
+        auto name = std::string(id->name.lexeme);
+        const Value* curp = environment_->lookup(name);
+        if (!curp) throw RuntimeError(id->name, "undefined variable '" + name + "'");
+        Value current = *curp;
+        Value rhs     = evaluate(*e.value);
+        Value updated = apply(std::move(current), std::move(rhs));
+        if (!environment_->assign(name, updated)) {
+            throw RuntimeError(id->name, "undefined variable '" + name + "'");
+        }
+        result_ = std::move(updated);
+        return;
+    }
+
+    if (auto* m = dynamic_cast<MemberExpr*>(e.target.get())) {
+        Value obj  = evaluate(*m->object);
+        auto  name = std::string(m->name.lexeme);
+
+        Value current;
+        if (obj.is_map()) {
+            auto& map = *obj.as_map();
+            auto it = map.find(name);
+            if (it != map.end()) current = it->second;
+        } else if (obj.is_instance()) {
+            auto& fields = obj.as_instance()->fields();
+            auto it = fields.find(name);
+            if (it != fields.end()) current = it->second;
+        } else {
+            throw RuntimeError(m->name,
+                fmt::format("cannot set property '{}' on {} value",
+                            name, obj.type_name()));
+        }
+        Value rhs     = evaluate(*e.value);
+        Value updated = apply(std::move(current), std::move(rhs));
+        if (obj.is_map()) {
+            (*obj.as_map())[name] = updated;
+        } else {
+            obj.as_instance()->fields()[name] = updated;
+        }
+        result_ = std::move(updated);
+        return;
+    }
+
+    if (auto* ix = dynamic_cast<IndexExpr*>(e.target.get())) {
+        Value obj   = evaluate(*ix->object);
+        Value index = evaluate(*ix->index);
+
+        if (obj.is_list()) {
+            if (!index.is_number())
+                throw RuntimeError(ix->bracket,
+                    fmt::format("list index must be a number, got {}", index.type_name()));
+            auto& list = *obj.as_list();
+            auto i = static_cast<long long>(index.as_number());
+            if (i < 0 || static_cast<std::size_t>(i) >= list.size())
+                throw RuntimeError(ix->bracket,
+                    fmt::format("list index {} out of range (size {})", i, list.size()));
+            Value current = list[static_cast<std::size_t>(i)];
+            Value rhs     = evaluate(*e.value);
+            Value updated = apply(std::move(current), std::move(rhs));
+            list[static_cast<std::size_t>(i)] = updated;
+            result_ = std::move(updated);
+            return;
+        }
+        if (obj.is_map()) {
+            if (!index.is_string())
+                throw RuntimeError(ix->bracket,
+                    fmt::format("map key must be a string, got {}", index.type_name()));
+            auto& map = *obj.as_map();
+            Value current;
+            auto it = map.find(index.as_string());
+            if (it != map.end()) current = it->second;
+            Value rhs     = evaluate(*e.value);
+            Value updated = apply(std::move(current), std::move(rhs));
+            map[index.as_string()] = updated;
+            result_ = std::move(updated);
+            return;
+        }
+        throw RuntimeError(ix->bracket,
+            fmt::format("cannot assign by index on {} value", obj.type_name()));
+    }
+
+    throw RuntimeError(e.op, "internal: invalid compound-assignment target");
 }
 
 void Interpreter::visit(CallExpr& e) {

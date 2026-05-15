@@ -79,6 +79,16 @@ public:
         out_ += ')';
     }
 
+    void visit(CompoundAssignExpr& e) override {
+        out_ += '(';
+        out_ += e.op.lexeme;
+        out_ += "= ";
+        e.target->accept(*this);
+        out_ += ' ';
+        e.value->accept(*this);
+        out_ += ')';
+    }
+
     void visit(CallExpr& e) override {
         out_ += "(call ";
         e.callee->accept(*this);

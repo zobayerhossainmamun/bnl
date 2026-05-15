@@ -189,16 +189,31 @@ void Lexer::scan_token() {
             case '.': emit(TokenType::Dot); return;
             case ';': emit(TokenType::Semicolon); return;
             case ':': emit(TokenType::Colon); return;
-            case '+': emit(TokenType::Plus); return;
-            case '-': emit(TokenType::Minus); return;
-            case '*': emit(TokenType::Star); return;
-            case '/': emit(TokenType::Slash); return;
-            case '%': emit(TokenType::Percent); return;
+
+            // Multi-char operator dispatch. Order matters: '++' must be
+            // checked before '+=' because they share the leading '+'.
+            case '+':
+                if (match('+')) { emit(TokenType::PlusPlus); return; }
+                if (match('=')) { emit(TokenType::PlusEq);   return; }
+                emit(TokenType::Plus); return;
+            case '-':
+                if (match('-')) { emit(TokenType::MinusMinus); return; }
+                if (match('=')) { emit(TokenType::MinusEq);    return; }
+                emit(TokenType::Minus); return;
+            case '*':   emit(match('=') ? TokenType::StarEq    : TokenType::Star);    return;
+            case '/':   emit(match('=') ? TokenType::SlashEq   : TokenType::Slash);   return;
+            case '%':   emit(match('=') ? TokenType::PercentEq : TokenType::Percent); return;
 
             case '=': emit(match('=') ? TokenType::EqEq   : TokenType::Assign); return;
             case '!': emit(match('=') ? TokenType::BangEq : TokenType::Bang);   return;
             case '<': emit(match('=') ? TokenType::LtEq   : TokenType::Lt);     return;
             case '>': emit(match('=') ? TokenType::GtEq   : TokenType::Gt);     return;
+
+            case '?':
+                if (match('?')) { emit(TokenType::QuestionQuestion); return; }
+                error("unexpected '?' (did you mean '??'?)");
+                emit(TokenType::Error);
+                return;
 
             case '&':
                 if (match('&')) { emit(TokenType::AmpAmp); return; }
@@ -323,6 +338,14 @@ void Lexer::scan_string(char quote) {
     // The opening quote was already consumed by scan_token(). The token's
     // lexeme keeps that quote so decode_string_literal can verify the pair
     // and pick the matching escape ('\'' inside '...' vs. '\"' inside "...").
+    //
+    // ${...} interpolation: only inside double-quoted strings (single quotes
+    // stay literal, matching shell + Python intuition). If we see `${` we
+    // switch to expression mode. The expression body tracks brace depth so
+    // `${ {a:1}.a }` works, and respects nested "..." / '...' so a `}` inside
+    // a string in the expr doesn't end the interpolation. We track whether
+    // any `${` was seen; if yes, emit TemplateString, else plain String.
+    bool has_interp = false;
     while (!at_end() && peek() != quote) {
         char c = peek();
         if (c == '\n') {
@@ -332,6 +355,48 @@ void Lexer::scan_string(char quote) {
         if (c == '\\' && !at_end()) {
             advance();           // consume backslash
             if (at_end()) break; // error caught below
+            advance();           // consume escaped char (might be a quote)
+            continue;
+        }
+        if (quote == '"' && c == '$' && peek(1) == '{') {
+            has_interp = true;
+            advance(); advance();   // consume "${"
+            int depth = 1;
+            while (!at_end() && depth > 0) {
+                char d = peek();
+                if (d == '\n') { line_++; column_ = 0; advance(); continue; }
+                if (d == '\\') {
+                    advance();
+                    if (!at_end()) advance();
+                    continue;
+                }
+                if (d == '"' || d == '\'') {
+                    // Skip the nested string literal entirely so its braces
+                    // and ${ sequences don't confuse depth tracking.
+                    char inner_q = d;
+                    advance();
+                    while (!at_end() && peek() != inner_q) {
+                        if (peek() == '\\') {
+                            advance();
+                            if (!at_end()) advance();
+                            continue;
+                        }
+                        if (peek() == '\n') { line_++; column_ = 0; }
+                        advance();
+                    }
+                    if (!at_end()) advance();  // closing inner quote
+                    continue;
+                }
+                if (d == '{') { depth++; advance(); continue; }
+                if (d == '}') { depth--; advance(); continue; }
+                advance();
+            }
+            if (depth != 0) {
+                error("unterminated interpolation expression");
+                emit(TokenType::Error);
+                return;
+            }
+            continue;
         }
         advance();
     }
@@ -343,7 +408,7 @@ void Lexer::scan_string(char quote) {
     }
 
     advance();  // closing quote
-    emit(TokenType::String);
+    emit(has_interp ? TokenType::TemplateString : TokenType::String);
 }
 
 // ---------- low-level cursor primitives --------------------------------------
@@ -418,9 +483,10 @@ void Lexer::error(const std::string& message) {
 
 const char* token_type_name(TokenType type) {
     switch (type) {
-        case TokenType::Number:     return "Number";
-        case TokenType::String:     return "String";
-        case TokenType::Identifier: return "Identifier";
+        case TokenType::Number:         return "Number";
+        case TokenType::String:         return "String";
+        case TokenType::TemplateString: return "TemplateString";
+        case TokenType::Identifier:     return "Identifier";
         case TokenType::True:       return "True";
         case TokenType::False:      return "False";
         case TokenType::Null:       return "Null";
@@ -473,10 +539,18 @@ const char* token_type_name(TokenType type) {
         case TokenType::BangEq:     return "BangEq";
         case TokenType::LtEq:       return "LtEq";
         case TokenType::GtEq:       return "GtEq";
-        case TokenType::AmpAmp:     return "AmpAmp";
-        case TokenType::PipePipe:   return "PipePipe";
-        case TokenType::EndOfFile:  return "EndOfFile";
-        case TokenType::Error:      return "Error";
+        case TokenType::AmpAmp:           return "AmpAmp";
+        case TokenType::PipePipe:         return "PipePipe";
+        case TokenType::PlusEq:           return "PlusEq";
+        case TokenType::MinusEq:          return "MinusEq";
+        case TokenType::StarEq:           return "StarEq";
+        case TokenType::SlashEq:          return "SlashEq";
+        case TokenType::PercentEq:        return "PercentEq";
+        case TokenType::PlusPlus:         return "PlusPlus";
+        case TokenType::MinusMinus:       return "MinusMinus";
+        case TokenType::QuestionQuestion: return "QuestionQuestion";
+        case TokenType::EndOfFile:        return "EndOfFile";
+        case TokenType::Error:            return "Error";
     }
     return "?";
 }

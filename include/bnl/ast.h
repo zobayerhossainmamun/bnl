@@ -20,6 +20,7 @@ class UnaryExpr;
 class BinaryExpr;
 class LogicalExpr;
 class AssignExpr;
+class CompoundAssignExpr;
 class CallExpr;
 class MemberExpr;
 class FunctionExpr;
@@ -73,6 +74,7 @@ public:
     virtual void visit(BinaryExpr&)     = 0;
     virtual void visit(LogicalExpr&)    = 0;
     virtual void visit(AssignExpr&)     = 0;
+    virtual void visit(CompoundAssignExpr&) = 0;
     virtual void visit(CallExpr&)       = 0;
     virtual void visit(MemberExpr&)     = 0;
     virtual void visit(FunctionExpr&)   = 0;
@@ -125,7 +127,13 @@ public:
 class LiteralExpr : public Expr {
 public:
     Token value;  // Number / String / True / False / Null
+    // Set by the parser when this literal was synthesized (e.g. an interpolated
+    // string segment whose bytes don't live in the source view). When non-null
+    // the interpreter uses this directly instead of decoding `value.lexeme`.
+    std::unique_ptr<std::string> precomputed_string;
     explicit LiteralExpr(Token v) : value(v) {}
+    LiteralExpr(Token v, std::string s)
+        : value(v), precomputed_string(std::make_unique<std::string>(std::move(s))) {}
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 
@@ -176,6 +184,22 @@ public:
     Token   name;
     ExprPtr value;
     AssignExpr(Token n, ExprPtr v) : name(n), value(std::move(v)) {}
+    void accept(ExprVisitor& v) override { v.visit(*this); }
+};
+
+// x op= v       (op is Plus/Minus/Star/Slash/Percent, kept on op_token)
+// x++ / ++x     (parser desugars to op=Plus, value=1; same for --)
+//
+// `target` is one of IdentifierExpr / MemberExpr / IndexExpr — the parser
+// enforces that. The interpreter evaluates target's object and index parts
+// exactly once, so `obj[fn()] += 1` calls fn() once.
+class CompoundAssignExpr : public Expr {
+public:
+    ExprPtr target;
+    Token   op;     // the underlying binary op (Plus, Minus, Star, Slash, Percent)
+    ExprPtr value;
+    CompoundAssignExpr(ExprPtr t, Token o, ExprPtr v)
+        : target(std::move(t)), op(o), value(std::move(v)) {}
     void accept(ExprVisitor& v) override { v.visit(*this); }
 };
 

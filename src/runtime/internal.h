@@ -71,6 +71,10 @@ public:
     void visit(BinaryExpr& e)   override { e.left->accept(*this); e.right->accept(*this); }
     void visit(LogicalExpr& e)  override { e.left->accept(*this); e.right->accept(*this); }
     void visit(AssignExpr& e)   override { e.value->accept(*this); }
+    void visit(CompoundAssignExpr& e) override {
+        e.target->accept(*this);
+        e.value->accept(*this);
+    }
     void visit(CallExpr& e)     override {
         e.callee->accept(*this);
         for (auto& a : e.arguments) a->accept(*this);

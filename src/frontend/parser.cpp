@@ -1,6 +1,10 @@
 #include "frontend/parser.h"
 
+#include <string>
+#include <string_view>
 #include <utility>
+
+#include "frontend/lexer.h"
 
 namespace bnl {
 
@@ -388,8 +392,31 @@ StmtPtr Parser::expression_statement() {
 
 ExprPtr Parser::expression() { return assignment(); }
 
+namespace {
+// True for the three lvalue shapes that all assignments (plain and compound)
+// accept: bare identifier, member access, or indexed access.
+bool is_lvalue(const Expr* e) {
+    return dynamic_cast<const IdentifierExpr*>(e)
+        || dynamic_cast<const MemberExpr*>(e)
+        || dynamic_cast<const IndexExpr*>(e);
+}
+
+// Map +=, -=, ... to the underlying binary op token type. Used to build the
+// op Token stored on CompoundAssignExpr.
+TokenType compound_to_binary_op(TokenType t) {
+    switch (t) {
+        case TokenType::PlusEq:    return TokenType::Plus;
+        case TokenType::MinusEq:   return TokenType::Minus;
+        case TokenType::StarEq:    return TokenType::Star;
+        case TokenType::SlashEq:   return TokenType::Slash;
+        case TokenType::PercentEq: return TokenType::Percent;
+        default:                   return t;
+    }
+}
+}  // namespace
+
 ExprPtr Parser::assignment() {
-    ExprPtr expr = logical_or();
+    ExprPtr expr = coalesce();
     if (match({TokenType::Assign})) {
         Token   equals = previous();
         ExprPtr value  = assignment();
@@ -408,6 +435,31 @@ ExprPtr Parser::assignment() {
                                                   std::move(index), std::move(value));
         }
         throw_error(equals, "invalid assignment target");
+    }
+    if (match({TokenType::PlusEq, TokenType::MinusEq, TokenType::StarEq,
+               TokenType::SlashEq, TokenType::PercentEq})) {
+        Token op_eq = previous();
+        if (!is_lvalue(expr.get())) {
+            throw_error(op_eq, "invalid compound-assignment target");
+        }
+        ExprPtr rhs = assignment();
+        Token   bin_op{compound_to_binary_op(op_eq.type), op_eq.lexeme,
+                       op_eq.line, op_eq.column};
+        return std::make_unique<CompoundAssignExpr>(
+            std::move(expr), bin_op, std::move(rhs));
+    }
+    return expr;
+}
+
+// `a ?? b` short-circuits on null. Sits between assignment and logical_or so
+// `a || b ?? c` parses as `(a || b) ?? c` (the precedence chain is climbed
+// outward, so a tighter operator runs first).
+ExprPtr Parser::coalesce() {
+    ExprPtr expr = logical_or();
+    while (match({TokenType::QuestionQuestion})) {
+        Token   op    = previous();
+        ExprPtr right = logical_or();
+        expr = std::make_unique<LogicalExpr>(std::move(expr), op, std::move(right));
     }
     return expr;
 }
@@ -478,6 +530,23 @@ ExprPtr Parser::unary() {
         ExprPtr operand = unary();
         return std::make_unique<UnaryExpr>(op, std::move(operand));
     }
+    if (match({TokenType::PlusPlus, TokenType::MinusMinus})) {
+        // Prefix increment / decrement. Same desugar as postfix: target += 1.
+        // Yields the new value (matches +=, deviates slightly from C semantics
+        // for prefix-vs-postfix distinction — see lang notes).
+        Token   op      = previous();
+        ExprPtr operand = unary();
+        if (!is_lvalue(operand.get())) {
+            throw_error(op, "operand of '++' / '--' must be assignable");
+        }
+        bool   is_inc = (op.type == TokenType::PlusPlus);
+        Token  bin_op{is_inc ? TokenType::Plus : TokenType::Minus,
+                      op.lexeme, op.line, op.column};
+        Token  one_tok{TokenType::Number, "1", op.line, op.column};
+        auto   one = std::make_unique<LiteralExpr>(one_tok);
+        return std::make_unique<CompoundAssignExpr>(
+            std::move(operand), bin_op, std::move(one));
+    }
     if (match({TokenType::Wait})) {
         Token   keyword = previous();
         ExprPtr operand = unary();
@@ -504,6 +573,19 @@ ExprPtr Parser::call() {
             ExprPtr index   = expression();
             consume(TokenType::RBracket, "expected ']' after index expression");
             expr = std::make_unique<IndexExpr>(std::move(expr), bracket, std::move(index));
+        } else if (match({TokenType::PlusPlus, TokenType::MinusMinus})) {
+            // Postfix `x++` / `x--`. Same desugar as prefix.
+            Token op = previous();
+            if (!is_lvalue(expr.get())) {
+                throw_error(op, "operand of '++' / '--' must be assignable");
+            }
+            bool   is_inc = (op.type == TokenType::PlusPlus);
+            Token  bin_op{is_inc ? TokenType::Plus : TokenType::Minus,
+                          op.lexeme, op.line, op.column};
+            Token  one_tok{TokenType::Number, "1", op.line, op.column};
+            auto   one = std::make_unique<LiteralExpr>(one_tok);
+            expr = std::make_unique<CompoundAssignExpr>(
+                std::move(expr), bin_op, std::move(one));
         } else {
             break;
         }
@@ -529,6 +611,9 @@ ExprPtr Parser::primary() {
     if (match({TokenType::True, TokenType::False, TokenType::Null,
                TokenType::Number, TokenType::String})) {
         return std::make_unique<LiteralExpr>(previous());
+    }
+    if (match({TokenType::TemplateString})) {
+        return template_string(previous());
     }
     if (match({TokenType::Identifier})) {
         return std::make_unique<IdentifierExpr>(previous());
@@ -593,6 +678,116 @@ ExprPtr Parser::primary() {
         return std::make_unique<GroupingExpr>(std::move(inner));
     }
     throw_error(peek(), "expected expression");
+}
+
+// Walks a TemplateString token's lexeme and rebuilds it as a left-associative
+// `+` chain of segments and interpolated expressions. The string's `+`
+// operator coerces non-string operands to their display form, so a number,
+// list, etc. inside `${...}` formats predictably.
+//
+// Sub-lexing is done over a string_view into the original source so every
+// synthesized Token's lexeme remains a stable view (the source outlives the
+// AST). Decoded text segments live on LiteralExpr::precomputed_string.
+ExprPtr Parser::template_string(const Token& tok) {
+    auto sv = tok.lexeme;
+    if (sv.size() < 2 || sv.front() != '"' || sv.back() != '"') {
+        throw_error(tok, "internal: malformed template string");
+    }
+
+    std::vector<ExprPtr> parts;
+    std::string          current;
+
+    auto flush_text = [&]() {
+        Token seg{TokenType::String, std::string_view{}, tok.line, tok.column};
+        parts.push_back(std::make_unique<LiteralExpr>(seg, std::move(current)));
+        current.clear();
+    };
+
+    std::size_t i = 1;  // skip opening "
+    while (i + 1 < sv.size()) {  // last byte is closing "
+        char c = sv[i];
+        if (c == '\\') {
+            if (i + 2 >= sv.size()) {
+                throw_error(tok, "trailing backslash in template string");
+            }
+            char esc = sv[i + 1];
+            switch (esc) {
+                case 'n':  current += '\n'; break;
+                case 't':  current += '\t'; break;
+                case 'r':  current += '\r'; break;
+                case '\\': current += '\\'; break;
+                case '"':  current += '"';  break;
+                case '\'': current += '\''; break;
+                case '0':  current += '\0'; break;
+                default:
+                    throw_error(tok, "unknown escape '\\" + std::string(1, esc)
+                                     + "' in template string");
+            }
+            i += 2;
+            continue;
+        }
+        if (c == '$' && i + 1 < sv.size() - 1 && sv[i + 1] == '{') {
+            flush_text();
+            std::size_t expr_start = i + 2;
+            std::size_t j          = expr_start;
+            int         depth      = 1;
+            // Skip the same constructs the lexer skipped, so braces inside
+            // nested strings don't fool the depth counter.
+            while (j + 1 < sv.size() && depth > 0) {
+                char d = sv[j];
+                if (d == '\\') {
+                    j += 2;
+                    continue;
+                }
+                if (d == '"' || d == '\'') {
+                    char inner_q = d;
+                    j++;
+                    while (j + 1 < sv.size() && sv[j] != inner_q) {
+                        if (sv[j] == '\\') { j += 2; continue; }
+                        j++;
+                    }
+                    if (j + 1 < sv.size()) j++;
+                    continue;
+                }
+                if (d == '{') { depth++; j++; continue; }
+                if (d == '}') { depth--; if (depth == 0) break; j++; continue; }
+                j++;
+            }
+            if (depth != 0) {
+                throw_error(tok, "unterminated interpolation in template string");
+            }
+            std::string_view expr_src = sv.substr(expr_start, j - expr_start);
+            Lexer  sub_lexer(expr_src);
+            auto   sub_tokens = sub_lexer.tokenize();
+            for (auto& dg : sub_lexer.diagnostics()) diagnostics_.push_back(dg);
+            Parser sub_parser(std::move(sub_tokens));
+            ExprPtr sub_expr;
+            try {
+                sub_expr = sub_parser.expression();
+                if (!sub_parser.at_end()) {
+                    throw_error(tok, "extra tokens in interpolation expression");
+                }
+            } catch (const ParseError&) {
+                for (auto& dg : sub_parser.diagnostics()) diagnostics_.push_back(dg);
+                throw;
+            }
+            for (auto& dg : sub_parser.diagnostics()) diagnostics_.push_back(dg);
+            parts.push_back(std::move(sub_expr));
+            i = j + 1;  // step past '}'
+            continue;
+        }
+        current += c;
+        i++;
+    }
+    flush_text();
+
+    Token   plus_tok{TokenType::Plus, "+", tok.line, tok.column};
+    ExprPtr result = std::move(parts[0]);
+    for (std::size_t k = 1; k < parts.size(); ++k) {
+        result = std::make_unique<BinaryExpr>(
+            std::move(result), plus_tok, std::move(parts[k]));
+    }
+    return result;
 }
 
 ExprPtr Parser::function_expression() {

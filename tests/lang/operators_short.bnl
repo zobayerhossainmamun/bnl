@@ -1,0 +1,61 @@
+// Compound assignment, ++/--, ??, and ${...} interpolation. Each block
+// prints deterministic values so the test driver can diff against
+// operators_short.expected.
+
+// --- compound assignment on a plain identifier ---------------------------
+var a = 10;
+a += 3; print(a);
+a -= 5; print(a);
+a *= 4; print(a);
+a /= 2; print(a);
+a %= 5; print(a);
+
+// --- string compound: += concatenates when either side is a string ------
+var s = "hi";
+s += " there";
+print(s);
+
+// --- ++ / -- in expression and statement positions ----------------------
+var c = 0;
+c++; print(c);
+++c; print(c);
+c--; print(c);
+--c; print(c);
+
+// --- ++ inside a C-style for loop ---------------------------------------
+var total = 0;
+for (var i = 0; i < 5; i++) { total += i; }
+print(total);
+
+// --- compound assignment on list element + map field --------------------
+var xs = [1, 2, 3];
+xs[0] += 100;
+xs[1]++;
+print(xs[0]);
+print(xs[1]);
+
+var m = {count: 0, label: "a"};
+m.count += 7;
+m.count++;
+m.label += "bc";
+print(m.count);
+print(m.label);
+
+// --- ?? returns the left only when it is null ---------------------------
+print(null ?? "fallback");
+print("kept"  ?? "x");
+print(0       ?? "x");
+print(false   ?? "x");
+print(""      ?? "x");
+
+// --- template strings: simple, escapes, nested map, leading expr --------
+var name = "world";
+var n = 41;
+print("hello ${name}, next = ${n + 1}");
+print("escape: \"${name}\"");
+print("leading ${name} trailing");
+print("${ {a: 7, b: 8}.a + 10 }");
+print("no interp here");
+
+// --- plain (non-interpolated) strings still work ------------------------
+print("count: " + 5);

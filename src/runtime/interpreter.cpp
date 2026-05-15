@@ -564,6 +564,7 @@ bool Interpreter::run(std::vector<StmtPtr> program,
     ActiveScope scope(this);
 
     current_file_ = entry_path;
+    if (entry_path_.empty()) entry_path_ = entry_path;
     // Take ownership of the AST. UserFunctions (and any closures over them)
     // hold raw pointers into it; the AST must live at least as long as the
     // Interpreter so REPL / async-callback paths don't dangle.

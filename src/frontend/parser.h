@@ -53,6 +53,7 @@ private:
     // ---- expressions (precedence climbing) ---------------------------------
     ExprPtr expression();
     ExprPtr assignment();
+    ExprPtr coalesce();
     ExprPtr logical_or();
     ExprPtr logical_and();
     ExprPtr equality();
@@ -64,6 +65,7 @@ private:
     ExprPtr finish_call(ExprPtr callee);
     ExprPtr primary();
     ExprPtr function_expression();
+    ExprPtr template_string(const Token& tok);
 
     // ---- token-stream helpers ----------------------------------------------
     bool match(std::initializer_list<TokenType> types);
