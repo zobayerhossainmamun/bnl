@@ -114,6 +114,7 @@ Interpreter::Interpreter()
     register_random(*this);
     register_time  (*this);
     register_zlib  (*this);
+    register_ffi   (*this);
 }
 
 Interpreter::~Interpreter() {

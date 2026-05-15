@@ -38,6 +38,7 @@ add_library(bnl_core STATIC
     stdlib/random.cpp
     stdlib/time.cpp
     stdlib/zlib.cpp
+    stdlib/ffi.cpp
 
     # C-ABI plugin loader (`import "foo.dll"`).
     ffi/dynamic_library.cpp
@@ -67,6 +68,7 @@ target_link_libraries(bnl_core
         $<IF:$<TARGET_EXISTS:mongoc::shared>,mongoc::shared,mongoc::static>
         ZLIB::ZLIB
         $<IF:$<TARGET_EXISTS:llhttp::llhttp_static>,llhttp::llhttp_static,llhttp::llhttp_shared>
+        unofficial::libffi::libffi
 )
 
 # On Windows, compile the .rc resource file into the executable so it carries

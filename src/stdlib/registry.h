@@ -64,5 +64,6 @@ void register_math  (Interpreter& interp);
 void register_random(Interpreter& interp);
 void register_time  (Interpreter& interp);
 void register_zlib  (Interpreter& interp);
+void register_ffi   (Interpreter& interp);
 
 }  // namespace bnl

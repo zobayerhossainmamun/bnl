@@ -1,0 +1,137 @@
+// Generic FFI — call any C export by declaring its signature. The platform
+// C runtime gives us cross-platform symbols (strlen, abs, getenv, malloc,
+// free) so the test runs identically on Windows/Linux/macOS.
+import "ffi" as ffi;
+
+var c = ffi.open_c();
+
+// scalar arg + scalar return
+var abs = ffi.fn(c, "abs", "int32", ["int32"]);
+print(abs(-7));
+print(abs(42));
+
+// cstr arg + uint64 return
+var strlen = ffi.fn(c, "strlen", "uint64", ["cstr"]);
+print(strlen("hello"));
+print(strlen(""));
+print(strlen("আমদানি"));   // multi-byte UTF-8: 7 bytes (ASCII byte count, not codepoints)
+
+// cstr arg + cstr return + null-pointer handling on both ends
+var getenv = ffi.fn(c, "getenv", "cstr", ["cstr"]);
+print(getenv("__bnl_unlikely_to_exist_xyz_123") == null);
+// PATH is always set; we don't pin the value, just type.
+print(type(getenv("PATH")));
+
+// ptr round-trip via malloc/free. malloc returns non-null and free accepts
+// the address back as a ptr arg.
+var malloc = ffi.fn(c, "malloc", "ptr", ["uint64"]);
+var free   = ffi.fn(c, "free",   "void", ["ptr"]);
+var p = malloc(64);
+print(p != null);
+print(type(p));            // pointers ride as numbers under the hood
+free(p);
+print("freed");
+
+// arity is captured on bind: passing the wrong number throws.
+try {
+    abs(1, 2);
+    print("missed");
+} catch (e) {
+    print("arity-error");
+}
+
+// Unknown symbol fails clearly at bind time, not at call time.
+try {
+    ffi.fn(c, "__bnl_definitely_not_a_symbol__", "void", []);
+    print("missed");
+} catch (e) {
+    print("symbol-error");
+}
+
+// Unknown type name fails clearly at bind time.
+try {
+    ffi.fn(c, "abs", "not_a_real_type", ["int32"]);
+    print("missed");
+} catch (e) {
+    print("type-error");
+}
+
+// Library handle is not callable (it's a handle).
+try {
+    c();
+    print("missed");
+} catch (e) {
+    print("handle-not-callable");
+}
+
+// ----- Phase 2: memory + struct -----------------------------------------
+
+// alloc / read / write / free round-trip at primitive types
+var p = ffi.alloc(32);
+ffi.write(p, "int32", 0,  -2147483648);   // i32 min
+ffi.write(p, "int32", 4,   2147483647);   // i32 max
+ffi.write(p, "uint64", 8,  4294967296);   // 2^32, exceeds 32-bit
+ffi.write(p, "double", 16, 3.5);
+print(ffi.read(p, "int32",  0));
+print(ffi.read(p, "int32",  4));
+print(ffi.read(p, "uint64", 8));
+print(ffi.read(p, "double", 16));
+ffi.free(p);
+
+// write_cstr + read_cstr round-trip
+var b = ffi.alloc(64);
+print(ffi.write_cstr(b, 0, "hello"));    // 6 (5 chars + NUL)
+print(ffi.read_cstr(b));                  // hello
+// write a second string after the first
+ffi.write_cstr(b, 16, "world");
+print(ffi.read_cstr(b + 16));             // pointer math: ptrs are numbers
+ffi.free(b);
+
+// struct: declare, query layout, allocate, field-access round-trip
+ffi.struct("Point", {x: "int32", y: "int32"});
+print(ffi.size_of("Point"));              // 8
+print(ffi.offset_of("Point", "x"));       // 0
+print(ffi.offset_of("Point", "y"));       // 4
+
+var pt = ffi.alloc_struct("Point");
+ffi.set_field(pt, "Point", "x", 13);
+ffi.set_field(pt, "Point", "y", -7);
+print(ffi.field(pt, "Point", "x"));
+print(ffi.field(pt, "Point", "y"));
+ffi.free(pt);
+
+// Struct with mixed alignment: u8 + u32 → u32 aligned at offset 4, total 8.
+ffi.struct("Mixed", {flag: "uint8", count: "uint32", big: "double"});
+print(ffi.size_of("Mixed"));              // expect 16 (flag@0, count@4, big@8, total padded to 8-align)
+print(ffi.offset_of("Mixed", "flag"));    // 0
+print(ffi.offset_of("Mixed", "count"));   // 4
+print(ffi.offset_of("Mixed", "big"));     // 8
+
+// size_of works for primitives too
+print(ffi.size_of("int32"));   // 4
+print(ffi.size_of("double"));  // 8
+print(ffi.size_of("ptr"));     // 8 on every preset we ship
+
+// errors: unknown struct / unknown field
+try {
+    ffi.size_of("NotAStruct");
+    print("missed");
+} catch (e) {
+    print("size-error");
+}
+
+try {
+    var q = ffi.alloc_struct("Point");
+    ffi.field(q, "Point", "z");
+    print("missed");
+} catch (e) {
+    print("field-error");
+}
+
+// Reading from null pointer is rejected (otherwise it'd segfault).
+try {
+    ffi.read(null, "int32", 0);
+    print("missed");
+} catch (e) {
+    print("null-error");
+}
