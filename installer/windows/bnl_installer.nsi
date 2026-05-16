@@ -1,15 +1,17 @@
 ; =========================
-; BNL Installer (separate x86/x64)
+; BNL Installer (separate x86/x64), per-user or system-wide
 ; File: installer/windows/bnl_installer.nsi
 ; Build:
 ;   makensis /DARCH=x64 installer/windows/bnl_installer.nsi
 ;   makensis /DARCH=x86 installer/windows/bnl_installer.nsi
 ;
-; Expects the CMake release builds to already exist:
-;   build/windows-release/bin/bnl.exe
-;   build/windows-x86-release/bin/bnl.exe
+; Runtime behavior:
+;   - Double-clicked as a normal user -> installs to %LOCALAPPDATA%\Programs\Bnlang
+;                                        and writes to HKCU (user PATH)
+;   - Run as administrator            -> installs to Program Files and writes to
+;                                        HKLM (system PATH)
 ;
-; PATH manipulation uses ReadRegStr/WriteRegExpandStr — for very long system
+; PATH manipulation uses ReadRegStr/WriteRegExpandStr. For very long system
 ; PATHs (>1024 chars with the default NSIS build, >8192 with the Large Strings
 ; build) the read will truncate. Use the Large Strings NSIS build if your
 ; target systems have very long PATH values.
@@ -23,7 +25,7 @@
 !define PRODUCT_VERSION     "2.0.0"
 !define PRODUCT_PUBLISHER   "Bnlang"
 !define PRODUCT_UNINST_KEY  "Bnlang"
-!define INSTALL_DIR_NAME    "Bnlang"  ; Folder name under Program Files
+!define INSTALL_DIR_NAME    "Bnlang"  ; Folder name under Program Files / LocalAppData
 !define MUI_WELCOMEFINISHPAGE_BITMAP ".\\images\\welcome.bmp"
 !define MUI_UNWELCOMEFINISHPAGE_BITMAP ".\\images\\welcome.bmp"
 
@@ -31,7 +33,10 @@
 !define MUI_UNICON "..\\..\\resources\\bnlang.ico"
 
 Unicode True
-RequestExecutionLevel admin
+; Do not auto-elevate. The user chooses scope by how they launch:
+;   double-click          -> per-user install
+;   Run as administrator  -> system-wide install
+RequestExecutionLevel user
 
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
@@ -47,15 +52,17 @@ ${UnStrRep}
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION} (${ARCH})"
 OutFile "bnlang-windows-${ARCH}-v${PRODUCT_VERSION}-installer.exe"
 
-; ----- Install location & registry view per arch -----
-!if "${ARCH}" == "x64"
-  InstallDir "$PROGRAMFILES64\\${INSTALL_DIR_NAME}"
-!else
-  InstallDir "$PROGRAMFILES32\\${INSTALL_DIR_NAME}"
-!endif
+; Placeholder. Real value is set in .onInit / un.onInit based on privileges.
+InstallDir "$LOCALAPPDATA\\Programs\\${INSTALL_DIR_NAME}"
 
 SetCompress auto
 SetCompressor /SOLID lzma
+
+; -------------------------
+; Runtime state
+; -------------------------
+Var IsAdmin       ; "1" when elevated, "0" otherwise
+Var PathRegKey    ; subkey where the PATH value lives (differs HKLM vs HKCU)
 
 ; -------------------------
 ; MUI Pages
@@ -75,15 +82,62 @@ SetCompressor /SOLID lzma
 BrandingText "Bnlang Installer"
 
 ; ============================================================
-;                      Functions
+;                    Init: pick scope
 ; ============================================================
 
-; Append $INSTDIR to system PATH (HKLM). Idempotent: a second install won't
-; create a duplicate entry. Broadcasts WM_SETTINGCHANGE so already-running
-; Explorer/cmd shells pick up the change without a reboot (new shells only —
-; existing process environments are not retroactively updated).
-Function AddToSystemPath
-  ReadRegStr $0 HKLM "System\\CurrentControlSet\\Control\\Session Manager\\Environment" "Path"
+; Shared body for installer/uninstaller scope detection.
+!macro _PickScope un
+  !if "${ARCH}" == "x64"
+    SetRegView 64
+  !else
+    SetRegView 32
+  !endif
+
+  UserInfo::GetAccountType
+  Pop $0
+  ${If} $0 == "Admin"
+    StrCpy $IsAdmin "1"
+    SetShellVarContext all
+    StrCpy $PathRegKey "System\\CurrentControlSet\\Control\\Session Manager\\Environment"
+  ${Else}
+    StrCpy $IsAdmin "0"
+    SetShellVarContext current
+    StrCpy $PathRegKey "Environment"
+  ${EndIf}
+!macroend
+
+Function .onInit
+  !if "${ARCH}" == "x64"
+    ${IfNot} ${RunningX64}
+      MessageBox MB_ICONSTOP "This is the 64-bit installer, but your Windows is 32-bit. Please use the x86 installer."
+      Abort
+    ${EndIf}
+  !endif
+
+  !insertmacro _PickScope ""
+
+  ${If} $IsAdmin == "1"
+    !if "${ARCH}" == "x64"
+      StrCpy $INSTDIR "$PROGRAMFILES64\\${INSTALL_DIR_NAME}"
+    !else
+      StrCpy $INSTDIR "$PROGRAMFILES32\\${INSTALL_DIR_NAME}"
+    !endif
+  ${Else}
+    StrCpy $INSTDIR "$LOCALAPPDATA\\Programs\\${INSTALL_DIR_NAME}"
+  ${EndIf}
+FunctionEnd
+
+Function un.onInit
+  !insertmacro _PickScope "un."
+FunctionEnd
+
+; ============================================================
+;                    PATH helpers
+; SHCTX = HKLM when SetShellVarContext=all, HKCU when =current.
+; ============================================================
+
+Function AddToPath
+  ReadRegStr $0 SHCTX $PathRegKey "Path"
   ${StrStr} $1 ";$0;" ";$INSTDIR;"
   ${If} $1 == ""
     ${If} $0 == ""
@@ -91,20 +145,18 @@ Function AddToSystemPath
     ${Else}
       StrCpy $0 "$0;$INSTDIR"
     ${EndIf}
-    WriteRegExpandStr HKLM "System\\CurrentControlSet\\Control\\Session Manager\\Environment" "Path" "$0"
+    WriteRegExpandStr SHCTX $PathRegKey "Path" "$0"
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
   ${EndIf}
 FunctionEnd
 
-; Remove $INSTDIR from system PATH. Handles all four arrangements:
-; "$INSTDIR" only / leading ";$INSTDIR" / trailing "$INSTDIR;" / middle ";$INSTDIR;".
-Function un.RemoveFromSystemPath
-  ReadRegStr $0 HKLM "System\\CurrentControlSet\\Control\\Session Manager\\Environment" "Path"
+Function un.RemoveFromPath
+  ReadRegStr $0 SHCTX $PathRegKey "Path"
   ${UnStrRep} $0 $0 ";$INSTDIR;" ";"
   ${UnStrRep} $0 $0 ";$INSTDIR"  ""
   ${UnStrRep} $0 $0 "$INSTDIR;"  ""
   ${UnStrRep} $0 $0 "$INSTDIR"   ""
-  WriteRegExpandStr HKLM "System\\CurrentControlSet\\Control\\Session Manager\\Environment" "Path" "$0"
+  WriteRegExpandStr SHCTX $PathRegKey "Path" "$0"
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
 FunctionEnd
 
@@ -114,19 +166,6 @@ FunctionEnd
 
 Section "Core (required)" SEC_CORE
   SectionIn RO
-
-  !if "${ARCH}" == "x64"
-    ${IfNot} ${RunningX64}
-      MessageBox MB_ICONSTOP "This is the 64-bit installer, but your Windows is 32-bit. Please use the x86 installer."
-      Abort
-    ${EndIf}
-  !endif
-
-  !if "${ARCH}" == "x64"
-    SetRegView 64
-  !else
-    SetRegView 32
-  !endif
 
   SetOutPath "$INSTDIR"
 
@@ -141,34 +180,28 @@ Section "Core (required)" SEC_CORE
 
   WriteUninstaller "$INSTDIR\\Uninstall.exe"
 
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayName"     "${PRODUCT_NAME} (${ARCH})"
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "Publisher"        "${PRODUCT_PUBLISHER}"
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayVersion"   "${PRODUCT_VERSION}"
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "InstallLocation"  "$INSTDIR"
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayIcon"      "$INSTDIR\\bnl.exe"
-  WriteRegStr   HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "UninstallString"  "$\"$INSTDIR\\Uninstall.exe$\""
-  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoModify"         1
-  WriteRegDWORD HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoRepair"         1
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayName"     "${PRODUCT_NAME} (${ARCH})"
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "Publisher"        "${PRODUCT_PUBLISHER}"
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayVersion"   "${PRODUCT_VERSION}"
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "InstallLocation"  "$INSTDIR"
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayIcon"      "$INSTDIR\\bnl.exe"
+  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "UninstallString"  "$\"$INSTDIR\\Uninstall.exe$\""
+  WriteRegDWORD SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoModify"         1
+  WriteRegDWORD SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoRepair"         1
 
-  Call AddToSystemPath
+  Call AddToPath
 SectionEnd
 
 ; -------------------------
 ; Uninstaller
 ; -------------------------
 Section "Uninstall"
-  !if "${ARCH}" == "x64"
-    SetRegView 64
-  !else
-    SetRegView 32
-  !endif
-
-  Call un.RemoveFromSystemPath
+  Call un.RemoveFromPath
 
   Delete /REBOOTOK "$INSTDIR\\bnl.exe"
   Delete /REBOOTOK "$INSTDIR\\README.txt"
   Delete /REBOOTOK "$INSTDIR\\LICENSE.txt"
   Delete /REBOOTOK "$INSTDIR\\Uninstall.exe"
   RMDir /r "$INSTDIR"
-  DeleteRegKey HKLM "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}"
+  DeleteRegKey SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}"
 SectionEnd

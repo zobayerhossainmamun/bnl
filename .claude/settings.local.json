@@ -228,7 +228,15 @@
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && cmake --build build/windows-release --target bnl\" 2>&1 | Select-Object -Last 25)",
       "PowerShell($vcvars = \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"; cmd /c \"`\"$vcvars`\" >nul && ctest --test-dir build/windows-release --output-on-failure\" 2>&1 | Select-Object -Last 10)",
       "PowerShell($path = 'D:\\\\bnlang\\\\new-v\\\\bnl\\\\resources\\\\LICENSE.txt'; $lines = [System.IO.File]::ReadAllLines\\($path\\); $before = $lines[0..246]; $after  = $lines[753..\\($lines.Length - 1\\)]; $kept = $before + $after; [System.IO.File]::WriteAllLines\\($path, $kept\\); \"kept=$\\($kept.Length\\) original=$\\($lines.Length\\) removed=$\\($lines.Length - $kept.Length\\)\")",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(npx --prefix \"D:/iiniit/iiniit-video-generator\" tsc --project \"D:/iiniit/iiniit-video-generator/tsconfig.json\" --noEmit)",
+      "Bash(\"D:/iiniit/iiniit-video-generator/node_modules/.bin/tsc\" --project \"D:/iiniit/iiniit-video-generator/tsconfig.json\" --noEmit)",
+      "Bash(\"D:/iiniit/iiniit-video-generator/node_modules/.bin/tsc.cmd\" --project \"D:/iiniit/iiniit-video-generator/tsconfig.json\" --noEmit)",
+      "Bash(\"./node_modules/.bin/tsc\" --noEmit)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(\"./node_modules/.bin/remotion\" render *)",
+      "Bash(\"./node_modules/.bin/remotion\" still *)",
+      "PowerShell(go build *)"
     ]
   }
 }
