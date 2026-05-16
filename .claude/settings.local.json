@@ -236,7 +236,15 @@
       "Bash(echo \"EXIT:$?\")",
       "Bash(\"./node_modules/.bin/remotion\" render *)",
       "Bash(\"./node_modules/.bin/remotion\" still *)",
-      "PowerShell(go build *)"
+      "PowerShell(go build *)",
+      "Bash(findstr -i \"env path\")",
+      "Bash(findstr -i envar)",
+      "Bash(\"C:/Program Files \\(x86\\)/NSIS/makensis.exe\" /HDRINFO)",
+      "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V2 -DARCH=x64 installer/windows/bnl_installer.nsi)",
+      "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V2 -DARCH=x64 bnl_installer.nsi)",
+      "Bash(echo \"---exit=$?---\")",
+      "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V3 -DARCH=x64 bnl_installer.nsi)",
+      "Bash(echo \"---NSI exit=$?---\")"
     ]
   }
 }

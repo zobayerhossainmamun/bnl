@@ -11,10 +11,10 @@
 ;   - Run as administrator            -> installs to Program Files and writes to
 ;                                        HKLM (system PATH)
 ;
-; PATH manipulation uses ReadRegStr/WriteRegExpandStr. For very long system
-; PATHs (>1024 chars with the default NSIS build, >8192 with the Large Strings
-; build) the read will truncate. Use the Large Strings NSIS build if your
-; target systems have very long PATH values.
+; PATH manipulation is delegated to PowerShell ([Environment]::
+; GetEnvironmentVariable / SetEnvironmentVariable) so that long PATH values
+; round-trip safely regardless of NSIS_MAX_STRLEN. See PATH helpers section
+; below for the rationale.
 ; =========================
 
 !ifndef ARCH
@@ -26,11 +26,11 @@
 !define PRODUCT_PUBLISHER   "Bnlang"
 !define PRODUCT_UNINST_KEY  "Bnlang"
 !define INSTALL_DIR_NAME    "Bnlang"  ; Folder name under Program Files / LocalAppData
-!define MUI_WELCOMEFINISHPAGE_BITMAP ".\\images\\welcome.bmp"
-!define MUI_UNWELCOMEFINISHPAGE_BITMAP ".\\images\\welcome.bmp"
+!define MUI_WELCOMEFINISHPAGE_BITMAP ".\images\welcome.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP ".\images\welcome.bmp"
 
-!define MUI_ICON "..\\..\\resources\\bnlang.ico"
-!define MUI_UNICON "..\\..\\resources\\bnlang.ico"
+!define MUI_ICON "..\..\resources\bnlang.ico"
+!define MUI_UNICON "..\..\resources\bnlang.ico"
 
 Unicode True
 ; Do not auto-elevate. The user chooses scope by how they launch:
@@ -41,19 +41,12 @@ RequestExecutionLevel user
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
-!include "WinMessages.nsh"
-!include "StrFunc.nsh"
-
-; StrFunc macros must be "called" at script scope before use. The Un-prefixed
-; variants are needed for the uninstaller section.
-${StrStr}
-${UnStrRep}
 
 Name "${PRODUCT_NAME} ${PRODUCT_VERSION} (${ARCH})"
 OutFile "bnlang-windows-${ARCH}-v${PRODUCT_VERSION}-installer.exe"
 
 ; Placeholder. Real value is set in .onInit / un.onInit based on privileges.
-InstallDir "$LOCALAPPDATA\\Programs\\${INSTALL_DIR_NAME}"
+InstallDir "$LOCALAPPDATA\Programs\${INSTALL_DIR_NAME}"
 
 SetCompress auto
 SetCompressor /SOLID lzma
@@ -62,14 +55,13 @@ SetCompressor /SOLID lzma
 ; Runtime state
 ; -------------------------
 Var IsAdmin       ; "1" when elevated, "0" otherwise
-Var PathRegKey    ; subkey where the PATH value lives (differs HKLM vs HKCU)
 
 ; -------------------------
 ; MUI Pages
 ; -------------------------
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
-!insertmacro MUI_PAGE_LICENSE "..\\..\\resources\\LICENSE.txt"
+!insertmacro MUI_PAGE_LICENSE "..\..\resources\LICENSE.txt"
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
@@ -98,11 +90,9 @@ BrandingText "Bnlang Installer"
   ${If} $0 == "Admin"
     StrCpy $IsAdmin "1"
     SetShellVarContext all
-    StrCpy $PathRegKey "System\\CurrentControlSet\\Control\\Session Manager\\Environment"
   ${Else}
     StrCpy $IsAdmin "0"
     SetShellVarContext current
-    StrCpy $PathRegKey "Environment"
   ${EndIf}
 !macroend
 
@@ -118,12 +108,12 @@ Function .onInit
 
   ${If} $IsAdmin == "1"
     !if "${ARCH}" == "x64"
-      StrCpy $INSTDIR "$PROGRAMFILES64\\${INSTALL_DIR_NAME}"
+      StrCpy $INSTDIR "$PROGRAMFILES64\${INSTALL_DIR_NAME}"
     !else
-      StrCpy $INSTDIR "$PROGRAMFILES32\\${INSTALL_DIR_NAME}"
+      StrCpy $INSTDIR "$PROGRAMFILES32\${INSTALL_DIR_NAME}"
     !endif
   ${Else}
-    StrCpy $INSTDIR "$LOCALAPPDATA\\Programs\\${INSTALL_DIR_NAME}"
+    StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${INSTALL_DIR_NAME}"
   ${EndIf}
 FunctionEnd
 
@@ -133,31 +123,101 @@ FunctionEnd
 
 ; ============================================================
 ;                    PATH helpers
-; SHCTX = HKLM when SetShellVarContext=all, HKCU when =current.
+;
+; We delegate registry writes to PowerShell's
+; [Environment]::SetEnvironmentVariable, which uses the .NET registry API.
+; That API has no equivalent of NSIS's NSIS_MAX_STRLEN (default 1024), so it
+; correctly round-trips PATH values of any length, preserves the
+; REG_EXPAND_SZ type, and broadcasts WM_SETTINGCHANGE automatically.
+;
+; A native NSIS ReadRegStr would silently truncate the existing PATH at
+; NSIS_MAX_STRLEN, and writing that truncated value back would wipe
+; everything past the cutoff -- exactly the bug that motivated this rewrite.
+;
+; Comparisons go through Normalize-PathEntry so that
+;   "C:\Foo\\Bar" and "C:\Foo\Bar\" and "C:\Foo\Bar"
+; all collapse to the same key. Without this, a malformed legacy entry left
+; by an earlier buggy install would (a) not be detected as a duplicate on
+; reinstall and (b) not be cleaned up on uninstall.
+;
+; The PS script is written to $PLUGINSDIR (auto-cleaned on exit) as UTF-16 LE
+; with BOM so PowerShell 5.1 detects the encoding correctly.
+;
+; Macro emits the shared script header into FILEHANDLE: defines $dir / $scope,
+; the Normalize-PathEntry function, $dirN (normalized $dir), and $p (current
+; PATH). Inside the FileWriteUTF16LE strings, the regex pattern '\\+' is
+; intentional -- it's a PowerShell regex matching one-or-more backslashes,
+; NOT an NSIS path. NSIS does not escape \, so the bytes hit the .ps1 file
+; verbatim.
 ; ============================================================
 
+!macro WritePathScriptHeader HANDLE DIR SCOPE
+  FileWriteUTF16LE /BOM ${HANDLE} "$$dir = '${DIR}'$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "$$scope = '${SCOPE}'$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "function Normalize-PathEntry {$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  param([string]$$s)$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  if ([string]::IsNullOrWhiteSpace($$s)) { return '' }$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  $$s = $$s.Trim()$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  if ($$s.StartsWith('\\')) { $$s = '\\' + (($$s.TrimStart('\')) -replace '\\+','\') }$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  else { $$s = $$s -replace '\\+','\' }$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "  return $$s.TrimEnd('\')$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "}$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "$$dirN = Normalize-PathEntry $$dir$\r$\n"
+  FileWriteUTF16LE ${HANDLE} "$$p = [Environment]::GetEnvironmentVariable('Path', $$scope)$\r$\n"
+!macroend
+
 Function AddToPath
-  ReadRegStr $0 SHCTX $PathRegKey "Path"
-  ${StrStr} $1 ";$0;" ";$INSTDIR;"
-  ${If} $1 == ""
-    ${If} $0 == ""
-      StrCpy $0 "$INSTDIR"
-    ${Else}
-      StrCpy $0 "$0;$INSTDIR"
-    ${EndIf}
-    WriteRegExpandStr SHCTX $PathRegKey "Path" "$0"
-    SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
+  StrCpy $9 "Machine"
+  ${If} $IsAdmin == "0"
+    StrCpy $9 "User"
+  ${EndIf}
+
+  InitPluginsDir
+  StrCpy $8 "$PLUGINSDIR\bnl_addpath.ps1"
+
+  FileOpen $7 $8 w
+  !insertmacro WritePathScriptHeader $7 "$INSTDIR" "$9"
+  FileWriteUTF16LE $7 "$$already = $$false$\r$\n"
+  FileWriteUTF16LE $7 "if ($$p) {$\r$\n"
+  FileWriteUTF16LE $7 "  foreach ($$e in $$p -split ';') {$\r$\n"
+  FileWriteUTF16LE $7 "    if ((Normalize-PathEntry $$e) -ieq $$dirN) { $$already = $$true; break }$\r$\n"
+  FileWriteUTF16LE $7 "  }$\r$\n"
+  FileWriteUTF16LE $7 "}$\r$\n"
+  FileWriteUTF16LE $7 "if (-not $$already) {$\r$\n"
+  FileWriteUTF16LE $7 "  $$new = if ([string]::IsNullOrEmpty($$p)) { $$dirN } else { $$p + ';' + $$dirN }$\r$\n"
+  FileWriteUTF16LE $7 "  [Environment]::SetEnvironmentVariable('Path', $$new, $$scope)$\r$\n"
+  FileWriteUTF16LE $7 "}$\r$\n"
+  FileClose $7
+
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$8"'
+  Pop $7
+  ${If} $7 != "0"
+    DetailPrint "Warning: PATH update returned exit code $7. Add $INSTDIR to PATH manually if 'bnl' is not found."
   ${EndIf}
 FunctionEnd
 
 Function un.RemoveFromPath
-  ReadRegStr $0 SHCTX $PathRegKey "Path"
-  ${UnStrRep} $0 $0 ";$INSTDIR;" ";"
-  ${UnStrRep} $0 $0 ";$INSTDIR"  ""
-  ${UnStrRep} $0 $0 "$INSTDIR;"  ""
-  ${UnStrRep} $0 $0 "$INSTDIR"   ""
-  WriteRegExpandStr SHCTX $PathRegKey "Path" "$0"
-  SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=5000
+  StrCpy $9 "Machine"
+  ${If} $IsAdmin == "0"
+    StrCpy $9 "User"
+  ${EndIf}
+
+  InitPluginsDir
+  StrCpy $8 "$PLUGINSDIR\bnl_rmpath.ps1"
+
+  FileOpen $7 $8 w
+  !insertmacro WritePathScriptHeader $7 "$INSTDIR" "$9"
+  FileWriteUTF16LE $7 "if ($$p) {$\r$\n"
+  FileWriteUTF16LE $7 "  $$kept = @()$\r$\n"
+  FileWriteUTF16LE $7 "  foreach ($$e in $$p -split ';') {$\r$\n"
+  FileWriteUTF16LE $7 "    if ((Normalize-PathEntry $$e) -ine $$dirN) { $$kept += $$e }$\r$\n"
+  FileWriteUTF16LE $7 "  }$\r$\n"
+  FileWriteUTF16LE $7 "  [Environment]::SetEnvironmentVariable('Path', ($$kept -join ';'), $$scope)$\r$\n"
+  FileWriteUTF16LE $7 "}$\r$\n"
+  FileClose $7
+
+  nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$8"'
+  Pop $7
 FunctionEnd
 
 ; ============================================================
@@ -170,24 +230,24 @@ Section "Core (required)" SEC_CORE
   SetOutPath "$INSTDIR"
 
   !if "${ARCH}" == "x64"
-    File /oname=bnl.exe "..\\..\\build\\windows-release\\bin\\bnl.exe"
+    File /oname=bnl.exe "..\..\build\windows-release\bin\bnl.exe"
   !else
-    File /oname=bnl.exe "..\\..\\build\\windows-x86-release\\bin\\bnl.exe"
+    File /oname=bnl.exe "..\..\build\windows-x86-release\bin\bnl.exe"
   !endif
 
-  File /nonfatal "..\\..\\resources\\README.txt"
-  File /nonfatal "..\\..\\resources\\LICENSE.txt"
+  File /nonfatal "..\..\resources\README.txt"
+  File /nonfatal "..\..\resources\LICENSE.txt"
 
-  WriteUninstaller "$INSTDIR\\Uninstall.exe"
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayName"     "${PRODUCT_NAME} (${ARCH})"
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "Publisher"        "${PRODUCT_PUBLISHER}"
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayVersion"   "${PRODUCT_VERSION}"
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "InstallLocation"  "$INSTDIR"
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "DisplayIcon"      "$INSTDIR\\bnl.exe"
-  WriteRegStr   SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "UninstallString"  "$\"$INSTDIR\\Uninstall.exe$\""
-  WriteRegDWORD SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoModify"         1
-  WriteRegDWORD SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}" "NoRepair"         1
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "DisplayName"     "${PRODUCT_NAME} (${ARCH})"
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "Publisher"        "${PRODUCT_PUBLISHER}"
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "DisplayVersion"   "${PRODUCT_VERSION}"
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "InstallLocation"  "$INSTDIR"
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "DisplayIcon"      "$INSTDIR\bnl.exe"
+  WriteRegStr   SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "UninstallString"  "$\"$INSTDIR\Uninstall.exe$\""
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "NoModify"         1
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}" "NoRepair"         1
 
   Call AddToPath
 SectionEnd
@@ -198,10 +258,10 @@ SectionEnd
 Section "Uninstall"
   Call un.RemoveFromPath
 
-  Delete /REBOOTOK "$INSTDIR\\bnl.exe"
-  Delete /REBOOTOK "$INSTDIR\\README.txt"
-  Delete /REBOOTOK "$INSTDIR\\LICENSE.txt"
-  Delete /REBOOTOK "$INSTDIR\\Uninstall.exe"
+  Delete /REBOOTOK "$INSTDIR\bnl.exe"
+  Delete /REBOOTOK "$INSTDIR\README.txt"
+  Delete /REBOOTOK "$INSTDIR\LICENSE.txt"
+  Delete /REBOOTOK "$INSTDIR\Uninstall.exe"
   RMDir /r "$INSTDIR"
-  DeleteRegKey SHCTX "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${PRODUCT_UNINST_KEY}"
+  DeleteRegKey SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_UNINST_KEY}"
 SectionEnd
