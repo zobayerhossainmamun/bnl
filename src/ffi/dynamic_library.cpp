@@ -15,7 +15,15 @@ namespace bnl {
 DynamicLibrary::DynamicLibrary(const std::filesystem::path& path)
     : handle_(nullptr), path_(path) {
 #ifdef _WIN32
-    handle_ = LoadLibraryW(path.wstring().c_str());
+    // LOAD_WITH_ALTERED_SEARCH_PATH makes Windows resolve THIS DLL's own
+    // dependencies starting from the DLL's own directory, instead of the
+    // host EXE's directory. Without it, a plugin that bundles e.g. its own
+    // onnxruntime.dll next to itself would be ignored in favour of an
+    // older copy sitting in System32 or PATH — same fix libuv uses for
+    // Node addons and Python uses (via LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)
+    // for .pyd extensions.
+    handle_ = LoadLibraryExW(path.wstring().c_str(), nullptr,
+                             LOAD_WITH_ALTERED_SEARCH_PATH);
     if (!handle_) {
         DWORD code = GetLastError();
         throw std::runtime_error("LoadLibrary failed for "

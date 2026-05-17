@@ -244,7 +244,24 @@
       "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V2 -DARCH=x64 bnl_installer.nsi)",
       "Bash(echo \"---exit=$?---\")",
       "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V3 -DARCH=x64 bnl_installer.nsi)",
-      "Bash(echo \"---NSI exit=$?---\")"
+      "Bash(echo \"---NSI exit=$?---\")",
+      "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V2 -DARCH=x86 bnl_installer.nsi)",
+      "Bash(echo \"---x86 exit=$?---\")",
+      "Bash(\"/c/Program Files \\(x86\\)/NSIS/makensis.exe\" -V2 -DARCH=x86 installer/windows/bnl_installer.nsi)",
+      "Bash(where dumpbin.exe)",
+      "Read(//c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/**)",
+      "Bash('C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/dumpbin.exe' /headers build/windows-release/bin/bnl.exe)",
+      "Bash(g++ -std=c++17 -O2 main.cpp -o demo.exe)",
+      "Bash(./demo.exe)",
+      "PowerShell(Set-Location D:\\\\bnlang\\\\new-v\\\\bnl-small-test; powershell -ExecutionPolicy Bypass -File .\\\\build.ps1 -Run)",
+      "PowerShell(Set-Location D:\\\\bnlang\\\\new-v\\\\bnl-small-test; powershell -ExecutionPolicy Bypass -File .\\\\build.ps1 -Clean; powershell -ExecutionPolicy Bypass -File .\\\\build.ps1 -Run)",
+      "Bash(grep -rn \"^import \\\\\"\\\\\\\\./\" \"D:/bnlang/new-v/bnl/lib/\")",
+      "Bash(gh release *)",
+      "WebFetch(domain:api.github.com)",
+      "PowerShell(Expand-Archive *)",
+      "Bash(grep -E \"\\\\.\\(dll|lib|exp\\)$\")",
+      "PowerShell(cmd /c 'mklink /D /J \"D:\\\\bnlang\\\\new-v\\\\ort-test-consumer\\\\deps\\\\onnxruntime-bnlang\" \"D:\\\\bnlang\\\\new-v\\\\example-libs\\\\onnxruntime-bnlang\"' 2>&1)",
+      "Bash(awk '{print $5, $9}')"
     ]
   }
 }

@@ -14,6 +14,7 @@
 #include "runtime/bn_aliases.h"
 #include "runtime/environment.h"
 #include "bnl/interpreter.h"
+#include "bnl/version.h"     // kPlatform — used by host_triple()
 #include "ffi/dynamic_library.h"
 #include "ffi/plugin_api.h"
 #include "frontend/lexer.h"
@@ -69,11 +70,38 @@ std::unordered_map<std::string, LoadedLibrary>& process_libraries() {
     return libs;
 }
 
+// Host triple used to look up bnl.json `targets[<triple>]`. The convention
+// (windows-x64, darwin-arm64, …) differs from sys.platform/sys.arch: we map
+// "macos" -> "darwin" and "x86_64" -> "x64" to match what bpm publishes and
+// what every other ecosystem uses (Rust target triples, Python wheel tags).
+const std::string& host_triple() {
+    constexpr const char* kRuntimeArch =
+#if defined(_M_X64) || defined(__x86_64__)
+        "x64"
+#elif defined(_M_ARM64) || defined(__aarch64__)
+        "arm64"
+#elif defined(_M_IX86) || defined(__i386__)
+        "x86"
+#elif defined(_M_ARM) || defined(__arm__)
+        "arm"
+#else
+        "unknown"
+#endif
+        ;
+    static const std::string value = [] {
+        std::string os = kPlatform;          // "windows" | "macos" | "linux" | …
+        if (os == "macos") os = "darwin";
+        return os + "-" + kRuntimeArch;
+    }();
+    return value;
+}
+
 // Resolve a dep dir's entry point. Tries in order:
-//   1. bnl.json `native` field -> .dll/.so/.dylib (C-ABI plugin)
-//   2. bnl.json `main`   field -> .bnl source file
-//   3. index.bnl               -> .bnl source file (Node-style fallback)
-//   4. <dep_name>.bnl          -> .bnl source file (single-file dep)
+//   1. bnl.json `native`             field -> .dll/.so/.dylib (C-ABI plugin)
+//   2. bnl.json `targets[<triple>]`  field -> .dll/.so/.dylib (per-platform)
+//   3. bnl.json `main`               field -> .bnl source file
+//   4. index.bnl                           -> .bnl source file (Node-style fallback)
+//   5. <dep_name>.bnl                      -> .bnl source file (single-file dep)
 //
 // Lenient: malformed json or missing fields are warnings, not errors.
 std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
@@ -93,6 +121,19 @@ std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
                         fs::path entry = (dep_dir / it->get<std::string>()).lexically_normal();
                         if (fs::exists(entry, ec)) {
                             return fs::weakly_canonical(entry, ec);
+                        }
+                    }
+                    // targets[<triple>] — per-platform native lib. Strictly
+                    // additive: only consulted when `native` is absent or
+                    // its target doesn't exist on disk. bpm-installed
+                    // packages keep using `native` and are unaffected.
+                    if (auto it = j.find("targets"); it != j.end() && it->is_object()) {
+                        if (auto tit = it->find(host_triple());
+                            tit != it->end() && tit->is_string()) {
+                            fs::path entry = (dep_dir / tit->get<std::string>()).lexically_normal();
+                            if (fs::exists(entry, ec)) {
+                                return fs::weakly_canonical(entry, ec);
+                            }
                         }
                     }
                     if (auto it = j.find("main"); it != j.end() && it->is_string()) {
@@ -313,6 +354,47 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
             "dep '{}' found at {} but has no entry point "
             "(no bnl.json with 'native' or 'main', no index.bnl, no {}.bnl)",
             path_string, dep_dir->string(), path_string));
+    }
+
+    // Self-reference: if the importing file lives inside a package whose
+    // own bnl.json `name` matches `path_string`, treat that package dir
+    // as the dep dir. Same pattern as Node's package self-referencing
+    // (since 12.16) and Python's implicit project-root-on-sys.path. Only
+    // runs when the installed-dep walk above didn't find anything, so an
+    // installed copy still shadows the in-tree source if both exist.
+    {
+        std::error_code sec;
+        fs::path d = requesting_dir;
+        while (true) {
+            bool is_dep_dir = d.has_parent_path()
+                           && d.parent_path().filename() == "deps";
+            fs::path manif = d / "bnl.json";
+            if (!is_dep_dir && fs::exists(manif, sec) && !sec) {
+                std::ifstream in(manif, std::ios::binary);
+                if (in) {
+                    std::ostringstream buf; buf << in.rdbuf();
+                    try {
+                        auto j = nlohmann::json::parse(buf.str());
+                        if (j.is_object()) {
+                            auto nit = j.find("name");
+                            if (nit != j.end() && nit->is_string()
+                                && nit->get<std::string>() == path_string) {
+                                if (auto entry = resolve_dep_entry(d, path_string)) {
+                                    return is_native_library_path(*entry)
+                                        ? load_native_library(*entry, import_token)
+                                        : load_canonical_file(*entry, import_token);
+                                }
+                            }
+                        }
+                    } catch (const nlohmann::json::parse_error&) {
+                        // ignored — bad manifest doesn't block other paths
+                    }
+                }
+                break;   // first bnl.json wins; don't cross package boundaries
+            }
+            if (!d.has_parent_path() || d == d.parent_path()) break;
+            d = d.parent_path();
+        }
     }
 
     bool in_project = find_project_root(requesting_dir).has_value();
