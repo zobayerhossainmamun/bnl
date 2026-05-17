@@ -261,7 +261,9 @@
       "PowerShell(Expand-Archive *)",
       "Bash(grep -E \"\\\\.\\(dll|lib|exp\\)$\")",
       "PowerShell(cmd /c 'mklink /D /J \"D:\\\\bnlang\\\\new-v\\\\ort-test-consumer\\\\deps\\\\onnxruntime-bnlang\" \"D:\\\\bnlang\\\\new-v\\\\example-libs\\\\onnxruntime-bnlang\"' 2>&1)",
-      "Bash(awk '{print $5, $9}')"
+      "Bash(awk '{print $5, $9}')",
+      "PowerShell(python -c \"import onnx; print\\('onnx', onnx.__version__\\)\" 2>&1)",
+      "PowerShell(py *)"
     ]
   }
 }

@@ -96,17 +96,33 @@ const std::string& host_triple() {
     return value;
 }
 
-// Resolve a dep dir's entry point. Tries in order:
-//   1. bnl.json `native`             field -> .dll/.so/.dylib (C-ABI plugin)
-//   2. bnl.json `targets[<triple>]`  field -> .dll/.so/.dylib (per-platform)
-//   3. bnl.json `main`               field -> .bnl source file
+// Resolve a dep dir's entry point candidates in priority order:
+//   1. bnl.json `main`               field -> .bnl source file (wrapper)
+//   2. bnl.json `native`             field -> .dll/.so/.dylib (legacy / bpm-flattened)
+//   3. bnl.json `targets[<triple>]`  field -> .dll/.so/.dylib (per-platform binary)
 //   4. index.bnl                           -> .bnl source file (Node-style fallback)
 //   5. <dep_name>.bnl                      -> .bnl source file (single-file dep)
 //
+// `main` comes first so a package with a pure-bnl wrapper *and* a bundled
+// native binary loads the wrapper as the public entry. When the wrapper
+// re-imports its own package name to reach the native, the wrapper is
+// in_progress_ at that moment and the caller falls through to native/targets.
+//
+// Returns ALL existing candidates so the caller can skip ones that are
+// currently mid-load. This lets a `main` wrapper file legally re-import
+// its own package name to reach the bundled `targets` binary — the wrapper
+// is in_progress_ at that moment, so the caller falls through to targets.
+//
 // Lenient: malformed json or missing fields are warnings, not errors.
-std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
-                                          const std::string& dep_name) {
+std::vector<fs::path> resolve_dep_entry_candidates(const fs::path&    dep_dir,
+                                                    const std::string& dep_name) {
+    std::vector<fs::path> out;
     std::error_code ec;
+
+    auto push_if_exists = [&](const fs::path& p) {
+        std::error_code lec;
+        if (fs::exists(p, lec)) out.push_back(fs::weakly_canonical(p, lec));
+    };
 
     fs::path manifest = dep_dir / "bnl.json";
     if (fs::exists(manifest, ec) && !ec) {
@@ -117,29 +133,17 @@ std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
             try {
                 auto j = nlohmann::json::parse(buf.str());
                 if (j.is_object()) {
-                    if (auto it = j.find("native"); it != j.end() && it->is_string()) {
-                        fs::path entry = (dep_dir / it->get<std::string>()).lexically_normal();
-                        if (fs::exists(entry, ec)) {
-                            return fs::weakly_canonical(entry, ec);
-                        }
+                    if (auto it = j.find("main"); it != j.end() && it->is_string()) {
+                        push_if_exists((dep_dir / it->get<std::string>()).lexically_normal());
                     }
-                    // targets[<triple>] — per-platform native lib. Strictly
-                    // additive: only consulted when `native` is absent or
-                    // its target doesn't exist on disk. bpm-installed
-                    // packages keep using `native` and are unaffected.
+                    if (auto it = j.find("native"); it != j.end() && it->is_string()) {
+                        push_if_exists((dep_dir / it->get<std::string>()).lexically_normal());
+                    }
+                    // targets[<triple>] — per-platform native lib.
                     if (auto it = j.find("targets"); it != j.end() && it->is_object()) {
                         if (auto tit = it->find(host_triple());
                             tit != it->end() && tit->is_string()) {
-                            fs::path entry = (dep_dir / tit->get<std::string>()).lexically_normal();
-                            if (fs::exists(entry, ec)) {
-                                return fs::weakly_canonical(entry, ec);
-                            }
-                        }
-                    }
-                    if (auto it = j.find("main"); it != j.end() && it->is_string()) {
-                        fs::path entry = (dep_dir / it->get<std::string>()).lexically_normal();
-                        if (fs::exists(entry, ec)) {
-                            return fs::weakly_canonical(entry, ec);
+                            push_if_exists((dep_dir / tit->get<std::string>()).lexically_normal());
                         }
                     }
                 }
@@ -149,11 +153,9 @@ std::optional<fs::path> resolve_dep_entry(const fs::path&    dep_dir,
             }
         }
     }
-    fs::path index = dep_dir / "index.bnl";
-    if (fs::exists(index, ec))  return fs::weakly_canonical(index, ec);
-    fs::path named = dep_dir / (dep_name + ".bnl");
-    if (fs::exists(named, ec))  return fs::weakly_canonical(named, ec);
-    return std::nullopt;
+    push_if_exists(dep_dir / "index.bnl");
+    push_if_exists(dep_dir / (dep_name + ".bnl"));
+    return out;
 }
 
 // Walk up from `start` looking for `<ancestor>/deps/<name>/`. Same hoisting
@@ -344,16 +346,34 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
     // For deps walk and global lookup, keep using the original name — only
     // bnl-internal aliases live in the table above. A dep package author
     // names their own folder.
+    //
+    // Candidate-list shape lets us skip an entry that's already mid-load
+    // (in_progress_). The common case is: `main: lib/index.bnl` (a wrapper
+    // that re-imports its own package name to reach the bundled native).
+    // While the wrapper is loading, its canonical path is in_progress_;
+    // the recursive import then falls through to `targets[<triple>]` and
+    // gets the binary instead — no circular-import error.
     if (auto dep_dir = find_dep_in_walk(requesting_dir, path_string)) {
-        if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
-            return is_native_library_path(*entry)
-                ? load_native_library(*entry, import_token)
-                : load_canonical_file(*entry, import_token);
+        auto candidates = resolve_dep_entry_candidates(*dep_dir, path_string);
+        for (const fs::path& entry : candidates) {
+            std::string key = is_native_library_path(entry)
+                ? "<native:" + entry.string() + ">"
+                : entry.string();
+            if (in_progress_.count(key)) continue;
+            return is_native_library_path(entry)
+                ? load_native_library(entry, import_token)
+                : load_canonical_file(entry, import_token);
         }
+        if (candidates.empty()) {
+            throw ModuleError(import_token, fmt::format(
+                "dep '{}' found at {} but has no entry point "
+                "(no bnl.json with 'native' or 'main', no index.bnl, no {}.bnl)",
+                path_string, dep_dir->string(), path_string));
+        }
+        // All candidates are in_progress_ — genuine cycle.
         throw ModuleError(import_token, fmt::format(
-            "dep '{}' found at {} but has no entry point "
-            "(no bnl.json with 'native' or 'main', no index.bnl, no {}.bnl)",
-            path_string, dep_dir->string(), path_string));
+            "circular import detected: every entry for '{}' is mid-load",
+            path_string));
     }
 
     // Self-reference: if the importing file lives inside a package whose
@@ -379,10 +399,15 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
                             auto nit = j.find("name");
                             if (nit != j.end() && nit->is_string()
                                 && nit->get<std::string>() == path_string) {
-                                if (auto entry = resolve_dep_entry(d, path_string)) {
-                                    return is_native_library_path(*entry)
-                                        ? load_native_library(*entry, import_token)
-                                        : load_canonical_file(*entry, import_token);
+                                auto candidates = resolve_dep_entry_candidates(d, path_string);
+                                for (const fs::path& entry : candidates) {
+                                    std::string key = is_native_library_path(entry)
+                                        ? "<native:" + entry.string() + ">"
+                                        : entry.string();
+                                    if (in_progress_.count(key)) continue;
+                                    return is_native_library_path(entry)
+                                        ? load_native_library(entry, import_token)
+                                        : load_canonical_file(entry, import_token);
                                 }
                             }
                         }
@@ -400,10 +425,15 @@ ModulePtr ModuleLoader::load(const std::string&            path_string,
     bool in_project = find_project_root(requesting_dir).has_value();
     if (!in_project) {
         if (auto dep_dir = find_global_dep(path_string)) {
-            if (auto entry = resolve_dep_entry(*dep_dir, path_string)) {
-                return is_native_library_path(*entry)
-                    ? load_native_library(*entry, import_token)
-                    : load_canonical_file(*entry, import_token);
+            auto candidates = resolve_dep_entry_candidates(*dep_dir, path_string);
+            for (const fs::path& entry : candidates) {
+                std::string key = is_native_library_path(entry)
+                    ? "<native:" + entry.string() + ">"
+                    : entry.string();
+                if (in_progress_.count(key)) continue;
+                return is_native_library_path(entry)
+                    ? load_native_library(entry, import_token)
+                    : load_canonical_file(entry, import_token);
             }
             throw ModuleError(import_token, fmt::format(
                 "global dep '{}' at {} has no entry point",
