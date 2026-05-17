@@ -130,6 +130,14 @@ struct TlsConn {
     bool                   closing = false;
     bool                   is_server = false;
     std::vector<std::string> pending_writes;       // queued during handshake
+
+    // Encrypted TCP bytes that couldn't fit into network_bio when they
+    // arrived. We pause the libuv reader when this fills up; try_read_app_data
+    // drains here back into the BIO each time SSL_read frees space. Fixes a
+    // bug where large downloads were silently truncated at the byte where
+    // BIO_write first refused (BIO buffer full → previously dropped on the floor).
+    std::string            pending_input;
+    bool                   read_paused = false;
 };
 
 struct TlsListener {
@@ -338,9 +346,38 @@ void try_handshake(TlsConn* conn) {
     fire_handshake_error(conn, ssl_err_message(err));
 }
 
+// Push any buffered encrypted bytes back into network_bio, now that SSL_read
+// has drained some of it. If everything fits, resume the libuv reader so
+// fresh TCP data can flow again.
+void drain_pending_into_bio(TlsConn* conn) {
+    if (conn->pending_input.empty()) return;
+    const char* p = conn->pending_input.data();
+    std::size_t remaining = conn->pending_input.size();
+    while (remaining > 0) {
+        int n = BIO_write(conn->network_bio, p, static_cast<int>(remaining));
+        if (n <= 0) break;
+        p += n;
+        remaining -= static_cast<std::size_t>(n);
+    }
+    if (remaining == 0) {
+        conn->pending_input.clear();
+        if (conn->read_paused) {
+            conn->read_paused = false;
+            uv_read_start(reinterpret_cast<uv_stream_t*>(&conn->handle),
+                          alloc_buf, on_tls_socket_data);
+        }
+    } else {
+        conn->pending_input.erase(0, conn->pending_input.size() - remaining);
+    }
+}
+
 void try_read_app_data(TlsConn* conn) {
     if (!conn->handshake_done || conn->closing) return;
     while (true) {
+        // Each SSL_read frees space in network_bio — opportunistically
+        // push any buffered encrypted bytes through before reading.
+        drain_pending_into_bio(conn);
+
         char buf[16384];
         int n = SSL_read(conn->ssl, buf, sizeof(buf));
         if (n > 0) {
@@ -375,9 +412,20 @@ void on_tls_socket_data(uv_stream_t* s, ssize_t nread, const uv_buf_t* buf) {
         while (remaining > 0) {
             int n = BIO_write(conn->network_bio, p,
                               static_cast<int>(remaining));
-            if (n <= 0) break;  // BIO buffer full — best-effort for v1
+            if (n <= 0) break;
             p += n;
             remaining -= static_cast<std::size_t>(n);
+        }
+        // If the BIO refused part of the read, stash the rest and pause
+        // the reader — try_read_app_data will drain back in when SSL_read
+        // frees space. Without this, large downloads truncate silently at
+        // the byte where the BIO first fills.
+        if (remaining > 0) {
+            conn->pending_input.append(p, remaining);
+            if (!conn->read_paused) {
+                conn->read_paused = true;
+                uv_read_stop(reinterpret_cast<uv_stream_t*>(&conn->handle));
+            }
         }
         if (buf->base) std::free(buf->base);
 

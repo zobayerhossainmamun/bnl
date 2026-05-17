@@ -253,7 +253,76 @@ function _is_reusable(resp) {
     return ch.to_lower().index_of("close") < 0;
 }
 
-function _do_request(config, before_fns, after_fns, cb) {
+// HTTP redirect helpers — used by both _do_request and _do_download.
+function _is_redirect(status) {
+    return status == 301 or status == 302 or status == 303
+        or status == 307 or status == 308;
+}
+
+// Resolve a (possibly relative) Location header value against the current
+// parsed URL. Returns null if the input is empty.
+//   "https://x/y"   -> "https://x/y"   (absolute)
+//   "//x/y"         -> "<scheme>://x/y" (protocol-relative)
+//   "/path"         -> "<scheme>://<host>[:port]/path" (host-relative)
+//   "path"          -> resolves against current request's path dir
+function _resolve_location(base, loc) {
+    if (loc == null or loc.byte_length == 0) { return null; }
+    if (loc.starts_with("http://") or loc.starts_with("https://")) {
+        return loc;
+    }
+    if (loc.starts_with("//")) {
+        return base.scheme + ":" + loc;
+    }
+    var origin = base.scheme + "://" + base.host;
+    if ((base.scheme == "https" and base.port != 443)
+        or (base.scheme == "http"  and base.port != 80)) {
+        origin = origin + ":" + str(base.port);
+    }
+    if (loc.starts_with("/")) { return origin + loc; }
+    // Path-relative: resolve against directory of current path.
+    var dir = base.path;
+    var slash = -1;
+    var i = dir.byte_length - 1;
+    while (i >= 0) {
+        if (dir.byte_at(i) == 47) { slash = i; break; }
+        i = i - 1;
+    }
+    if (slash >= 0) { dir = dir.byte_slice(0, slash + 1); } else { dir = "/"; }
+    return origin + dir + loc;
+}
+
+// Rewrite a request config for the next hop. Spec semantics:
+//   303         -> always GET, drop body
+//   307 / 308   -> preserve method and body
+//   301 / 302   -> preserve method and body (RFC 7231 SHOULD; older clients
+//                  forced GET, but modern libraries leave it to the caller)
+function _redirect_config(cfg, new_url, status) {
+    var out = {};
+    for (var k of cfg.keys()) { out[k] = cfg[k]; }
+    out.url = new_url;
+    if (status == 303) {
+        out.method = "GET";
+        out.body   = null;
+        out.json   = null;
+        out.form   = null;
+        out.data   = null;
+    }
+    return out;
+}
+
+// Two knobs, single responsibility each:
+//   follow_redirect : bool   default true  — turn redirect-following on/off
+//   max_redirect    : number default 10    — cap how many hops are followed
+function _follow_redirects_of(config) {
+    if (config.follow_redirect == false) { return false; }
+    return true;
+}
+function _max_redirects_of(config) {
+    if (config.max_redirect == null) { return 10; }
+    return config.max_redirect;
+}
+
+function _do_request_once(config, before_fns, after_fns, cb) {
     var i = 0;
     while (i < before_fns.length) {
         var maybe = before_fns[i](config);
@@ -325,6 +394,32 @@ function _do_request(config, before_fns, after_fns, cb) {
     });
 }
 
+// _do_request — public entry. Wraps _do_request_once with redirect following.
+// Config: follow_redirect (bool, default true), max_redirect (default 10).
+function _do_request(config, before_fns, after_fns, cb) {
+    var hops   = 0;
+    var follow = _follow_redirects_of(config);
+    var max    = _max_redirects_of(config);
+
+    var attempt = function (cfg) {};   // hoisted for recursion via closure
+    attempt = function (cfg) {
+        _do_request_once(cfg, before_fns, after_fns, function (err, resp) {
+            if (err != null) { cb(err, null); return; }
+            if (resp == null or not _is_redirect(resp.status)
+                or not follow or hops >= max) {
+                cb(err, resp);
+                return;
+            }
+            var loc = resp.headers["location"];
+            var new_url = _resolve_location(_url.parse(_resolve_url(cfg)), loc);
+            if (new_url == null) { cb(null, resp); return; }
+            hops = hops + 1;
+            attempt(_redirect_config(cfg, new_url, resp.status));
+        });
+    };
+    attempt(config);
+}
+
 function _opts_with(verb_opts, config) {
     if (config == null) { return verb_opts; }
     var out = {};
@@ -393,7 +488,7 @@ function download(url, dest, config = null) {
     });
 }
 
-function _do_download(opts, cb) {
+function _do_download_once(opts, cb) {
     var cfg = _merge_config(_default.defaults, opts);
     if (cfg.headers == null) { cfg.headers = {}; }
     if (not _has_header(cfg.headers, "user-agent")) {
@@ -465,6 +560,21 @@ function _do_download(opts, cb) {
                 var head_only = headers_buf.byte_slice(0, sep + 4);
                 resp_meta = _http.parse_response(head_only, false);
                 headers_done = true;
+
+                // Don't write a redirect response body to the destination
+                // file — leaves the dest untouched for the caller (wrapper
+                // _do_download) to retry against the new URL, or surface
+                // the 3xx to the user if redirects are disabled.
+                if (_is_redirect(resp_meta.status)) {
+                    finished = true;
+                    conn.close();
+                    resp_meta.dest          = opts.dest;
+                    resp_meta.bytes_written = 0;
+                    resp_meta.ok            = false;
+                    cb(null, resp_meta);
+                    return;
+                }
+
                 sink = _io.open_write(opts.dest);
                 var leftover = headers_buf.byte_slice(sep + 4);
                 if (leftover.byte_length > 0) {
@@ -484,6 +594,34 @@ function _do_download(opts, cb) {
 
         conn.write(req_bytes);
     });
+}
+
+// _do_download — public entry. Wraps _do_download_once with redirect
+// following. The wrapped function deliberately does NOT write a redirect
+// response body to the destination file, so the file is only touched
+// once we land on a 2xx (or once redirects are exhausted/disabled).
+function _do_download(opts, cb) {
+    var hops   = 0;
+    var follow = _follow_redirects_of(opts);
+    var max    = _max_redirects_of(opts);
+
+    var attempt = function (cur_opts) {};
+    attempt = function (cur_opts) {
+        _do_download_once(cur_opts, function (err, resp) {
+            if (err != null) { cb(err, null); return; }
+            if (resp == null or not _is_redirect(resp.status)
+                or not follow or hops >= max) {
+                cb(err, resp);
+                return;
+            }
+            var loc = resp.headers["location"];
+            var new_url = _resolve_location(_url.parse(_resolve_url(cur_opts)), loc);
+            if (new_url == null) { cb(null, resp); return; }
+            hops = hops + 1;
+            attempt(_redirect_config(cur_opts, new_url, resp.status));
+        });
+    };
+    attempt(opts);
 }
 
 function upload(url, file, config = null) {
